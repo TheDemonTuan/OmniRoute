@@ -430,6 +430,7 @@ export class GlmExecutor extends DefaultExecutor {
 
     let response: Response;
     try {
+      this.assertOutboundUrlAllowed(url); // GHSA-4f49: glm has its own fetch path
       response = await fetch(url, {
         method: "POST",
         headers,
