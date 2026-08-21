@@ -37,11 +37,30 @@ const PID_RESOLVE_TIMEOUT_MS = 2_000;
  *
  * Pure — no I/O — so it can be exhaustively unit-tested.
  */
-export function decidePreSpawn(probe: PreSpawnProbe, port: number): PreSpawnDecision {
-  // A healthy instance is already serving on the port — adopt it rather than
-  // spawn a duplicate that would immediately die with EADDRINUSE.
+export function decidePreSpawn(
+  probe: PreSpawnProbe,
+  port: number,
+  allowAdopt = false
+): PreSpawnDecision {
   if (probe.healthy) {
-    return { action: "adopt" };
+    // A 2xx on the health path does NOT prove the listener is our service: a
+    // local process can squat the port, answer 200, and get adopted — receiving
+    // the injected service API key and script execution inside the dashboard
+    // origin (GHSA-wg9p-6m2g-4v27). Adopt an already-healthy listener only when
+    // the operator explicitly opts in; otherwise surface the same actionable
+    // error we already use for a held-but-unhealthy port instead of silently
+    // trusting the listener.
+    if (allowAdopt) {
+      return { action: "adopt" };
+    }
+    return {
+      action: "error",
+      message:
+        `Port ${port} is already serving a healthy response, but adopting an ` +
+        `existing listener is disabled by default (a 2xx cannot prove the listener ` +
+        `is this service). Set OMNIROUTE_ADOPT_EXISTING_SERVICE=1 to allow adoption, ` +
+        `or stop the process holding the port and start the service again.`,
+    };
   }
   // Port is held but nothing healthy answers: an orphaned or unrelated process
   // is squatting on it. Surface a clear, actionable error instead of letting
@@ -57,6 +76,17 @@ export function decidePreSpawn(probe: PreSpawnProbe, port: number): PreSpawnDeci
   }
   // Port is free and nothing is answering — safe to spawn.
   return { action: "spawn" };
+}
+
+/**
+ * Whether the operator opted in to adopting an already-healthy listener on a
+ * service port. Off by default (GHSA-wg9p-6m2g-4v27): a squatter can answer a
+ * 2xx, so auto-adoption is only safe when the operator knows the listener is
+ * genuinely their (externally-managed) instance.
+ */
+export function isAdoptExistingEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  const v = env.OMNIROUTE_ADOPT_EXISTING_SERVICE;
+  return v === "1" || v === "true";
 }
 
 /** TCP connect check: resolves true when something accepts a connection. */
