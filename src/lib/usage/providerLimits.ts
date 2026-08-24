@@ -26,6 +26,7 @@ import { USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
 import { mergeProviderLimitsCacheEntry, toProviderLimitsCacheEntry } from "./providerLimitsCache";
 import { getExecutor } from "@omniroute/open-sse/executors/index.ts";
 import { getUsageForProvider } from "@omniroute/open-sse/services/usage.ts";
+import { cooldownUntilMs } from "@omniroute/open-sse/services/accountFallback.ts";
 import {
   rotationGroupFor,
   serializeRefresh,
@@ -459,66 +460,57 @@ function windowStillExhaustedAfterRealReset(value: unknown, nowMs: number): bool
   return resetMs > nowMs;
 }
 
+/**
+ * Is an explicit cooldown still in the future?
+ *
+ * A rateLimitedUntil set by the upstream 429 handler is a hard statement and
+ * must never be overruled by a quota poll.
+ *
+ * Gate on the timestamp alone; lastErrorType stays irrelevant here.
+ */
+export function hasActiveCooldown(
+  connection: Pick<ProviderConnectionLike, "rateLimitedUntil">,
+  now: number = Date.now()
+): boolean {
+  if (!connection.rateLimitedUntil) return false;
+  // #3954: the rate_limited_until TEXT column holds an ISO string (dashboard/AUTH
+  // path) OR numeric epoch ms (setConnectionRateLimitUntil, the chat path). A bare
+  // `new Date(String(...))` yields Invalid Date for the numeric form, which read as
+  // "no cooldown" and let every poller wipe a chat-path-written lockout. Use the
+  // canonical parser connectionRecovery.ts already relies on.
+  const until = cooldownUntilMs(connection.rateLimitedUntil as string | number | null | undefined);
+  return Number.isFinite(until) && until > now;
+}
+
+/**
+ * Whether a connection test may wipe the persisted error/cooldown state.
+ *
+ * A successful probe proves the CREDENTIAL is valid; it does not prove an
+ * exhausted quota window reopened — the probe is a cheap auth/models call that
+ * never touches the chat quota a weekly cap applies to. The credential-health
+ * scheduler runs that probe against every connection every 300s, so without this
+ * gate a weekly-capped connection was reset to `active` / `rateLimitedUntil=null`
+ * within 30s of every restart and dispatched straight back into the same 429.
+ *
+ * Same rule as `maybeClearRecoveredQuotaState`: a future `rateLimitedUntil` is
+ * the 429 handler's hard statement and no poller may overrule it. Once the
+ * window elapses, the next probe clears the state normally.
+ */
+export function shouldClearErrorStateOnValidProbe(
+  connection: Pick<ProviderConnectionLike, "rateLimitedUntil">,
+  probeValid: boolean,
+  now: number = Date.now()
+): boolean {
+  return probeValid && !hasActiveCooldown(connection, now);
+}
+
 export async function maybeClearRecoveredQuotaState(
   connection: ProviderConnectionLike,
   usage: JsonRecord
 ): Promise<ProviderConnectionLike> {
   if (!hasUsableQuota(usage)) return connection;
   if (isTerminalStatusForQuotaRecovery(connection.testStatus)) return connection;
-  if (connection.lastErrorType === "quota_exhausted") {
-    if (
-      connection.lastErrorSource === CLAUDE_EXTRA_USAGE_ERROR_SOURCE &&
-      isClaudeExtraUsageBlockEnabled(connection.provider, connection.providerSpecificData) &&
-      isClaudeExtraUsageQueued(usage)
-    ) {
-      // Claude's pay-as-you-go extra-usage block is orthogonal to the
-      // session/weekly quota windows checked below: the upstream can report a
-      // fully recovered quota window while extraUsage.queued is still true.
-      // Only syncClaudeExtraUsageStateIfNeeded (buildClaudeExtraUsageConnectionUpdate)
-      // owns clearing this specific state — the general window-recovery logic
-      // below must not release it just because some quota window looks fresh.
-      return connection;
-    }
-
-    const quotas = usage?.quotas;
-    if (isRecord(quotas)) {
-      // Honor the REAL per-window resetAt from the freshly fetched quota
-      // instead of the synthetic cooldown persisted at failure time (e.g.
-      // Claude's flat 1h SUBSCRIPTION_QUOTA_COOLDOWN_MS when no upstream
-      // reset was parseable). Only stay locked if some window that governs
-      // this connection's quota is still demonstrably exhausted.
-      const anyStillBlocking = Object.values(quotas).some((value) =>
-        windowStillExhaustedAfterRealReset(value, Date.now())
-      );
-      if (anyStillBlocking) return connection;
-    } else if (
-      connection.rateLimitedUntil &&
-      new Date(connection.rateLimitedUntil).getTime() > Date.now()
-    ) {
-      // No quota object at all (degraded/failed fetch shape) — fall back to
-      // the previous synthetic-cooldown guard.
-      return connection;
-    }
-  } else if (
-    connection.rateLimitedUntil &&
-    new Date(connection.rateLimitedUntil).getTime() > Date.now()
-  ) {
-    // Universal fallback guard for every lastErrorType other than
-    // "quota_exhausted" (which gets the more precise per-window check above,
-    // and may legitimately release early once the REAL window has reset even
-    // while a synthetic rateLimitedUntil is still in the future). A future
-    // rateLimitedUntil is a hard statement made by the 429/error handler that
-    // persisted it (src/sse/services/auth.ts, src/app/api/providers/[id]/test/
-    // route.ts) — no quota poll finding *some* usable window elsewhere should
-    // be able to overrule it. Before this fix, ANY lastErrorType other than
-    // "quota_exhausted" skipped straight to hasTransientState/
-    // clearRecoveredProviderState() below with no rateLimitedUntil check at
-    // all, so a multi-day cooldown (observed: 146h, Z.AI weekly quota) got
-    // cleared on the very next quota sync a few minutes later — a
-    // self-restart/burn loop that kept burning real upstream calls against a
-    // known-exhausted connection (#11277).
-    return connection;
-  }
+  if (hasActiveCooldown(connection)) return connection;
 
   const hasTransientState =
     connection.testStatus === "unavailable" ||
