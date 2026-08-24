@@ -149,6 +149,12 @@ elif command -v firewall-cmd >/dev/null 2>&1 && firewall-cmd --state >/dev/null 
     # Only ensure SSH survives; deliberately open nothing else. firewalld's
     # default zone already drops unsolicited inbound traffic.
     firewall-cmd --permanent --add-service=ssh >/dev/null
+    # Same reason as the ufw rule above: in webhook mode the containerised Caddy
+    # reaches the host-side ops bot over the docker bridge, and firewalld's
+    # default zone would otherwise drop it. Scoped to the RFC1918 range docker
+    # allocates bridges from, so this opens nothing to the internet.
+    firewall-cmd --permanent --add-rich-rule \
+        "rule family=\"ipv4\" source address=\"172.16.0.0/12\" port port=\"${OPS_WEBHOOK_PORT:-20129}\" protocol=\"tcp\" accept" >/dev/null
     firewall-cmd --reload >/dev/null
     firewall-cmd --list-all
 else

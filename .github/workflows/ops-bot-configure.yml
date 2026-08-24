@@ -164,10 +164,27 @@ jobs:
               # from; default-deny still covers everything else.
               if command -v ufw >/dev/null 2>&1 && sudo ufw status | grep -q "Status: active"; then
                 sudo ufw allow from 172.16.0.0/12 to any port 20129 proto tcp >/dev/null
-                echo "  ufw allows 172.16.0.0/12 -> 20129"
+                echo "  ufw: allowed 172.16.0.0/12 -> 20129"
+              elif command -v firewall-cmd >/dev/null 2>&1 && sudo firewall-cmd --state >/dev/null 2>&1; then
+                # RHEL-family boxes (Oracle Linux here) ship firewalld and no ufw.
+                # A rich rule is the equivalent source-scoped opening; without it
+                # firewalld's default zone drops the bridge traffic and Caddy
+                # cannot reach the listener at all.
+                sudo firewall-cmd --permanent --add-rich-rule \
+                  'rule family="ipv4" source address="172.16.0.0/12" port port="20129" protocol="tcp" accept' >/dev/null
+                sudo firewall-cmd --reload >/dev/null
+                echo "  firewalld: allowed 172.16.0.0/12 -> 20129"
               else
-                echo "  NOTE: ufw is not active; ensure port 20129 is not reachable from the internet"
+                echo "  WARNING: neither ufw nor firewalld is active." >&2
+                echo "           Port 20129 is bound on 0.0.0.0 with no host firewall in front of it." >&2
+                echo "           Close it at the cloud provider (security list / NSG) before leaving this." >&2
               fi
+
+              echo "--- listener exposure ---"
+              # What is actually listening, and on which address. 0.0.0.0 is
+              # expected; what matters is that nothing outside the bridge can
+              # reach it, which the probe below and the cloud firewall decide.
+              sudo ss -lntp 2>/dev/null | grep -E ":20129\b" || echo "  nothing listening on 20129 (!)"
 
               # extra_hosts lands on the container only when compose recreates
               # it. `up -d` compares the config hash, so this is a no-op once
@@ -201,6 +218,34 @@ jobs:
                 | sed -E 's#(/tg-ops/)[A-Za-z0-9_-]+#\1[REDACTED]#g' \
                 | sed -E 's#[0-9]{6,14}:[A-Za-z0-9_-]{30,50}#[REDACTED_TOKEN]#g'
               echo
+
+              echo "--- end-to-end probe (Cloudflare -> Caddy -> listener) ---"
+              # getWebhookInfo proves only that Telegram accepted the URL, not
+              # that a delivery can arrive: pending_update_count is 0 both when
+              # everything works and when nothing has been sent yet. So walk the
+              # real public path with a deliberately wrong secret token.
+              #
+              # 401 is the success condition. It can only come from our own
+              # handler, which means Cloudflare routed it, Caddy proxied it, the
+              # firewall allowed it, and the listener rejected an unauthenticated
+              # caller exactly as it should. 404 means the path never reached us;
+              # 502/530 mean Caddy or the tunnel could not connect.
+              PROBE_URL="$(read_kv OPS_WEBHOOK_PUBLIC_URL)/tg-ops/$(read_kv OPS_WEBHOOK_PATH_SECRET)"
+              CODE="$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
+                        -X POST "$PROBE_URL" \
+                        -H 'Content-Type: application/json' \
+                        -H 'X-Telegram-Bot-Api-Secret-Token: deliberately-wrong' \
+                        -d '{"update_id":0}' || echo "000")"
+              case "$CODE" in
+                401) echo "  OK: reached the listener, which rejected the bad token (HTTP 401)" ;;
+                404) echo "  FAIL: HTTP 404 - the request never reached the bot." >&2
+                     echo "        Cloudflare or Caddy is not routing /tg-ops/* to this origin." >&2
+                     exit 1 ;;
+                000) echo "  FAIL: no HTTP response before the timeout." >&2; exit 1 ;;
+                *)   echo "  FAIL: HTTP $CODE - expected 401." >&2
+                     echo "        502/530 point at Caddy or the tunnel not reaching 20129." >&2
+                     exit 1 ;;
+              esac
             fi
           REMOTE
 
