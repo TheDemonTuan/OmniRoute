@@ -87,6 +87,11 @@ else
 fi
 
 mkdir -p /etc/omniroute /var/lib/omniroute-ops /var/log/omniroute-ops "$APP_DIR/ops-bot/releases"
+# The blanket `chown -R "$SUDO_USER"` above walks the whole APP_DIR, so it undoes
+# the root ownership the bot release was installed with. Re-assert it here: the
+# service runs as omniroute-ops and must not be able to rewrite its own code.
+# The production deploy installs releases the same way (prod-deploy.yml, step 2.3).
+chown -R root:root "$APP_DIR/ops-bot"
 chown -R omniroute-ops:omniroute-ops /var/lib/omniroute-ops /var/log/omniroute-ops
 chmod 750 /var/lib/omniroute-ops /var/log/omniroute-ops
 if [[ ! -f /etc/omniroute/ops-bot.env ]]; then

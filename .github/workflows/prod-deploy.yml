@@ -228,11 +228,11 @@ jobs:
             install -m 0750 .staging/infra/backup.sh backup.sh.new && mv -f backup.sh.new backup.sh
 
             BOT_RELEASE="releases/${GITHUB_SHA:?missing GITHUB_SHA}"
-            mkdir -p "ops-bot/$BOT_RELEASE"
-            cp -a .staging/scripts/ops/telegram_ops_bot/. "ops-bot/$BOT_RELEASE/"
-            chown -R root:root "ops-bot/$BOT_RELEASE"
-            find "ops-bot/$BOT_RELEASE" -type d -exec chmod 0755 {} +
-            find "ops-bot/$BOT_RELEASE" -type f -exec chmod 0644 {} +
+            sudo mkdir -p "ops-bot/$BOT_RELEASE"
+            sudo cp -a .staging/scripts/ops/telegram_ops_bot/. "ops-bot/$BOT_RELEASE/"
+            sudo chown -R root:root "ops-bot/$BOT_RELEASE"
+            sudo find "ops-bot/$BOT_RELEASE" -type d -exec chmod 0755 {} +
+            sudo find "ops-bot/$BOT_RELEASE" -type f -exec chmod 0644 {} +
             install -m 0755 .staging/scripts/ops/omniroute_opsctl.py opsctl.new
             sudo install -o root -g root -m 0755 opsctl.new /usr/local/sbin/omniroute-opsctl
             rm -f opsctl.new
@@ -243,7 +243,7 @@ jobs:
               .staging/infra/sudoers/omniroute-ops-bot \
               /etc/sudoers.d/omniroute-ops-bot
             sudo visudo -cf /etc/sudoers.d/omniroute-ops-bot
-            ln -sfn "$BOT_RELEASE" ops-bot/current
+            sudo ln -sfn "$BOT_RELEASE" ops-bot/current
             sudo systemctl daemon-reload
             if sudo test -s /etc/omniroute/ops-bot.env; then
               sudo systemctl try-restart omniroute-ops-bot.service || true
