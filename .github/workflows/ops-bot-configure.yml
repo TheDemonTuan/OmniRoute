@@ -1,0 +1,218 @@
+name: Configure Ops Bot Webhook
+
+# One-shot, re-runnable configuration of /etc/omniroute/ops-bot.env on the VPS.
+#
+# A deploy deliberately never touches that file — it holds the bot token, the
+# PIN hash and the GitHub App identifiers — so switching the bot to webhook mode
+# is a separate, explicit action. This workflow is that action.
+#
+# Secrets are generated ON THE VPS with openssl and written straight into the
+# env file. They never reach this runner, so they cannot appear in a log, an
+# artifact, or a workflow input. Existing values are kept, which makes re-runs
+# safe: rerunning does not rotate a working webhook out from under Telegram.
+
+run-name: 🔧 Configure ops bot → ${{ inputs.mode }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Update intake mode for the bot"
+        required: true
+        type: choice
+        options:
+          - webhook
+          - polling
+        default: webhook
+      public_url:
+        description: "Public https:// origin Cloudflare Tunnel serves (webhook mode only)"
+        required: false
+        type: string
+        default: ""
+      rotate_secrets:
+        description: "Generate fresh webhook secrets even if some already exist"
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: omniroute-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  configure:
+    name: Configure ops bot on the VPS
+    runs-on: ubuntu-latest
+
+    environment:
+      name: production
+
+    steps:
+      - name: Validate inputs
+        env:
+          MODE: ${{ inputs.mode }}
+          PUBLIC_URL: ${{ inputs.public_url }}
+        run: |
+          set -euo pipefail
+          if [ "$MODE" = "webhook" ]; then
+            if [ -z "$PUBLIC_URL" ]; then
+              echo "::error::public_url is required when mode is webhook" >&2
+              exit 1
+            fi
+            # Checked here rather than on the VPS because this value is later
+            # substituted into the env file with sed; constraining the charset
+            # is what makes that substitution safe.
+            if ! printf '%s' "$PUBLIC_URL" | grep -qE '^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?$'; then
+              echo "::error::public_url must look like https://host.example.com with no path" >&2
+              exit 1
+            fi
+          fi
+
+      - name: Configure SSH from secrets
+        env:
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY"     > ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+
+      - name: Apply configuration and restart the bot
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
+          MODE: ${{ inputs.mode }}
+          PUBLIC_URL: ${{ inputs.public_url }}
+          ROTATE: ${{ inputs.rotate_secrets }}
+        run: |
+          set -euo pipefail
+          SSH="ssh -i ~/.ssh/id_ed25519 -p $VPS_PORT -o BatchMode=yes -o ConnectTimeout=20"
+          $SSH "$VPS_USER@$VPS_HOST" \
+            "MODE=${MODE} PUBLIC_URL=${PUBLIC_URL} ROTATE=${ROTATE}"' bash -s' <<'REMOTE'
+            set -euo pipefail
+            ENV_FILE=/etc/omniroute/ops-bot.env
+
+            if ! sudo test -s "$ENV_FILE"; then
+              echo "ERROR: $ENV_FILE is missing or empty. Run infra/bootstrap-vps.sh first." >&2
+              exit 1
+            fi
+
+            # Read a value without ever echoing it to stdout (this stream is the
+            # workflow log). Everything stays inside shell variables on the box.
+            read_kv() {
+              sudo sed -n "s/^$1=//p" "$ENV_FILE" | head -1
+            }
+
+            set_kv() {
+              if sudo grep -qE "^$1=" "$ENV_FILE"; then
+                sudo sed -i "s|^$1=.*|$1=$2|" "$ENV_FILE"
+              else
+                printf '%s=%s\n' "$1" "$2" | sudo tee -a "$ENV_FILE" >/dev/null
+              fi
+            }
+
+            if [ "$MODE" = "webhook" ]; then
+              SECRET_TOKEN="$(read_kv OPS_WEBHOOK_SECRET_TOKEN)"
+              PATH_SECRET="$(read_kv OPS_WEBHOOK_PATH_SECRET)"
+
+              # Keep what already works. Rotating on every run would invalidate
+              # the endpoint Telegram currently posts to for no reason.
+              if [ "$ROTATE" = "true" ] || [ -z "$SECRET_TOKEN" ]; then
+                SECRET_TOKEN="$(openssl rand -hex 32)"
+                echo "  generated a new webhook secret token"
+              else
+                echo "  kept the existing webhook secret token"
+              fi
+              if [ "$ROTATE" = "true" ] || [ -z "$PATH_SECRET" ]; then
+                PATH_SECRET="$(openssl rand -hex 16)"
+                echo "  generated a new webhook path secret"
+              else
+                echo "  kept the existing webhook path secret"
+              fi
+
+              set_kv OPS_WEBHOOK_SECRET_TOKEN "$SECRET_TOKEN"
+              set_kv OPS_WEBHOOK_PATH_SECRET  "$PATH_SECRET"
+              set_kv OPS_WEBHOOK_PUBLIC_URL   "$PUBLIC_URL"
+              set_kv OPS_WEBHOOK_HOST         "0.0.0.0"
+              set_kv OPS_WEBHOOK_PORT         "20129"
+            fi
+
+            set_kv OPS_TELEGRAM_MODE "$MODE"
+
+            # The alert defaults shipped in ops-bot.env.example were below the
+            # real build time, so every healthy deploy raised a delay warning.
+            # This file predates that fix and a deploy never rewrites it.
+            set_kv OPS_ALERT_ACTIONS_DELAY_WARNING_SECONDS  "1800"
+            set_kv OPS_ALERT_ACTIONS_DELAY_CRITICAL_SECONDS "3600"
+            set_kv OPS_ALERT_INTERVAL_SECONDS               "60"
+            set_kv OPS_ALERT_DEBOUNCE_CONSECUTIVE           "5"
+
+            # Ownership and mode must survive our edits: the file holds the bot
+            # token and the PIN hash, and the service reads it as its group.
+            sudo chown root:omniroute-ops "$ENV_FILE"
+            sudo chmod 0640 "$ENV_FILE"
+
+            if [ "$MODE" = "webhook" ]; then
+              # Caddy is containerised, so the listener cannot bind loopback.
+              # Scope the opening to the RFC1918 range docker allocates bridges
+              # from; default-deny still covers everything else.
+              if command -v ufw >/dev/null 2>&1 && sudo ufw status | grep -q "Status: active"; then
+                sudo ufw allow from 172.16.0.0/12 to any port 20129 proto tcp >/dev/null
+                echo "  ufw allows 172.16.0.0/12 -> 20129"
+              else
+                echo "  NOTE: ufw is not active; ensure port 20129 is not reachable from the internet"
+              fi
+
+              # extra_hosts lands on the container only when compose recreates
+              # it. `up -d` compares the config hash, so this is a no-op once
+              # the current definition is already applied. --env-file must match
+              # what deploy.sh uses, or compose resolves BLUE_IMAGE/GREEN_IMAGE
+              # to empty and refuses the file.
+              if sudo test -s /opt/omniroute/.deploy.env; then
+                sudo docker compose --env-file /opt/omniroute/.deploy.env \
+                  -f /opt/omniroute/compose.yml up -d caddy
+              else
+                echo "  NOTE: /opt/omniroute/.deploy.env is missing; skipping the Caddy refresh."
+                echo "        Run a deploy first, or Caddy will not have the host-gateway mapping."
+              fi
+            fi
+
+            sudo systemctl daemon-reload
+            sudo systemctl restart omniroute-ops-bot
+            sleep 4
+            systemctl is-active omniroute-ops-bot
+
+            echo "--- last 20 journal lines ---"
+            sudo journalctl -u omniroute-ops-bot -n 20 --no-pager \
+              | sed -E 's#(/tg-ops/)[A-Za-z0-9_-]+#\1[REDACTED]#g'
+
+            if [ "$MODE" = "webhook" ]; then
+              echo "--- Telegram getWebhookInfo ---"
+              TOKEN="$(read_kv OPS_TELEGRAM_BOT_TOKEN)"
+              # Two redactions: the bot token could appear in an error string,
+              # and the webhook URL contains the path secret verbatim.
+              curl -s --max-time 15 "https://api.telegram.org/bot${TOKEN}/getWebhookInfo" \
+                | sed -E 's#(/tg-ops/)[A-Za-z0-9_-]+#\1[REDACTED]#g' \
+                | sed -E 's#[0-9]{6,14}:[A-Za-z0-9_-]{30,50}#[REDACTED_TOKEN]#g'
+              echo
+            fi
+          REMOTE
+
+      - name: Summarise
+        if: always()
+        env:
+          MODE: ${{ inputs.mode }}
+        run: |
+          {
+            echo "### Ops bot configured"
+            echo
+            echo "- Mode: **$MODE**"
+            echo "- Secrets were generated on the VPS and never left it."
+            echo "- Re-running keeps existing secrets unless \`rotate_secrets\` is set."
+          } >> "$GITHUB_STEP_SUMMARY"
