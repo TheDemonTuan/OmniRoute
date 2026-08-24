@@ -38,6 +38,29 @@ permissions:
   contents: read
 
 jobs:
+  # The ops bot is not part of the container image — step 2.3 copies it straight
+  # onto the VPS — so nothing else in this pipeline would ever have exercised it.
+  # Runs alongside the build, and gates only the deploy: a bot regression must
+  # not reach the box, but it also should not hold back an application hotfix
+  # any longer than the ~30s this takes.
+  ops-bot-tests:
+    name: 0 · Test Telegram Ops Bot
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: 0.1 Checkout source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: 0.2 Run the ops bot unit suite
+        # Standard library unittest, no dependencies to install. `-t .` keeps the
+        # repo root on sys.path so `scripts.ops.telegram_ops_bot` resolves.
+        run: python3 -m unittest discover -s tests/unit/ops -t . -v
+
   build:
     name: 1 · Build image → GHCR
     # Must match the VPS architecture. A native arm64 runner builds in minutes;
@@ -155,7 +178,7 @@ jobs:
 
   deploy:
     name: 2 · Deploy to VPS
-    needs: build
+    needs: [build, ops-bot-tests]
     if: ${{ !inputs.skip_deploy }}
     runs-on: ubuntu-latest
 

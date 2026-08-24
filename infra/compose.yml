@@ -139,6 +139,12 @@ services:
     image: caddy:2-alpine
     restart: unless-stopped
 
+    # The Telegram Ops Bot webhook listener is a systemd service on the host, not
+    # a container, because it has to stay reachable while this stack restarts.
+    # host-gateway is how a bridged container reaches back to the host.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
     expose:
       - "8080"
 

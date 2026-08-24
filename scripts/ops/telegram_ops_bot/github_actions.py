@@ -14,6 +14,7 @@ import uuid
 from typing import Any, Dict, List, Optional, Set, Union
 
 from .github import (
+    NOT_MODIFIED,
     GitHubClient,
     GitHubError,
     redact_sensitive,
@@ -63,6 +64,12 @@ class GitHubActionsManager:
         self.owner = owner
         self.repo = repo
         self.allowed_workflows = set(allowed_workflows or DEFAULT_ALLOWED_WORKFLOWS)
+        # ETag + last payload per distinct run listing. The alert loop asks for
+        # the same two listings every cycle; with If-None-Match an unchanged
+        # listing comes back as 304, which GitHub does not bill against the
+        # installation rate limit.
+        self._runs_etags: Dict[str, str] = {}
+        self._runs_cache: Dict[str, Dict[str, Any]] = {}
 
     def validate_workflow(self, workflow_id: Union[str, int]) -> str:
         """Validate that a workflow is in the allowlist.
@@ -103,7 +110,27 @@ class GitHubActionsManager:
         if event:
             params["event"] = event
 
-        return self.client.get(path, params=params)
+        cache_key = "|".join(
+            [
+                wf_name,
+                branch or "",
+                status or "",
+                event or "",
+                str(params["per_page"]),
+                str(params["page"]),
+            ]
+        )
+        response = self.client.get(path, params=params, etag=self._runs_etags.get(cache_key))
+
+        if response is NOT_MODIFIED:
+            return self._runs_cache.get(cache_key, {"total_count": 0, "workflow_runs": []})
+
+        if isinstance(response, dict):
+            new_etag = getattr(self.client, "last_etag", None)
+            if isinstance(new_etag, str) and new_etag:
+                self._runs_etags[cache_key] = new_etag
+            self._runs_cache[cache_key] = response
+        return response
 
     def get_run(self, run_id: int) -> Dict[str, Any]:
         """Get details for a specific workflow run."""

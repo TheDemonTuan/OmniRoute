@@ -1,13 +1,15 @@
-"""Main service orchestrator and long-polling runner for Telegram Ops Bot.
+"""Main service orchestrator and runner for Telegram Ops Bot.
 
-Handles lifecycle management, signal traps, update fetching, and error recovery.
+Handles lifecycle management, signal traps, update intake in either webhook or
+long-polling mode, and error recovery.
 """
 
 import logging
 import signal
 import sys
+import threading
 import time
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 
 from .alerts import AlertManager, StateManagerAlertPersistenceAdapter
 from .commands import CommandDispatcher
@@ -19,17 +21,21 @@ from .upstream import UpstreamManager
 from .security import redact_sensitive
 from .state import StateManager
 from .telegram import TelegramClient, TelegramError, TelegramUnauthorizedError
+from .webhook import WebhookServer
 
 
 logger = logging.getLogger("telegram_ops_bot")
 
 
 class TelegramOpsBot:
-    """Core daemon managing the long-polling lifecycle."""
+    """Core daemon managing the update intake lifecycle."""
 
     def __init__(self, config: BotConfig) -> None:
         self.config = config
         self._running = False
+        self._stop_event = threading.Event()
+        self._alert_thread: Optional[threading.Thread] = None
+        self._webhook: Optional[WebhookServer] = None
 
         self.state = StateManager(db_path=config.db_path)
         self.telegram = TelegramClient(
@@ -84,14 +90,16 @@ class TelegramOpsBot:
             default_cooldown_seconds=config.alert_cooldown_seconds,
             default_debounce_consecutive=config.alert_debounce_consecutive,
         )
-        self._next_alert_eval = 0.0
+
+    # --- Alerting ---
 
     def _evaluate_alerts(self) -> None:
         """Evaluate local resource alerts and send only transitions/recoveries."""
-        now = time.time()
-        if now < self._next_alert_eval:
+        chat_id = self.config.owner_chat_id
+        if chat_id is None:
+            # Nowhere to deliver to. Bail before spawning opsctl and calling the
+            # GitHub API, whose results would only be discarded.
             return
-        self._next_alert_eval = now + self.config.alert_eval_interval_seconds
         try:
             host = self.metrics.get_host_metrics()
             events = [
@@ -120,9 +128,6 @@ class TelegramOpsBot:
                             events.append(self.alerts.evaluate_workflow_delay(workflow, duration, run_id))
                         except (TypeError, ValueError):
                             pass
-            chat_id = self.config.owner_chat_id
-            if chat_id is None:
-                return
             for event in events:
                 if event is None:
                     continue
@@ -135,18 +140,42 @@ class TelegramOpsBot:
         except Exception as error:
             logger.warning("Alert evaluation failed: %s", redact_sensitive(str(error)))
 
-    def start(self) -> None:
-        """Start the long-polling event loop."""
-        errors = self.config.validate()
-        if errors:
-            for err in errors:
-                logger.error("Configuration error: %s", err)
-            raise ValueError(f"Invalid configuration: {'; '.join(errors)}")
+    def _alert_loop(self) -> None:
+        """Run alert evaluation on its own cadence.
 
+        This used to sit inline ahead of getUpdates, which meant every command
+        waited behind an opsctl spawn (it samples /proc/stat across a 0.1s
+        sleep) plus two GitHub API round trips. Alerting is periodic background
+        work; it has no business delaying an operator.
+        """
+        interval = self.config.alert_eval_interval_seconds
+        while not self._stop_event.wait(interval):
+            self._evaluate_alerts()
+
+    def _start_alert_thread(self) -> None:
+        if self.config.owner_chat_id is None:
+            logger.info("No owner chat configured; alerting is disabled")
+            return
+        self._alert_thread = threading.Thread(
+            target=self._alert_loop,
+            name="ops-bot-alerts",
+            daemon=True,
+        )
+        self._alert_thread.start()
+
+    # --- Update intake ---
+
+    def _dispatch_update(self, update: Dict[str, Any]) -> None:
+        """Route one Telegram update to the command dispatcher."""
+        if "message" in update:
+            self.dispatcher.dispatch_message(update["message"])
+        elif "callback_query" in update:
+            self.dispatcher.dispatch_callback_query(update["callback_query"])
+
+    def _verify_credentials(self) -> None:
         logger.info("Verifying Telegram bot credentials...")
         try:
             bot_info = self.telegram.get_me()
-            self.telegram.delete_webhook(drop_pending_updates=False)
             logger.info(
                 "Connected to Telegram API successfully as @%s (id=%s)",
                 bot_info.get("username", "unknown"),
@@ -156,15 +185,46 @@ class TelegramOpsBot:
             logger.error("Authentication failed with Telegram API: %s", e)
             raise
         except TelegramError as e:
-            logger.warning("Could not reach Telegram during initial probe: %s. Continuing loop...", e)
+            logger.warning("Could not reach Telegram during initial probe: %s. Continuing...", e)
 
-        self._running = True
+    def _run_webhook(self) -> None:
+        """Register the webhook with Telegram and serve until stopped."""
+        self._webhook = WebhookServer(
+            dispatch=self._dispatch_update,
+            state=self.state,
+            path=self.config.webhook_path,
+            secret_token=self.config.webhook_secret_token or "",
+            host=self.config.webhook_host,
+            port=self.config.webhook_port,
+            max_body_bytes=self.config.webhook_max_body_bytes,
+        )
+        # Bind before telling Telegram where to deliver: if the port is taken we
+        # fail here rather than after pointing Telegram at a dead endpoint.
+        self._webhook.start()
+
+        self.telegram.set_webhook(
+            url=self.config.webhook_url,
+            secret_token=self.config.webhook_secret_token or "",
+            allowed_updates=["message", "callback_query"],
+        )
+        logger.info("Webhook registered with Telegram at %s", self.config.webhook_url)
+
+        try:
+            self._webhook.serve_forever()
+        finally:
+            self._webhook.stop()
+            self._webhook = None
+        logger.info("Telegram Ops Bot stopped cleanly.")
+
+    def _run_polling(self) -> None:
+        """Fallback intake: long polling, needing only outbound connectivity."""
+        self.telegram.delete_webhook(drop_pending_updates=False)
+
         offset = self.state.get_offset()
         logger.info("Starting Telegram long polling from offset %d...", offset)
 
         while self._running:
             try:
-                self._evaluate_alerts()
                 updates = self.telegram.get_updates(
                     offset=offset,
                     timeout=self.config.poll_timeout,
@@ -177,10 +237,7 @@ class TelegramOpsBot:
                         self.state.set_offset(offset)
 
                     try:
-                        if "message" in update:
-                            self.dispatcher.dispatch_message(update["message"])
-                        elif "callback_query" in update:
-                            self.dispatcher.dispatch_callback_query(update["callback_query"])
+                        self._dispatch_update(update)
                     except Exception as handler_err:
                         logger.error("Error processing update %s: %s", update_id, handler_err, exc_info=True)
 
@@ -200,10 +257,35 @@ class TelegramOpsBot:
 
         logger.info("Telegram Ops Bot stopped cleanly.")
 
+    def start(self) -> None:
+        """Validate, connect, and serve in the configured intake mode."""
+        errors = self.config.validate()
+        if errors:
+            for err in errors:
+                logger.error("Configuration error: %s", err)
+            raise ValueError(f"Invalid configuration: {'; '.join(errors)}")
+
+        self._verify_credentials()
+
+        self._running = True
+        self._stop_event.clear()
+        self._start_alert_thread()
+
+        if self.config.telegram_mode == "webhook":
+            self._run_webhook()
+        else:
+            self._run_polling()
+
     def stop(self) -> None:
-        """Signal the polling loop to terminate gracefully."""
+        """Signal every loop to terminate gracefully."""
         logger.info("Stopping Telegram Ops Bot...")
         self._running = False
+        self._stop_event.set()
+        webhook = self._webhook
+        if webhook is not None:
+            # serve_forever() blocks the main thread; shutdown() is the only
+            # documented way to release it and is safe to call from a handler.
+            threading.Thread(target=webhook.stop, daemon=True).start()
 
 
 def main(config_override: Optional[BotConfig] = None) -> int:
@@ -224,7 +306,7 @@ def main(config_override: Optional[BotConfig] = None) -> int:
             logger.error("Configuration validation failed: %s", err)
         return 1
     if config_override is None and "--check-config" in sys.argv[1:]:
-        logger.info("Telegram Ops Bot configuration is valid")
+        logger.info("Telegram Ops Bot configuration is valid (mode=%s)", config.telegram_mode)
         return 0
 
     bot = TelegramOpsBot(config)

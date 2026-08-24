@@ -37,6 +37,16 @@
 		@internal path /healthz
 		respond @internal 404
 
+		# Telegram webhook deliveries for the ops bot. The bot is a host systemd
+		# service, not a container, so it survives a restart of this stack —
+		# host.docker.internal is the extra_hosts mapping in compose.yml.
+		#
+		# Only the prefix is matched here: the secret path segment and the
+		# X-Telegram-Bot-Api-Secret-Token header are both validated by the bot,
+		# so no secret has to live in this file.
+		@opsbot path /tg-ops/*
+		reverse_proxy @opsbot host.docker.internal:20129
+
 		import /etc/caddy/active.caddy
 	}
 }

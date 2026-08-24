@@ -114,35 +114,6 @@ class AlertPersistenceAdapter(ABC):
         pass
 
 
-class StateManagerAlertPersistenceAdapter(AlertPersistenceAdapter):
-    """Persist AlertManager state through the bot's SQLite StateManager."""
-
-    def __init__(self, state_manager: Any) -> None:
-        self.state_manager = state_manager
-
-    def get_state(self, key: str) -> Optional[Dict[str, Any]]:
-        row = self.state_manager.get_alert_state(key)
-        if not row:
-            return None
-        metadata = row.get("metadata")
-        return metadata if isinstance(metadata, dict) else None
-
-    def set_state(self, key: str, state: Dict[str, Any]) -> None:
-        active = str(state.get("active_severity") or "clear")
-        self.state_manager.set_alert_state(key, active, metadata=state)
-
-    def delete_state(self, key: str) -> None:
-        self.state_manager.set_alert_state(key, "clear", metadata={})
-
-    def list_active_alerts(self) -> Dict[str, Dict[str, Any]]:
-        # StateManager intentionally exposes keyed reads only; AlertManager does not
-        # require a full scan for periodic evaluation.
-        return {}
-
-    def clear_all(self) -> None:
-        return None
-
-
 class InMemoryAlertPersistenceAdapter(AlertPersistenceAdapter):
     """In-memory alert state storage (for unit tests and ephemeral processes)."""
 

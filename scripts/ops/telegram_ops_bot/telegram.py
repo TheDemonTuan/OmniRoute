@@ -6,6 +6,7 @@ callback query handling, and inline keyboard generation.
 
 import json
 import logging
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -119,19 +120,28 @@ class TelegramClient:
         self.retry_backoff = retry_backoff
         self.rate_limit_per_minute = rate_limit_per_minute
         self._last_request_times: List[float] = []
+        self._rate_lock = threading.Lock()
 
     def _wait_for_rate_limit(self) -> None:
-        """Enforce basic sliding-window rate limiting."""
+        """Enforce basic sliding-window rate limiting.
+
+        Alerting runs on its own thread and can send while the webhook worker is
+        also sending, so the window bookkeeping is locked. The sleep itself is
+        left outside the lock: holding it there would serialise senders for the
+        full backoff instead of just the accounting.
+        """
         if self.rate_limit_per_minute <= 0:
             return
-        now = time.time()
-        # Discard records older than 60s
-        self._last_request_times = [t for t in self._last_request_times if now - t < 60.0]
-        if len(self._last_request_times) >= self.rate_limit_per_minute:
-            sleep_duration = 60.0 - (now - self._last_request_times[0]) + 0.1
-            if sleep_duration > 0:
-                time.sleep(min(sleep_duration, 5.0))
-        self._last_request_times.append(time.time())
+        with self._rate_lock:
+            now = time.time()
+            # Discard records older than 60s
+            self._last_request_times = [t for t in self._last_request_times if now - t < 60.0]
+            sleep_duration = 0.0
+            if len(self._last_request_times) >= self.rate_limit_per_minute:
+                sleep_duration = 60.0 - (now - self._last_request_times[0]) + 0.1
+            self._last_request_times.append(time.time())
+        if sleep_duration > 0:
+            time.sleep(min(sleep_duration, 5.0))
 
     def _request(
         self,
@@ -241,6 +251,39 @@ class TelegramClient:
             timeout=10.0,
         )
         return bool(result)
+
+    def set_webhook(
+        self,
+        url: str,
+        secret_token: str,
+        allowed_updates: Optional[List[str]] = None,
+        max_connections: int = 10,
+        drop_pending_updates: bool = False,
+    ) -> bool:
+        """Register the public webhook endpoint Telegram should POST updates to.
+
+        `secret_token` is echoed back on every delivery in the
+        X-Telegram-Bot-Api-Secret-Token header and is the only thing that proves
+        a request really came from Telegram, so it is required here rather than
+        optional.
+        """
+        result = self._request(
+            "setWebhook",
+            payload={
+                "url": url,
+                "secret_token": secret_token,
+                "allowed_updates": allowed_updates or ["message", "callback_query"],
+                "max_connections": max_connections,
+                "drop_pending_updates": drop_pending_updates,
+            },
+            timeout=15.0,
+        )
+        return bool(result)
+
+    def get_webhook_info(self) -> Dict[str, Any]:
+        """Return Telegram's view of the current webhook (url, pending count, last error)."""
+        result = self._request("getWebhookInfo", timeout=10.0)
+        return result if isinstance(result, dict) else {}
 
     def get_updates(
         self,

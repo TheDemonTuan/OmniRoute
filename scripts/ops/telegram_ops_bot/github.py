@@ -73,6 +73,24 @@ def parse_iso8601_timestamp(iso_str: str) -> float:
     return dt.timestamp()
 
 
+class _NotModified:
+    """Marker returned instead of a body when GitHub answers 304 Not Modified.
+
+    A conditional request that hits an unchanged resource costs no GitHub rate
+    limit quota at all, which is the whole point of sending If-None-Match on
+    the polls the alert loop makes every cycle.
+    """
+
+    def __repr__(self) -> str:
+        return "NOT_MODIFIED"
+
+    def __bool__(self) -> bool:
+        return False
+
+
+NOT_MODIFIED = _NotModified()
+
+
 class GitHubError(Exception):
     """Base exception for GitHub API errors with automatic redaction."""
 
@@ -271,6 +289,7 @@ class GitHubClient:
         self.token_buffer_seconds = token_buffer_seconds
         self._cached_token: Optional[CachedInstallationToken] = None
         self._last_rate_limit: Optional[RateLimitInfo] = None
+        self._last_etag: Optional[str] = None
         self._opener = opener or urllib.request.urlopen
 
     def get_rate_limit_info(self) -> Optional[RateLimitInfo]:
@@ -347,6 +366,7 @@ class GitHubClient:
         json_data: Optional[Any] = None,
         headers: Optional[Dict[str, str]] = None,
         raw_response: bool = False,
+        etag: Optional[str] = None,
     ) -> Any:
         """Execute an HTTP request against the GitHub REST API.
 
@@ -357,9 +377,12 @@ class GitHubClient:
             json_data: Optional JSON serializable body payload.
             headers: Optional additional request headers.
             raw_response: If True, returns decoded raw text/bytes instead of parsed JSON.
+            etag: If given, sent as If-None-Match; an unchanged resource then
+                returns the NOT_MODIFIED sentinel instead of a body.
 
         Returns:
-            Parsed JSON dict/list, raw data, or empty dict for 204 No Content.
+            Parsed JSON dict/list, raw data, empty dict for 204 No Content, or
+            NOT_MODIFIED when a conditional request matched.
         """
         method = method.upper()
         if path.startswith("http://") or path.startswith("https://"):
@@ -390,6 +413,9 @@ class GitHubClient:
             body_bytes = json.dumps(json_data).encode("utf-8")
             req_headers["Content-Type"] = "application/json"
 
+        if etag:
+            req_headers["If-None-Match"] = etag
+
         if headers:
             req_headers.update(headers)
 
@@ -399,6 +425,9 @@ class GitHubClient:
             with self._opener(req, timeout=self.timeout) as resp:
                 resp_headers = dict(resp.headers.items()) if hasattr(resp, "headers") else {}
                 self._last_rate_limit = RateLimitInfo.from_headers(resp_headers)
+                self._last_etag = next(
+                    (v for k, v in resp_headers.items() if k.lower() == "etag"), None
+                )
 
                 status_code = getattr(resp, "status", getattr(resp, "code", 200))
                 if status_code == 204:
@@ -419,6 +448,11 @@ class GitHubClient:
         except urllib.error.HTTPError as e:
             resp_headers = dict(e.headers.items()) if hasattr(e, "headers") else {}
             self._last_rate_limit = RateLimitInfo.from_headers(resp_headers)
+
+            if e.code == 304:
+                # Conditional hit: the caller still holds a valid cached copy,
+                # and GitHub charged us nothing for asking.
+                return NOT_MODIFIED
 
             err_body = e.read().decode("utf-8", errors="replace")
             parsed_err: Optional[Any] = None
@@ -496,9 +530,20 @@ class GitHubClient:
         except Exception as e:
             raise GitHubError(f"Unexpected error communicating with GitHub: {e}")
 
-    def get(self, path: str, params: Optional[Dict[str, Any]] = None, headers: Optional[Dict[str, str]] = None) -> Any:
+    def get(
+        self,
+        path: str,
+        params: Optional[Dict[str, Any]] = None,
+        headers: Optional[Dict[str, str]] = None,
+        etag: Optional[str] = None,
+    ) -> Any:
         """Execute a GET request."""
-        return self.request("GET", path, params=params, headers=headers)
+        return self.request("GET", path, params=params, headers=headers, etag=etag)
+
+    @property
+    def last_etag(self) -> Optional[str]:
+        """ETag of the most recent successful response, for conditional re-reads."""
+        return self._last_etag
 
     def post(
         self,

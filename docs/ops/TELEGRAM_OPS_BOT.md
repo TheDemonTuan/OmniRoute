@@ -84,8 +84,49 @@ sudo systemctl status omniroute-ops-bot
 sudo journalctl -u omniroute-ops-bot -n 100 --no-pager
 ```
 
-The service removes any webhook for its dedicated token and uses Telegram long polling. It does
-not require a new Caddy route, Cloudflare hostname, firewall rule, or inbound port.
+## Update intake: webhook or polling
+
+`OPS_TELEGRAM_MODE` selects how updates arrive. Both modes share the same command handling,
+authorization, and alerting.
+
+**`webhook` (default in the example env).** Telegram POSTs each update to
+`https://<host>/tg-ops/<OPS_WEBHOOK_PATH_SECRET>`, which Cloudflare Tunnel and Caddy forward to the
+bot's listener on the host. Two independent checks guard it: the path segment is a secret, and
+`X-Telegram-Bot-Api-Secret-Token` must match `OPS_WEBHOOK_SECRET_TOKEN` under a constant-time
+compare. Anything else gets 404 or 401 with no body logged, because an update body can contain a
+PIN.
+
+Caddy runs in a container, so it cannot reach `127.0.0.1` on the host. `compose.yml` maps
+`host.docker.internal:host-gateway` for the Caddy service and the listener binds
+`OPS_WEBHOOK_HOST` (use `0.0.0.0`); `bootstrap-vps.sh` opens the port to `172.16.0.0/12` only, so
+it stays closed to the internet under the default-deny policy.
+
+Every delivery is acknowledged with 200 as soon as it is queued, and handled on a worker thread.
+This is not an optimization: `rollback` is allowed 420 seconds, and answering Telegram only after
+it finished would exceed the delivery timeout and earn a redelivery of the same `update_id` — a
+second, unrequested run of a destructive action. The persisted offset in `bot_state` rejects any
+`update_id` already seen.
+
+**`polling`.** The bot deletes any webhook for its token and long-polls instead, needing only
+outbound connectivity — no Caddy route, Cloudflare hostname, firewall rule, or inbound port.
+
+**Which to run.** Webhook mode depends on cloudflared and Caddy, which are exactly the services
+this bot exists to restart. If inbound breaks, outgoing alerts still arrive, but commands do not.
+Recover by switching modes over SSH:
+
+```bash
+sudo sed -i 's/^OPS_TELEGRAM_MODE=.*/OPS_TELEGRAM_MODE=polling/' /etc/omniroute/ops-bot.env
+sudo systemctl restart omniroute-ops-bot
+```
+
+Verify a webhook registration with Telegram's own view of it:
+
+```bash
+curl -s "https://api.telegram.org/bot<TOKEN>/getWebhookInfo"
+```
+
+`url` should be the configured endpoint, `pending_update_count` should settle at 0, and
+`last_error_message` should be absent.
 
 ## Commands
 
@@ -105,6 +146,19 @@ The service polls local resources and GitHub Actions, persists state, and sends 
 alerts. Defaults include CPU/load/RAM pressure sustained for five minutes, swap use, disk at 80%
 and 90%, container exit/unhealthy/restart, Actions queue delay, Actions excessive duration,
 failure, and recovery. Identical alerts use a 30-minute cooldown to avoid message storms.
+
+Evaluation runs on its own thread rather than in front of the update loop, so an operator command
+never waits behind an `opsctl` spawn and two GitHub API calls. Those listing calls are conditional
+(`If-None-Match`); an unchanged listing returns 304, which GitHub does not bill against the
+installation rate limit.
+
+Set `OPS_ALERT_ACTIONS_DELAY_*` above the real build time, not below it. A production build takes
+5-17 minutes, so a 300-second warning threshold fires on every healthy deploy and trains you to
+ignore the channel. The shipped defaults are 1800s warning / 3600s critical.
+
+Tune the cost of alerting with `OPS_ALERT_INTERVAL_SECONDS`: each evaluation is one `sudo opsctl
+system` spawn plus two GitHub calls. `OPS_ALERT_DEBOUNCE_CONSECUTIVE` multiplies it — interval 60s
+with debounce 5 means a resource alert fires after five sustained minutes.
 
 ## Rotation and emergency shutdown
 

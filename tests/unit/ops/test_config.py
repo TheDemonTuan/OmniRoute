@@ -168,5 +168,92 @@ class TestConfig(unittest.TestCase):
         self.assertTrue(any("poll_timeout must be between 1 and 120" in e for e in errors4))
 
 
+class TestWebhookConfig(unittest.TestCase):
+    """Webhook mode adds its own required settings; polling must stay unaffected."""
+
+    def _cfg(self, **overrides) -> BotConfig:
+        base = dict(
+            bot_token="123456789:ABCdefGHIjklMNOpqrSTUvwxYZ_1234",
+            allowed_user_ids={123},
+            pin_hash="hash",
+            pin_salt="salt",
+        )
+        base.update(overrides)
+        return BotConfig(**base)
+
+    def test_polling_is_the_default_and_needs_no_webhook_settings(self) -> None:
+        cfg = self._cfg()
+        self.assertEqual(cfg.telegram_mode, "polling")
+        self.assertEqual(cfg.validate(), [])
+
+    def test_unknown_mode_is_rejected(self) -> None:
+        errors = self._cfg(telegram_mode="carrier-pigeon").validate()
+        self.assertTrue(any("telegram_mode must be" in e for e in errors))
+
+    def test_webhook_mode_requires_its_secrets(self) -> None:
+        errors = self._cfg(telegram_mode="webhook").validate()
+        self.assertTrue(any("webhook_secret_token is required" in e for e in errors))
+        self.assertTrue(any("webhook_public_url is required" in e for e in errors))
+        self.assertTrue(any("webhook_path_secret is required" in e for e in errors))
+
+    def test_webhook_mode_rejects_a_plaintext_public_url(self) -> None:
+        errors = self._cfg(
+            telegram_mode="webhook",
+            webhook_secret_token="s" * 32,
+            webhook_path_secret="p" * 16,
+            webhook_public_url="http://example.com",
+        ).validate()
+        self.assertTrue(any("must be an https:// URL" in e for e in errors))
+
+    def test_webhook_mode_rejects_a_short_secret_token(self) -> None:
+        errors = self._cfg(
+            telegram_mode="webhook",
+            webhook_secret_token="tooshort",
+            webhook_path_secret="p" * 16,
+            webhook_public_url="https://example.com",
+        ).validate()
+        self.assertTrue(any("at least 32 characters" in e for e in errors))
+
+    def test_webhook_mode_rejects_a_token_telegram_would_not_send(self) -> None:
+        errors = self._cfg(
+            telegram_mode="webhook",
+            webhook_secret_token="!" * 40,
+            webhook_path_secret="p" * 16,
+            webhook_public_url="https://example.com",
+        ).validate()
+        self.assertTrue(any("allowed charset" in e for e in errors))
+
+    def test_a_complete_webhook_config_validates_and_builds_its_url(self) -> None:
+        cfg = self._cfg(
+            telegram_mode="webhook",
+            webhook_secret_token="s" * 32,
+            webhook_path_secret="abcdef0123456789",
+            webhook_public_url="https://example.com/",
+        )
+        self.assertEqual(cfg.validate(), [])
+        self.assertEqual(cfg.webhook_path, "/tg-ops/abcdef0123456789")
+        self.assertEqual(cfg.webhook_url, "https://example.com/tg-ops/abcdef0123456789")
+
+    def test_webhook_settings_are_read_from_the_environment(self) -> None:
+        env = {
+            "OPS_TELEGRAM_BOT_TOKEN": "123456789:ABCdefGHIjklMNOpqrSTUvwxYZ_1234",
+            "OPS_TELEGRAM_OWNER_USER_ID": "123",
+            "OPS_PIN_SCRYPT_HASH_B64": "hash",
+            "OPS_PIN_SALT_B64": "salt",
+            "OPS_TELEGRAM_MODE": "webhook",
+            "OPS_WEBHOOK_PUBLIC_URL": "https://example.com",
+            "OPS_WEBHOOK_SECRET_TOKEN": "s" * 32,
+            "OPS_WEBHOOK_PATH_SECRET": "abcdef0123456789",
+            "OPS_WEBHOOK_HOST": "0.0.0.0",
+            "OPS_WEBHOOK_PORT": "20129",
+        }
+        with patch.dict(os.environ, env, clear=True):
+            cfg = load_config_from_env()
+        self.assertEqual(cfg.telegram_mode, "webhook")
+        self.assertEqual(cfg.webhook_host, "0.0.0.0")
+        self.assertEqual(cfg.webhook_port, 20129)
+        self.assertEqual(cfg.webhook_url, "https://example.com/tg-ops/abcdef0123456789")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -138,6 +138,11 @@ if command -v ufw >/dev/null 2>&1; then
     ufw --force default deny incoming
     ufw --force default allow outgoing
     ufw allow 22/tcp
+    # Webhook mode only: Caddy runs in a container and reaches the host-side ops
+    # bot over the docker bridge, so the listener cannot bind loopback. Scope the
+    # opening to RFC1918 space docker allocates its bridges from — the port stays
+    # closed to the internet, which default-deny already handles for everything else.
+    ufw allow from 172.16.0.0/12 to any port "${OPS_WEBHOOK_PORT:-20129}" proto tcp
     ufw --force enable
     ufw status verbose
 elif command -v firewall-cmd >/dev/null 2>&1 && firewall-cmd --state >/dev/null 2>&1; then

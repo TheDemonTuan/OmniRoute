@@ -35,6 +35,13 @@ class BotConfig:
     max_pin_attempts: int = 3
     lockout_duration_seconds: int = 900
     require_private_chat: bool = True
+    telegram_mode: str = "polling"
+    webhook_host: str = "127.0.0.1"
+    webhook_port: int = 20129
+    webhook_public_url: Optional[str] = None
+    webhook_secret_token: Optional[str] = None
+    webhook_path_secret: Optional[str] = None
+    webhook_max_body_bytes: int = 1_048_576
     github_token: Optional[str] = None
     github_repo: Optional[str] = None
     github_upstream_repo: str = "diegosouzapw/OmniRoute"
@@ -59,6 +66,16 @@ class BotConfig:
     alert_sync_lag_critical_commits: int = 15
     alert_actions_delay_warning_seconds: float = 1800.0
     alert_actions_delay_critical_seconds: float = 3600.0
+
+    @property
+    def webhook_path(self) -> str:
+        """Loopback path Caddy proxies to. The secret segment keeps it unguessable."""
+        return f"/tg-ops/{self.webhook_path_secret or ''}"
+
+    @property
+    def webhook_url(self) -> str:
+        """Public URL registered with Telegram through setWebhook."""
+        return f"{(self.webhook_public_url or '').rstrip('/')}{self.webhook_path}"
 
     def get_resource_thresholds(self) -> ResourceThresholds:
         """Construct ResourceThresholds from current config values."""
@@ -119,6 +136,29 @@ class BotConfig:
 
         if self.poll_timeout < 1 or self.poll_timeout > 120:
             errors.append(f"poll_timeout must be between 1 and 120 seconds, got {self.poll_timeout}")
+
+        if self.telegram_mode not in ("polling", "webhook"):
+            errors.append(f"telegram_mode must be 'polling' or 'webhook', got '{self.telegram_mode}'")
+
+        if self.telegram_mode == "webhook":
+            # Telegram authenticates itself to us with this header and nothing
+            # else, so a short or missing token means anyone who guesses the
+            # path can drive the bot. Telegram allows 1-256 chars from
+            # [A-Za-z0-9_-]; we require enough of them to be unguessable.
+            if not self.webhook_secret_token or len(self.webhook_secret_token) < 32:
+                errors.append("webhook_secret_token is required in webhook mode and must be at least 32 characters")
+            elif not re.fullmatch(r"[A-Za-z0-9_-]{32,256}", self.webhook_secret_token):
+                errors.append("webhook_secret_token must match Telegram's allowed charset [A-Za-z0-9_-]")
+            if not self.webhook_public_url or not self.webhook_public_url.startswith("https://"):
+                errors.append("webhook_public_url is required in webhook mode and must be an https:// URL")
+            if not self.webhook_path_secret or len(self.webhook_path_secret) < 16:
+                errors.append("webhook_path_secret is required in webhook mode and must be at least 16 characters")
+            elif not re.fullmatch(r"[A-Za-z0-9_-]{16,128}", self.webhook_path_secret):
+                errors.append("webhook_path_secret must match [A-Za-z0-9_-]")
+            if not (1 <= self.webhook_port <= 65535):
+                errors.append(f"webhook_port must be between 1 and 65535, got {self.webhook_port}")
+            if self.webhook_max_body_bytes < 1024:
+                errors.append(f"webhook_max_body_bytes must be at least 1024, got {self.webhook_max_body_bytes}")
 
         if self.nonce_ttl_seconds < 10:
             errors.append(f"nonce_ttl_seconds must be at least 10 seconds, got {self.nonce_ttl_seconds}")
@@ -233,6 +273,14 @@ def load_config_from_env(env: Optional[Mapping[str, str]] = None) -> BotConfig:
     max_retries = int(e.get("TELEGRAM_MAX_RETRIES", e.get("MAX_RETRIES", "3")))
     retry_backoff = float(e.get("TELEGRAM_RETRY_BACKOFF", e.get("RETRY_BACKOFF", "1.5")))
     rate_limit_per_minute = int(e.get("RATE_LIMIT_PER_MINUTE", "30"))
+
+    telegram_mode = e.get("OPS_TELEGRAM_MODE", "polling").strip().lower()
+    webhook_host = e.get("OPS_WEBHOOK_HOST", "127.0.0.1").strip() or "127.0.0.1"
+    webhook_port = int(e.get("OPS_WEBHOOK_PORT", "20129"))
+    webhook_public_url = (e.get("OPS_WEBHOOK_PUBLIC_URL") or "").strip() or None
+    webhook_secret_token = (e.get("OPS_WEBHOOK_SECRET_TOKEN") or "").strip() or None
+    webhook_path_secret = (e.get("OPS_WEBHOOK_PATH_SECRET") or "").strip() or None
+    webhook_max_body_bytes = int(e.get("OPS_WEBHOOK_MAX_BODY_BYTES", "1048576"))
     nonce_ttl_seconds = int(e.get("NONCE_TTL_SECONDS", "300"))
     max_pin_attempts = int(e.get("MAX_PIN_ATTEMPTS", "3"))
     lockout_duration_seconds = int(e.get("LOCKOUT_DURATION_SECONDS", "900"))
@@ -340,6 +388,13 @@ def load_config_from_env(env: Optional[Mapping[str, str]] = None) -> BotConfig:
         max_pin_attempts=max_pin_attempts,
         lockout_duration_seconds=lockout_duration_seconds,
         require_private_chat=require_private_chat,
+        telegram_mode=telegram_mode,
+        webhook_host=webhook_host,
+        webhook_port=webhook_port,
+        webhook_public_url=webhook_public_url,
+        webhook_secret_token=webhook_secret_token,
+        webhook_path_secret=webhook_path_secret,
+        webhook_max_body_bytes=webhook_max_body_bytes,
         github_token=github_token,
         github_repo=github_repo,
         github_upstream_repo=github_upstream_repo,

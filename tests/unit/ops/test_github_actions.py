@@ -4,7 +4,7 @@ import json
 import unittest
 from unittest.mock import MagicMock
 
-from scripts.ops.telegram_ops_bot.github import GitHubClient, GitHubError
+from scripts.ops.telegram_ops_bot.github import NOT_MODIFIED, GitHubClient, GitHubError
 from scripts.ops.telegram_ops_bot.github_actions import (
     GitHubActionsManager,
     WorkflowNotAllowedError,
@@ -67,7 +67,33 @@ class TestGitHubActionsManager(unittest.TestCase):
         self.mock_client.get.assert_called_once_with(
             "/repos/my-fork/OmniRoute/actions/workflows/prod-deploy.yml/runs",
             params={"per_page": 10, "page": 2, "branch": "prod", "status": "completed", "event": "workflow_dispatch"},
+            etag=None,
         )
+
+    def test_list_runs_replays_the_cache_on_a_conditional_hit(self):
+        """A 304 must return the previous payload, not an empty listing.
+
+        The alert loop reads workflow_runs[0] every cycle; handing it {} on a
+        conditional hit would look like "no runs" and silence real alerts.
+        """
+        payload = {"total_count": 1, "workflow_runs": [{"id": 123, "status": "completed"}]}
+        self.mock_client.get.return_value = payload
+        self.mock_client.last_etag = 'W/"abc123"'
+
+        first = self.manager.list_runs(workflow_id="prod-deploy.yml", branch="prod")
+        self.assertEqual(first, payload)
+
+        self.mock_client.get.return_value = NOT_MODIFIED
+        second = self.manager.list_runs(workflow_id="prod-deploy.yml", branch="prod")
+
+        self.assertEqual(second, payload)
+        # The stored ETag must be replayed, otherwise GitHub bills every poll.
+        self.assertEqual(self.mock_client.get.call_args.kwargs["etag"], 'W/"abc123"')
+
+    def test_list_runs_on_a_cold_cache_304_yields_an_empty_listing(self):
+        self.mock_client.get.return_value = NOT_MODIFIED
+        runs = self.manager.list_runs(workflow_id="prod-deploy.yml", branch="prod")
+        self.assertEqual(runs, {"total_count": 0, "workflow_runs": []})
 
     def test_get_run_and_list_jobs(self):
         self.mock_client.get.return_value = {"id": 12345, "status": "completed"}

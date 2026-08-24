@@ -17,6 +17,13 @@ After=network-online.target docker.service
 Wants=network-online.target
 Documentation=https://github.com/diegosouzapw/OmniRoute
 
+# A bad /etc/omniroute/ops-bot.env makes ExecStartPre fail, and Restart=always
+# with RestartSec=5s would then respawn python every 5 seconds forever. Cap it:
+# five failures inside five minutes puts the unit in `failed` so the box stays
+# quiet and `systemctl status` shows the real reason.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
 [Service]
 Type=simple
 User=omniroute-ops
@@ -60,6 +67,21 @@ RestrictRealtime=yes
 LockPersonality=yes
 MemoryDenyWriteExecute=yes
 RestrictNamespaces=yes
+
+# Resource ceilings. The bot idles at roughly 25 MB and a fraction of a percent
+# of a core, so these only ever fire on a runaway loop or a leak.
+# CPUQuota is deliberately not tighter: opsctl runs `docker compose` as a child
+# of this unit, so it shares the cgroup, and a rollback throttled below its
+# 420 s budget in the bot would time out mid-deployment.
+MemoryMax=192M
+CPUQuota=50%
+TasksMax=64
+
+# Telegram and GitHub over TCP, docker/systemd/journald over unix sockets.
+# AF_NETLINK is required as well: glibc's getaddrinfo enumerates interfaces
+# through netlink, so dropping it breaks DNS resolution rather than hardening it.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+ProtectProc=invisible
 
 # Writable paths required for local sqlite database and state
 ReadWritePaths=/var/lib/omniroute-ops /var/log/omniroute-ops
