@@ -332,6 +332,13 @@ log "Preparing Caddy switch $ACTIVE -> $TARGET ..."
 cp "$CADDY_ROUTE" "$CADDY_ROUTE.rollback"
 generate_caddy_route "$TARGET"
 
+# `caddy reload` below picks up Caddyfile edits, but nothing else re-reads the
+# compose service definition — a change to ports, networks or extra_hosts would
+# stay dormant until someone recreated the container by hand. `up -d` compares
+# the config hash and is a no-op when the definition is unchanged, so this only
+# costs an edge blip on the deploys that actually change it.
+dc up -d caddy cloudflared
+
 rollback_caddy() {
     mv "$CADDY_ROUTE.rollback" "$CADDY_ROUTE"
     caddy_reload || log "WARNING: Caddy reload during rollback failed — check 'docker compose logs caddy'"
