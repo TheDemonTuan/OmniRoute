@@ -1,3 +1,7 @@
+---
+title: Telegram Ops Bot
+---
+
 # Telegram Ops Bot
 
 The fork's Telegram Ops Bot is a private, host-level operations service. It is separate from the
