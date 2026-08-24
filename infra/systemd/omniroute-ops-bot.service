@@ -1,0 +1,71 @@
+# ──────────────────────────────────────────────────────────────────────────────
+#  OmniRoute — Telegram Operations Bot Systemd Service Unit
+#
+#  Runs the private, owner-only Telegram operations bot as a dedicated,
+#  unprivileged system user (omniroute-ops) with sandboxing and restricted
+#  sudo capabilities for VPS operations helper commands.
+#
+#  Install:
+#    sudo install -m 0644 infra/systemd/omniroute-ops-bot.service /etc/systemd/system/
+#    sudo systemctl daemon-reload
+#    sudo systemctl enable --now omniroute-ops-bot.service
+# ──────────────────────────────────────────────────────────────────────────────
+
+[Unit]
+Description=OmniRoute Telegram Operations Bot
+After=network-online.target docker.service
+Wants=network-online.target
+Documentation=https://github.com/diegosouzapw/OmniRoute
+
+[Service]
+Type=simple
+User=omniroute-ops
+Group=omniroute-ops
+WorkingDirectory=/opt/omniroute/ops-bot
+
+# Environment configuration
+EnvironmentFile=/etc/omniroute/ops-bot.env
+
+# Execution
+ExecStartPre=/usr/bin/python3 -m current.main --check-config
+ExecStart=/usr/bin/python3 -m current.main
+
+# Lifecycle & Restart policy
+Restart=always
+RestartSec=5s
+TimeoutStopSec=15s
+KillMode=control-group
+
+# Standard logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=omniroute-ops-bot
+
+# State and Runtime directories
+StateDirectory=omniroute-ops
+ConfigurationDirectory=omniroute
+LogsDirectory=omniroute-ops
+
+# Sandboxing & Security Hardening
+# Note: NoNewPrivileges must be 'no' to allow sudo helper execution (omniroute_opsctl)
+NoNewPrivileges=no
+RestrictSUIDSGID=no
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictNamespaces=yes
+
+# Writable paths required for local sqlite database and state
+ReadWritePaths=/var/lib/omniroute-ops /var/log/omniroute-ops
+
+# Network access is required for outbound Telegram API and GitHub integration
+PrivateNetwork=no
+
+[Install]
+WantedBy=multi-user.target

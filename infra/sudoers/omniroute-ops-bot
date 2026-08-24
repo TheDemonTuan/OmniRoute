@@ -1,0 +1,16 @@
+# ──────────────────────────────────────────────────────────────────────────────
+#  OmniRoute — Telegram Operations Bot Sudoers Policy
+#
+#  Allows the unprivileged `omniroute-ops` service user to execute the
+#  strictly allowlisted opsctl helper with root privileges without a password.
+#
+#  Install:
+#    sudo install -m 0440 infra/sudoers/omniroute-ops-bot /etc/sudoers.d/omniroute-ops-bot
+#    sudo visudo -cf /etc/sudoers.d/omniroute-ops-bot
+# ──────────────────────────────────────────────────────────────────────────────
+
+Defaults:omniroute-ops !requiretty
+Defaults:omniroute-ops secure_path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+# The helper validates every subcommand and argument against fixed allowlists.
+omniroute-ops ALL=(root) NOPASSWD: /usr/local/sbin/omniroute-opsctl

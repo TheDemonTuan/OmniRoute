@@ -12,6 +12,8 @@ upstream bị sửa, nên việc merge code mới từ upstream gần như khôn
 > **Dựng hạ tầng lần đầu?** → [SETUP.md](./SETUP.md) — checklist theo thứ tự, có ô tick.
 > **Ngồi vào một máy dev mới?** → [DEV-MACHINE.md](./DEV-MACHINE.md).
 > File này là phần giải thích kiến trúc và tra cứu khi vận hành.
+>
+> Quản trị riêng qua Telegram: xem [`docs/ops/TELEGRAM_OPS_BOT.md`](../docs/ops/TELEGRAM_OPS_BOT.md).
 
 ---
 
@@ -49,10 +51,10 @@ khi muốn tách.
 
 Plan gốc dùng `/health` + `/ready`. OmniRoute có sẵn hai cái tương đương:
 
-| Endpoint | Bản chất | Dùng ở đâu |
-|---|---|---|
-| `/healthz` | Liveness thuần in-memory, **không đụng DB** | Docker HEALTHCHECK + active health check của Caddy |
-| `/api/monitoring/health` | Deep check: SQLite + các subsystem | Cổng readiness trong `deploy.sh` |
+| Endpoint                 | Bản chất                                    | Dùng ở đâu                                         |
+| ------------------------ | ------------------------------------------- | -------------------------------------------------- |
+| `/healthz`               | Liveness thuần in-memory, **không đụng DB** | Docker HEALTHCHECK + active health check của Caddy |
+| `/api/monitoring/health` | Deep check: SQLite + các subsystem          | Cổng readiness trong `deploy.sh`                   |
 
 Upstream cố tình **không** dùng `/api/monitoring/health` làm Docker healthcheck:
 nó đọc SQLite đồng bộ, event loop bận là probe timeout và container bị đánh
@@ -69,11 +71,11 @@ lúc runtime (chuỗi fallback driver SQLite cài better-sqlite3 vào
 
 Upstream dùng mô hình parallel-cycle (`docs/ops/BRANCHING_MODEL.md`):
 
-| Ref | Vai trò | Docker channel |
-|---|---|---|
-| `release/vX.Y.Z` | Nhánh **đang phát triển** của cycle đó | `:next` |
-| `main` | Nhận squash-merge khi cycle ship xong | `:main` |
-| tag `vX.Y.Z` | Bản đã ship, bất biến | `:X.Y.Z`, `:latest` |
+| Ref              | Vai trò                                | Docker channel      |
+| ---------------- | -------------------------------------- | ------------------- |
+| `release/vX.Y.Z` | Nhánh **đang phát triển** của cycle đó | `:next`             |
+| `main`           | Nhận squash-merge khi cycle ship xong  | `:main`             |
+| tag `vX.Y.Z`     | Bản đã ship, bất biến                  | `:X.Y.Z`, `:latest` |
 
 Tại thời điểm dựng repo này: tag mới nhất là **v3.8.49**; **v3.8.50 chưa có tag**,
 nó mới chỉ tồn tại dưới dạng nhánh `release/v3.8.50` (đang là default branch của
@@ -185,20 +187,20 @@ Service  : http://caddy:8080
 Trong `TheDemonTuan/OmniRoute` → Settings → Environments → tạo `production`, thêm
 secrets:
 
-| Secret | Giá trị |
-|---|---|
-| `VPS_HOST` | IP hoặc hostname VPS |
-| `VPS_USER` | user SSH có quyền chạy `/opt/omniroute/deploy.sh` |
-| `VPS_PORT` | cổng SSH (bỏ trống = 22) |
-| `VPS_SSH_KEY` | private key ed25519 dành riêng cho CI |
-| `VPS_KNOWN_HOSTS` | output của `ssh-keyscan -p 22 <VPS_IP>` |
+| Secret            | Giá trị                                           |
+| ----------------- | ------------------------------------------------- |
+| `VPS_HOST`        | IP hoặc hostname VPS                              |
+| `VPS_USER`        | user SSH có quyền chạy `/opt/omniroute/deploy.sh` |
+| `VPS_PORT`        | cổng SSH (bỏ trống = 22)                          |
+| `VPS_SSH_KEY`     | private key ed25519 dành riêng cho CI             |
+| `VPS_KNOWN_HOSTS` | output của `ssh-keyscan -p 22 <VPS_IP>`           |
 
 Repo variables (Settings → Variables), chỉ đặt nếu cần khác mặc định:
 
-| Variable | Mặc định | Khi nào đổi |
-|---|---|---|
-| `DEPLOY_PLATFORM` | `linux/amd64` | `linux/arm64` nếu `uname -m` trên VPS ra `aarch64` |
-| `IMAGE_TARGET` | `runner-base` | `runner-web` nếu cần provider web-cookie (gemini-web, claude-web, claude-turnstile) |
+| Variable          | Mặc định      | Khi nào đổi                                                                         |
+| ----------------- | ------------- | ----------------------------------------------------------------------------------- |
+| `DEPLOY_PLATFORM` | `linux/amd64` | `linux/arm64` nếu `uname -m` trên VPS ra `aarch64`                                  |
+| `IMAGE_TARGET`    | `runner-base` | `runner-web` nếu cần provider web-cookie (gemini-web, claude-web, claude-turnstile) |
 
 Tạo key CI:
 
@@ -364,14 +366,14 @@ $DC logs --tail=50 cloudflared
 cat caddy/active.caddy | head -3        # dòng đầu ghi active=<slot>
 ```
 
-| Triệu chứng | Nguyên nhân thường gặp |
-|---|---|
-| Slot mới không bao giờ healthy | Thiếu `JWT_SECRET`/`API_KEY_SECRET` trong `.app.env`; xem `$DC logs app-<slot>` |
-| `permission denied` trên `/app/data` | `data/` không thuộc UID 1000 → `sudo chown -R 1000:1000 /opt/omniroute/data` |
-| Cloudflare trả 502 | `cloudflared` trỏ sai service; phải là `http://caddy:8080` |
-| Caddy reload fail | Xem `$DC exec caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile` |
-| SSE/stream bị ngắt | `flush_interval -1` phải có trong `caddy/active.caddy` |
-| **Cả hai slot đang chạy** | Bất thường — deploy hỏng giữa chừng. Stop slot không nằm trong `state/active_slot` ngay. |
+| Triệu chứng                          | Nguyên nhân thường gặp                                                                   |
+| ------------------------------------ | ---------------------------------------------------------------------------------------- |
+| Slot mới không bao giờ healthy       | Thiếu `JWT_SECRET`/`API_KEY_SECRET` trong `.app.env`; xem `$DC logs app-<slot>`          |
+| `permission denied` trên `/app/data` | `data/` không thuộc UID 1000 → `sudo chown -R 1000:1000 /opt/omniroute/data`             |
+| Cloudflare trả 502                   | `cloudflared` trỏ sai service; phải là `http://caddy:8080`                               |
+| Caddy reload fail                    | Xem `$DC exec caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile`    |
+| SSE/stream bị ngắt                   | `flush_interval -1` phải có trong `caddy/active.caddy`                                   |
+| **Cả hai slot đang chạy**            | Bất thường — deploy hỏng giữa chừng. Stop slot không nằm trong `state/active_slot` ngay. |
 
 Kiểm tra bất biến quan trọng nhất — đúng một slot đang chạy:
 

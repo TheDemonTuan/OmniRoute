@@ -4,7 +4,7 @@ name: Production Deploy
 # message, which says what changed but not what the run is about to do —
 # and every run in the list then looks like a code change rather than a deploy.
 # On a `push` event `inputs.skip_deploy` is empty, so the deploy variant wins.
-run-name: ${{ inputs.skip_deploy && '🔨 Build only — no deploy' || '🚀 Build → GHCR → Deploy VPS' }}
+run-name: ${{ inputs.skip_deploy && '🔨 Build only — no deploy' || '🚀 Build → GHCR → Deploy VPS' }}${{ inputs.ops_request_id && format(' [{0}]', inputs.ops_request_id) || '' }}
 
 # Builds the fork's own OmniRoute image and deploys it to the VPS by immutable
 # digest. Runs only for the `prod` branch — upstream's own workflows keep their
@@ -21,6 +21,11 @@ on:
         required: false
         type: boolean
         default: false
+      ops_request_id:
+        description: "Optional Telegram Ops correlation ID"
+        required: false
+        type: string
+        default: ""
 
 # Never let two deployments interleave: deploy.sh takes a flock on the VPS and
 # the second one would simply fail. cancel-in-progress stays false so a running
@@ -198,24 +203,54 @@ jobs:
         run: |
           set -euo pipefail
           SSH="ssh -i ~/.ssh/id_ed25519 -p $VPS_PORT -o BatchMode=yes -o ConnectTimeout=20"
-          $SSH "$VPS_USER@$VPS_HOST" 'mkdir -p /opt/omniroute/.staging'
+          $SSH "$VPS_USER@$VPS_HOST" 'rm -rf /opt/omniroute/.staging && mkdir -p /opt/omniroute/.staging'
 
-          scp -i ~/.ssh/id_ed25519 -P "$VPS_PORT" -o BatchMode=yes \
+          tar -czf /tmp/omniroute-infra.tgz \
               infra/compose.yml infra/deploy.sh infra/backup.sh infra/caddy/Caddyfile \
+              infra/systemd/omniroute-ops-bot.service infra/sudoers/omniroute-ops-bot \
+              scripts/ops/omniroute_opsctl.py scripts/ops/telegram_ops_bot
+          scp -i ~/.ssh/id_ed25519 -P "$VPS_PORT" -o BatchMode=yes \
+              /tmp/omniroute-infra.tgz \
               "$VPS_USER@$VPS_HOST:/opt/omniroute/.staging/"
+          $SSH "$VPS_USER@$VPS_HOST" \
+              'tar -xzf /opt/omniroute/.staging/omniroute-infra.tgz -C /opt/omniroute/.staging'
 
           # Install by rename, not by overwrite. `mv` within one filesystem is an
           # atomic swap of the directory entry, so a deploy.sh that happens to be
           # executing keeps reading its original inode. Copying in place would let
           # bash read half of the old script and half of the new one.
-          $SSH "$VPS_USER@$VPS_HOST" 'set -euo pipefail
+          $SSH "$VPS_USER@$VPS_HOST" "GITHUB_SHA=${GITHUB_SHA}"' bash -s' <<'REMOTE'
+            set -euo pipefail
             cd /opt/omniroute
-            install -m 0644 .staging/compose.yml compose.yml.new && mv -f compose.yml.new compose.yml
-            install -m 0644 .staging/Caddyfile   caddy/Caddyfile.new && mv -f caddy/Caddyfile.new caddy/Caddyfile
-            install -m 0750 .staging/deploy.sh   deploy.sh.new && mv -f deploy.sh.new deploy.sh
-            install -m 0750 .staging/backup.sh   backup.sh.new && mv -f backup.sh.new backup.sh
+            install -m 0644 .staging/infra/compose.yml compose.yml.new && mv -f compose.yml.new compose.yml
+            install -m 0644 .staging/infra/caddy/Caddyfile caddy/Caddyfile.new && mv -f caddy/Caddyfile.new caddy/Caddyfile
+            install -m 0750 .staging/infra/deploy.sh deploy.sh.new && mv -f deploy.sh.new deploy.sh
+            install -m 0750 .staging/infra/backup.sh backup.sh.new && mv -f backup.sh.new backup.sh
+
+            BOT_RELEASE="releases/${GITHUB_SHA:?missing GITHUB_SHA}"
+            mkdir -p "ops-bot/$BOT_RELEASE"
+            cp -a .staging/scripts/ops/telegram_ops_bot/. "ops-bot/$BOT_RELEASE/"
+            chown -R root:root "ops-bot/$BOT_RELEASE"
+            find "ops-bot/$BOT_RELEASE" -type d -exec chmod 0755 {} +
+            find "ops-bot/$BOT_RELEASE" -type f -exec chmod 0644 {} +
+            install -m 0755 .staging/scripts/ops/omniroute_opsctl.py opsctl.new
+            sudo install -o root -g root -m 0755 opsctl.new /usr/local/sbin/omniroute-opsctl
+            rm -f opsctl.new
+            sudo install -o root -g root -m 0644 \
+              .staging/infra/systemd/omniroute-ops-bot.service \
+              /etc/systemd/system/omniroute-ops-bot.service
+            sudo install -o root -g root -m 0440 \
+              .staging/infra/sudoers/omniroute-ops-bot \
+              /etc/sudoers.d/omniroute-ops-bot
+            sudo visudo -cf /etc/sudoers.d/omniroute-ops-bot
+            ln -sfn "$BOT_RELEASE" ops-bot/current
+            sudo systemctl daemon-reload
+            if sudo test -s /etc/omniroute/ops-bot.env; then
+              sudo systemctl try-restart omniroute-ops-bot.service || true
+            fi
             rm -rf .staging
-            echo "infra files synced"'
+            echo "infra and Telegram Ops Bot files synced"
+          REMOTE
 
       # The image is private, so the VPS must authenticate to pull it. Rather
       # than parking a long-lived PAT on the box, hand it this job's own

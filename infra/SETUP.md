@@ -16,11 +16,11 @@ Bạn mô tả:
 
 Đối chiếu thực tế:
 
-| Thành phần | Bạn muốn | Thực tế | Khớp? |
-|---|---|---|---|
-| **Máy dev** | chỉ push / kéo code | `infra/sync-upstream.sh` rồi `git push origin prod`. Hoặc **không đụng máy dev chút nào** — cron thứ Hai tự mở PR, bạn bấm Merge trên web là xong | ✅ còn nhẹ hơn bạn nghĩ |
-| **GitHub** | xử lý gần hết | `npm ci` + `npm run build` + `docker build` + push GHCR + đồng bộ file infra + SSH gọi deploy | ✅ |
-| **VPS** | chỉ chạy docker image | chạy container + `deploy.sh` điều phối blue/green + cron backup | ⚠️ xem dưới |
+| Thành phần  | Bạn muốn              | Thực tế                                                                                                                                           | Khớp?                   |
+| ----------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
+| **Máy dev** | chỉ push / kéo code   | `infra/sync-upstream.sh` rồi `git push origin prod`. Hoặc **không đụng máy dev chút nào** — cron thứ Hai tự mở PR, bạn bấm Merge trên web là xong | ✅ còn nhẹ hơn bạn nghĩ |
+| **GitHub**  | xử lý gần hết         | `npm ci` + `npm run build` + `docker build` + push GHCR + đồng bộ file infra + SSH gọi deploy                                                     | ✅                      |
+| **VPS**     | chỉ chạy docker image | chạy container + `deploy.sh` điều phối blue/green + cron backup                                                                                   | ⚠️ xem dưới             |
 
 **Chỗ lệch duy nhất, nói thẳng:** VPS không chỉ "chạy image". Nó còn giữ
 `deploy.sh` — script quyết định slot nào nhận traffic, gọi `caddy reload`, và
@@ -51,10 +51,10 @@ Không cần làm lại, ghi ra để bạn biết trạng thái hiện tại.
 - ✅ Fork `diegosouzapw/OmniRoute` → **`TheDemonTuan/OmniRoute`**
 - ✅ Nhánh **`prod`** = code upstream (`release/v3.8.50`) + thư mục `infra/` + 2 workflow
 - ✅ Default branch của fork đổi thành `prod`
-  *(bắt buộc — GitHub chỉ chạy `on: schedule` từ default branch)*
+  _(bắt buộc — GitHub chỉ chạy `on: schedule` từ default branch)_
 - ✅ Bật GitHub Actions trên fork
 - ✅ Tắt 25 workflow của upstream, chỉ chừa `Production Deploy` + `Sync Upstream`
-  *(quan trọng: `build.yml` của upstream trigger trên `push: branches: ["**"]`)*
+  _(quan trọng: `build.yml` của upstream trigger trên `push: branches: ["**"]`)_
 - ✅ Repo local trên máy dev đang dùng: `/media/tuannv/Projects/OmniRoute` (Linux Mint).
   Máy Windows cũ ở `D:\omniroute\OmniRoute` vẫn dùng được, hai máy độc lập nhau.
   Cả hai đều có:
@@ -67,8 +67,8 @@ Không cần làm lại, ghi ra để bạn biết trạng thái hiện tại.
 
 - ⬜ **VPS** Ubuntu 22.04+ **hoặc** RHEL-family 8/9 (Oracle Linux, Rocky, Alma) ·
   tối thiểu 2 vCPU / 2 GB RAM / 25 GB SSD
-  *(OmniRoute mặc định `OMNIROUTE_MEMORY_MB=1024`; trong cửa sổ blue/green có
-  lúc 2 container cùng sống nên 1 GB RAM là quá chật)*
+  _(OmniRoute mặc định `OMNIROUTE_MEMORY_MB=1024`; trong cửa sổ blue/green có
+  lúc 2 container cùng sống nên 1 GB RAM là quá chật)_
 - ⬜ **Domain** đang trỏ nameserver về Cloudflare
 - ⬜ **Docker Engine 24+** trên VPS
 - ⬜ Một user SSH có `sudo`, không phải login bằng root
@@ -83,13 +83,13 @@ Không cần làm lại, ghi ra để bạn biết trạng thái hiện tại.
 uname -m
 ```
 
-| Kết quả | Cần làm ở bước 6.2 |
-|---|---|
-| `x86_64` | không cần gì (mặc định `DEPLOY_PLATFORM=linux/amd64`, runner `ubuntu-latest`) |
+| Kết quả   | Cần làm ở bước 6.2                                                                        |
+| --------- | ----------------------------------------------------------------------------------------- |
+| `x86_64`  | không cần gì (mặc định `DEPLOY_PLATFORM=linux/amd64`, runner `ubuntu-latest`)             |
 | `aarch64` | **bắt buộc cả hai**: `DEPLOY_PLATFORM=linux/arm64` **và** `BUILD_RUNNER=ubuntu-24.04-arm` |
 
 Đặt thiếu `BUILD_RUNNER` là lỗi tốn thời gian nhất ở đây: `DEPLOY_PLATFORM`
-chỉ nói *build ra kiến trúc nào*, không nói *build trên máy nào*. Runner x86
+chỉ nói _build ra kiến trúc nào_, không nói _build trên máy nào_. Runner x86
 build `linux/arm64` sẽ chạy qua QEMU — image này mất hàng giờ (và hay OOM) thay
 vì khoảng 20 phút. Runner ARM64 của GitHub **miễn phí với repo public**.
 
@@ -187,12 +187,12 @@ nano /opt/omniroute/.app.env
 
 Bắt buộc điền:
 
-| Biến | Ghi chú |
-|---|---|
-| `JWT_SECRET` | đổi = mọi phiên đăng nhập dashboard bị vô hiệu |
-| `API_KEY_SECRET` | **đặt một lần, đừng bao giờ đổi** — nó mã hoá API key của provider trong SQLite; đổi sau khi đã có dữ liệu = mất sạch key đã lưu |
-| `INITIAL_PASSWORD` | mật khẩu dashboard lần đầu, đổi trong Settings → Security sau khi vào được |
-| `NEXT_PUBLIC_BASE_URL` | `https://<domain-của-bạn>` |
+| Biến                   | Ghi chú                                                                                                                          |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `JWT_SECRET`           | đổi = mọi phiên đăng nhập dashboard bị vô hiệu                                                                                   |
+| `API_KEY_SECRET`       | **đặt một lần, đừng bao giờ đổi** — nó mã hoá API key của provider trong SQLite; đổi sau khi đã có dữ liệu = mất sạch key đã lưu |
+| `INITIAL_PASSWORD`     | mật khẩu dashboard lần đầu, đổi trong Settings → Security sau khi vào được                                                       |
+| `NEXT_PUBLIC_BASE_URL` | `https://<domain-của-bạn>`                                                                                                       |
 
 Các giá trị đã set sẵn hợp lý, đừng sửa nếu không có lý do:
 `AUTH_COOKIE_SECURE=true`, `REQUIRE_API_KEY=true`,
@@ -266,11 +266,11 @@ Phải in ra `(not deployed yet — ...)`. Nếu lỗi ở đây thì CI cũng s
 2. Chọn **Cloudflared**, đặt tên, **copy token** (chuỗi `eyJ...`)
 3. Tab **Public Hostname** → Add a public hostname:
 
-   | Trường | Giá trị |
-   |---|---|
+   | Trường             | Giá trị                      |
+   | ------------------ | ---------------------------- |
    | Subdomain / Domain | `omniroute.<domain-của-bạn>` |
-   | Type | `HTTP` |
-   | URL | `caddy:8080` |
+   | Type               | `HTTP`                       |
+   | URL                | `caddy:8080`                 |
 
    ⚠️ **Không** điền `localhost:8080`. `cloudflared` chạy trong container riêng,
    `localhost` với nó là chính nó. Docker DNS phân giải `caddy` được vì hai
@@ -294,13 +294,13 @@ Không cần mở port 80/443 trên VPS. Tunnel là đường vào duy nhất.
 `TheDemonTuan/OmniRoute` → Settings → Environments → **New environment** → tên
 chính xác là **`production`** → thêm 5 secret:
 
-| Secret | Giá trị |
-|---|---|
-| `VPS_HOST` | IP hoặc hostname VPS |
-| `VPS_USER` | user SSH ở bước 4 |
-| `VPS_PORT` | cổng SSH (bỏ trống nếu là 22) |
-| `VPS_SSH_KEY` | **toàn bộ** nội dung `~/.ssh/omniroute_ci` (private key, gồm cả dòng `-----BEGIN/END-----`) |
-| `VPS_KNOWN_HOSTS` | output của `ssh-keyscan` ở bước 4 |
+| Secret            | Giá trị                                                                                     |
+| ----------------- | ------------------------------------------------------------------------------------------- |
+| `VPS_HOST`        | IP hoặc hostname VPS                                                                        |
+| `VPS_USER`        | user SSH ở bước 4                                                                           |
+| `VPS_PORT`        | cổng SSH (bỏ trống nếu là 22)                                                               |
+| `VPS_SSH_KEY`     | **toàn bộ** nội dung `~/.ssh/omniroute_ci` (private key, gồm cả dòng `-----BEGIN/END-----`) |
+| `VPS_KNOWN_HOSTS` | output của `ssh-keyscan` ở bước 4                                                           |
 
 Muốn deploy phải bấm duyệt: trong environment đó bật **Required reviewers**.
 
@@ -308,11 +308,18 @@ Muốn deploy phải bấm duyệt: trong environment đó bật **Required revi
 
 Settings → Secrets and variables → Actions → tab **Variables**.
 
-| Variable | Mặc định | Khi nào đặt |
-|---|---|---|
-| `DEPLOY_PLATFORM` | `linux/amd64` | đặt `linux/arm64` nếu bước 3.1 ra `aarch64` |
-| `BUILD_RUNNER` | `ubuntu-latest` | đặt `ubuntu-24.04-arm` nếu bước 3.1 ra `aarch64` — **luôn đi kèm** `DEPLOY_PLATFORM` |
-| `IMAGE_TARGET` | `runner-base` | đặt `runner-web` nếu cần provider web-cookie (gemini-web, claude-web, claude-turnstile) — image nặng thêm ~300 MB |
+| Variable          | Mặc định        | Khi nào đặt                                                                                                       |
+| ----------------- | --------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `DEPLOY_PLATFORM` | `linux/amd64`   | đặt `linux/arm64` nếu bước 3.1 ra `aarch64`                                                                       |
+| `BUILD_RUNNER`    | `ubuntu-latest` | đặt `ubuntu-24.04-arm` nếu bước 3.1 ra `aarch64` — **luôn đi kèm** `DEPLOY_PLATFORM`                              |
+| `IMAGE_TARGET`    | `runner-base`   | đặt `runner-web` nếu cần provider web-cookie (gemini-web, claude-web, claude-turnstile) — image nặng thêm ~300 MB |
+
+### 6.3 Telegram Ops Bot (tùy chọn)
+
+Bot quản trị chạy bằng systemd trên VPS và dùng BotFather token/GitHub App riêng. Làm theo
+[`docs/ops/TELEGRAM_OPS_BOT.md`](../docs/ops/TELEGRAM_OPS_BOT.md) để tạo credential, lấy Telegram
+user/chat ID, tạo PIN hash và điền `/etc/omniroute/ops-bot.env`. Production deploy chỉ cài/cập nhật
+mã bot; service không được bật nếu file cấu hình chưa hợp lệ.
 
 ---
 
@@ -460,7 +467,7 @@ liệu — mất file này là ngồi nhập lại từng API key bằng tay.
 
 Không, trừ một trường hợp — và trường hợp đó đã được nới.
 
-Green phải `healthy` (qua `/healthz` **và** `/api/monitoring/health`) *trước* khi
+Green phải `healthy` (qua `/healthz` **và** `/api/monitoring/health`) _trước_ khi
 Caddy đổi hướng, nên không có khoảnh khắc nào không ai lắng nghe. Dòng thời gian
 tính từ lúc `caddy reload`:
 
@@ -474,12 +481,12 @@ t=165    trần app tự thoát   (SHUTDOWN_TIMEOUT_MS=120s)
 t=195    trần Docker SIGKILL (stop_grace_period=150s) — thực tế không bao giờ chạm tới
 ```
 
-| Bạn đang làm gì lúc switch | Ảnh hưởng |
-|---|---|
-| Bấm dashboard, gọi API thường | không thấy gì |
-| Stream câu trả lời LLM < 2 phút | chạy hết trên blue |
-| Stream dài hơn 2 phút | bị cắt ở t=165 |
-| WebSocket live-monitoring | rớt, client tự reconnect vào green |
+| Bạn đang làm gì lúc switch      | Ảnh hưởng                          |
+| ------------------------------- | ---------------------------------- |
+| Bấm dashboard, gọi API thường   | không thấy gì                      |
+| Stream câu trả lời LLM < 2 phút | chạy hết trên blue                 |
+| Stream dài hơn 2 phút           | bị cắt ở t=165                     |
+| WebSocket live-monitoring       | rớt, client tự reconnect vào green |
 
 **Ba con số phải giữ đúng thứ tự này:**
 
@@ -506,12 +513,12 @@ nên không hỏng dữ liệu, nhưng đó là lý do các con số này không
 
 Thứ thật sự ăn đĩa là image, không phải backup:
 
-| | Dung lượng |
-|---|---|
-| Image OmniRoute (`runner-base`, arm64) | ~5.6 GB |
-| redis + caddy + cloudflared | ~350 MB |
-| `storage.sqlite` | vài MB |
-| 14 bản backup | ~5 MB |
+|                                        | Dung lượng |
+| -------------------------------------- | ---------- |
+| Image OmniRoute (`runner-base`, arm64) | ~5.6 GB    |
+| redis + caddy + cloudflared            | ~350 MB    |
+| `storage.sqlite`                       | vài MB     |
+| 14 bản backup                          | ~5 MB      |
 
 Blue/green giữ **2 image** ở trạng thái ổn định (slot đang dừng vẫn tham chiếu
 image cũ, nên `docker image prune -f` ở cuối `deploy.sh` chỉ dọn image thật sự
@@ -610,13 +617,13 @@ SAU 24H
 
 Nói trước để không bị bất ngờ.
 
-| Việc | Vì sao thủ công |
-|---|---|
-| Thêm/sửa biến trong `.app.env` | chứa secret, cố ý không nằm trong git |
-| Xoay `TUNNEL_TOKEN` | như trên |
-| Nâng cấp Docker / OS trên VPS | ngoài phạm vi pipeline |
-| Restore từ backup | phá huỷ dữ liệu, phải có người quyết định |
-| Duyệt PR sync upstream | có chủ đích — nguồn mặc định là nhánh đang phát triển |
+| Việc                           | Vì sao thủ công                                       |
+| ------------------------------ | ----------------------------------------------------- |
+| Thêm/sửa biến trong `.app.env` | chứa secret, cố ý không nằm trong git                 |
+| Xoay `TUNNEL_TOKEN`            | như trên                                              |
+| Nâng cấp Docker / OS trên VPS  | ngoài phạm vi pipeline                                |
+| Restore từ backup              | phá huỷ dữ liệu, phải có người quyết định             |
+| Duyệt PR sync upstream         | có chủ đích — nguồn mặc định là nhánh đang phát triển |
 
 Ngược lại, những thứ **có** tự động: build image, push GHCR, đồng bộ 4 file hạ
 tầng lên VPS, blue/green switch, rollback khi health gate fail, backup hàng đêm,

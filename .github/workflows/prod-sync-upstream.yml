@@ -2,7 +2,7 @@ name: Sync Upstream
 
 # GitHub expression string literals must be single-quoted; double quotes are a
 # syntax error there even though YAML accepts them.
-run-name: 🔄 Sync upstream${{ inputs.ref && format(' ({0})', inputs.ref) || '' }} → PR to prod
+run-name: 🔄 Sync upstream${{ inputs.ref && format(' ({0})', inputs.ref) || '' }} → PR to prod${{ inputs.ops_request_id && format(' [{0}]', inputs.ops_request_id) || '' }}
 
 # Watches diegosouzapw/OmniRoute and opens a PR that merges its newest code
 # into this fork's `prod` branch. Merging that PR pushes `prod`, which triggers
@@ -22,6 +22,11 @@ on:
         description: "Upstream ref to sync (blank = newest release/v* branch; or 'main', or a tag like v3.8.50)"
         required: false
         type: string
+      ops_request_id:
+        description: "Optional Telegram Ops correlation ID"
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: write

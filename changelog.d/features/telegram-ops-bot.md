@@ -1,0 +1,1 @@
+- **feat(infra):** add a private, owner-only Telegram operations bot for VPS and container monitoring, upstream synchronization, GitHub Actions management, backups, restarts, and guarded production rollback
