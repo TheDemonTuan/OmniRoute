@@ -81,7 +81,12 @@ TasksMax=64
 # AF_NETLINK is required as well: glibc's getaddrinfo enumerates interfaces
 # through netlink, so dropping it breaks DNS resolution rather than hardening it.
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
-ProtectProc=invisible
+
+# ProtectProc is deliberately NOT set. It remounts /proc with hidepid, and every
+# privileged action here goes through setuid sudo -> opsctl, which is exactly the
+# combination that is awkward to verify without breaking it. The payoff would be
+# hiding other users' processes from a service whose job is reporting system
+# state to its single owner; that is not worth risking the recovery path.
 
 # Writable paths required for local sqlite database and state
 ReadWritePaths=/var/lib/omniroute-ops /var/log/omniroute-ops

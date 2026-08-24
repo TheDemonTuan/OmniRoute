@@ -89,7 +89,12 @@ sudo journalctl -u omniroute-ops-bot -n 100 --no-pager
 `OPS_TELEGRAM_MODE` selects how updates arrive. Both modes share the same command handling,
 authorization, and alerting.
 
-**`webhook` (default in the example env).** Telegram POSTs each update to
+An existing `/etc/omniroute/ops-bot.env` is never overwritten by a deploy, so a box provisioned
+before webhook support has no `OPS_TELEGRAM_MODE` line and keeps long polling — the code default
+is `polling`, deliberately, so shipping this could not change how a running bot receives commands.
+Webhook mode starts when you add the variables below by hand and restart the service.
+
+**`webhook` (what the example env file configures).** Telegram POSTs each update to
 `https://<host>/tg-ops/<OPS_WEBHOOK_PATH_SECRET>`, which Cloudflare Tunnel and Caddy forward to the
 bot's listener on the host. Two independent checks guard it: the path segment is a secret, and
 `X-Telegram-Bot-Api-Secret-Token` must match `OPS_WEBHOOK_SECRET_TOKEN` under a constant-time

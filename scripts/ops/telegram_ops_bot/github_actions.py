@@ -126,6 +126,12 @@ class GitHubActionsManager:
             return self._runs_cache.get(cache_key, {"total_count": 0, "workflow_runs": []})
 
         if isinstance(response, dict):
+            # last_etag is client-wide, and the alert thread can call this while
+            # an operator's /actions is in flight, so an ETag can land under the
+            # wrong key. That costs a cache miss and nothing else: ETags are
+            # per-resource, so a foreign one simply fails to match and GitHub
+            # answers 200 with the real body. Not worth a lock held across a
+            # network call, which is the blocking the alert thread just escaped.
             new_etag = getattr(self.client, "last_etag", None)
             if isinstance(new_etag, str) and new_etag:
                 self._runs_etags[cache_key] = new_etag
