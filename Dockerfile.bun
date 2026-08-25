@@ -24,6 +24,10 @@ COPY package.json bun.lock* pnpm-workspace.yaml* ./
 COPY open-sse/package.json ./open-sse/package.json
 COPY packages/ ./packages/
 
+# Root postinstall helpers needed during bun ci lifecycle execution
+COPY scripts/build/ ./scripts/build/
+COPY scripts/dev/sync-env.mjs ./scripts/dev/sync-env.mjs
+
 # Fast Bun native package install with trustedDependencies and bun ci (reproducible installs from bun.lock)
 RUN bun ci --include=optional --quiet
 
