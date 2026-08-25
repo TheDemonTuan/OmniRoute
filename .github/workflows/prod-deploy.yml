@@ -52,7 +52,7 @@ jobs:
 
     steps:
       - name: 0.1 Checkout source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -80,7 +80,7 @@ jobs:
 
     steps:
       - name: 1.1 Checkout source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -123,10 +123,10 @@ jobs:
           echo "Building $IMAGE (OmniRoute $VERSION)"
 
       - name: 1.5 Set up Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: 1.6 Login to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -134,7 +134,7 @@ jobs:
 
       - name: 1.7 Build image and push to GHCR
         id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile.bun
@@ -197,7 +197,7 @@ jobs:
 
     steps:
       - name: 2.1 Checkout source (for infra/)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
 
