@@ -39,7 +39,7 @@ x-app: &app
 
   volumes:
     # Bind mount (not a named volume) so infra/backup.sh can run sqlite3 .backup
-    # against the live file from the host. Must be owned by UID/GID 1000 (`node`).
+    # against the live file from the host. Must be owned by UID/GID 1000 (`bun`).
     #
     # `:z` = shared SELinux relabel. Required on RHEL-family hosts (Oracle Linux,
     # Rocky, Alma, Fedora) where SELinux runs Enforcing and would otherwise deny

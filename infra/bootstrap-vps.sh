@@ -14,7 +14,7 @@
 set -Eeuo pipefail
 
 APP_DIR="/opt/omniroute"
-# UID/GID 1000 = the `node` user baked into the OmniRoute image. The data
+# UID/GID 1000 = the `bun` user baked into the OmniRoute image. The data
 # bind-mount must be owned by it or the container cannot write storage.sqlite.
 APP_UID=1000
 APP_GID=1000
@@ -74,7 +74,7 @@ done
 
 echo "==> Setting ownership"
 chown -R "$SUDO_USER":"$SUDO_USER" "$APP_DIR"
-# The data dir is written by the container's `node` user, not by the SSH user.
+# The data dir is written by the container's `bun` user, not by the SSH user.
 chown -R "$APP_UID":"$APP_GID" "$APP_DIR/data"
 chmod 750 "$APP_DIR/data"
 

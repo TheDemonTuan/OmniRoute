@@ -143,7 +143,7 @@ wait_container_healthy() {
 # Application-level: /api/monitoring/health must report status:"healthy".
 # Deeper than /healthz — it confirms SQLite answered and the subsystems booted,
 # which is what actually decides whether this build may take traffic.
-# Probed from inside the container (node is already there; no curl dependency).
+# Probed from inside the container (bun is already there; no curl dependency).
 # The port arrives via the environment, never interpolated into the script body.
 PROBE_JS='const p=process.env.PROBE_PORT||"20128";'\
 'const t=setTimeout(()=>process.exit(1),8000);'\

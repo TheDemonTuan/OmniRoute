@@ -117,7 +117,7 @@ jobs:
           # are not necessarily lowercase.
           OWNER_LC="$(printf '%s' "$OWNER" | tr '[:upper:]' '[:lower:]')"
           IMAGE="ghcr.io/${OWNER_LC}/omniroute"
-          VERSION="$(node -p "require('./package.json').version")"
+          VERSION="$(jq -r '.version' package.json)"
           echo "image=$IMAGE"     >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Building $IMAGE (OmniRoute $VERSION)"
