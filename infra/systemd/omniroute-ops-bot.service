@@ -54,19 +54,27 @@ ConfigurationDirectory=omniroute
 LogsDirectory=omniroute-ops
 
 # Sandboxing & Security Hardening
-# Note: NoNewPrivileges must be 'no' to allow sudo helper execution (omniroute_opsctl)
+# The bot calls one root-owned NOPASSWD helper through sudo. Several systemd
+# sandbox directives implicitly enable NoNewPrivileges even when it is set to
+# no, which makes every read-only/status command silently fall back to empty
+# data. Keep filesystem isolation, while leaving those incompatible directives
+# explicitly disabled. The helper still enforces its own fixed allowlist.
 NoNewPrivileges=no
 RestrictSUIDSGID=no
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
-ProtectKernelTunables=yes
-ProtectKernelModules=yes
+PrivateDevices=no
+ProtectKernelTunables=no
+ProtectKernelModules=no
 ProtectControlGroups=yes
-RestrictRealtime=yes
-LockPersonality=yes
-MemoryDenyWriteExecute=yes
-RestrictNamespaces=yes
+ProtectKernelLogs=no
+ProtectClock=no
+ProtectHostname=no
+RestrictRealtime=no
+LockPersonality=no
+MemoryDenyWriteExecute=no
+RestrictNamespaces=no
 
 # Resource ceilings. The bot idles at roughly 25 MB and a fraction of a percent
 # of a core, so these only ever fire on a runaway loop or a leak.
@@ -77,10 +85,9 @@ MemoryMax=192M
 CPUQuota=50%
 TasksMax=64
 
-# Telegram and GitHub over TCP, docker/systemd/journald over unix sockets.
-# AF_NETLINK is required as well: glibc's getaddrinfo enumerates interfaces
-# through netlink, so dropping it breaks DNS resolution rather than hardening it.
-RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+# SystemCallArchitectures and RestrictAddressFamilies are deliberately omitted:
+# systemd implements both with seccomp and implicitly enables NoNewPrivileges,
+# preventing the NOPASSWD helper from gaining its tightly scoped root access.
 
 # ProtectProc is deliberately NOT set. It remounts /proc with hidepid, and every
 # privileged action here goes through setuid sudo -> opsctl, which is exactly the
