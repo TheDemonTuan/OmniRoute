@@ -95,9 +95,6 @@ vscode-extension
 *.deb
 *.rpm
 
-# Package manager lock (bun)
-bun.lock
-
 # Agent config
 .agents
 .gemini

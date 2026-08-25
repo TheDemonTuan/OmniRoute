@@ -1,5 +1,5 @@
 # ── Multi-stage Dockerfile for Native Bun Runtime (web-latest-bun) ───────────
-FROM oven/bun:1.4-slim AS base
+FROM oven/bun:1.4.0-slim AS base
 WORKDIR /app
 
 RUN apt-get update \
@@ -24,10 +24,17 @@ COPY package.json bun.lock* pnpm-workspace.yaml* ./
 COPY open-sse/package.json ./open-sse/package.json
 COPY packages/ ./packages/
 
-# Fast Bun native package install with trustedDependencies
-RUN bun install --include=optional --quiet
+# Fast Bun native package install with trustedDependencies and frozen lockfile
+RUN if [ -f "bun.lock" ] || [ -f "bun.lockb" ]; then \
+      bun install --frozen-lockfile --include=optional --quiet; \
+    else \
+      bun install --include=optional --quiet; \
+    fi
 
-# Ensure native binaries are compiled / fetched if needed
+# Ensure native better-sqlite3 Node-API addon and tls-client-node are built/fetched if needed (safe fallback)
+RUN if [ -d "node_modules/better-sqlite3" ]; then \
+      (cd node_modules/better-sqlite3 && bunx node-gyp rebuild) || true; \
+    fi
 RUN if [ -f "node_modules/tls-client-node/scripts/postinstall.js" ] && [ ! -d "node_modules/tls-client-node/bin" ]; then \
       bun node_modules/tls-client-node/scripts/postinstall.js || true; \
     fi
@@ -52,7 +59,7 @@ ENV NODE_ENV=production
 RUN bun run --quiet build
 
 # ── Runner Base stage (100% Bun Native Production Runtime) ──────────────────
-FROM oven/bun:1.4-slim AS runner-base
+FROM oven/bun:1.4.0-slim AS runner-base
 
 LABEL org.opencontainers.image.title="omniroute" \
   org.opencontainers.image.description="Unified AI proxy — route any LLM through one endpoint (Bun Native)" \

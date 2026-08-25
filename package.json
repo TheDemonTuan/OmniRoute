@@ -351,8 +351,10 @@
     "wreq-js": "^3.0.0"
   },
   "trustedDependencies": [
+    "@parcel/watcher",
     "@swc/core",
     "better-sqlite3",
+    "esbuild",
     "keytar",
     "onnxruntime-node",
     "sharp",
@@ -379,7 +381,7 @@
     "@types/safe-regex": "^1.1.6",
     "@types/ws": "^8.18.0",
     "@vitejs/plugin-react": "^6.0.5",
-    "bun": "^1.4.0",
+    "bun": "1.4.0",
     "c8": "^12.0.0",
     "concurrently": "^10.0.5",
     "cross-env": "^10.1.0",
