@@ -177,6 +177,44 @@ jobs:
             echo "OmniRoute version: **${{ steps.meta.outputs.version }}**"
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: 1.9 Smoke final Bun image startup
+        env:
+          IMAGE: ${{ steps.meta.outputs.image }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -Eeuo pipefail
+
+          container="omniroute-bun-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          cleanup() {
+            docker logs "$container" 2>&1 || true
+            docker rm --force "$container" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          docker run --detach \
+            --name "$container" \
+            --publish 127.0.0.1::20128 \
+            --tmpfs /app/data:uid=1000,gid=1000,mode=0700 \
+            "${IMAGE}@${DIGEST}"
+
+          host_port="$(docker port "$container" 20128/tcp | awk -F: 'NR == 1 { print $NF }')"
+          for attempt in $(seq 1 90); do
+            if [[ "$(docker inspect --format '{{.State.Running}}' "$container" 2>/dev/null)" != "true" ]]; then
+              echo "Final Bun image exited before becoming healthy" >&2
+              exit 1
+            fi
+
+            if curl --fail --silent --show-error "http://127.0.0.1:${host_port}/healthz" >/dev/null; then
+              echo "Final Bun image startup smoke: OK"
+              exit 0
+            fi
+
+            sleep 2
+          done
+
+          echo "Final Bun image did not become healthy within 180 seconds" >&2
+          exit 1
+
   deploy:
     name: 2 · Deploy to VPS
     needs: [build, ops-bot-tests]
