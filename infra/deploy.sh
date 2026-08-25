@@ -38,6 +38,9 @@ dc() { docker compose --env-file "$DEPLOY_ENV" -f "$COMPOSE" "$@"; }
 log() { printf '%s  %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*"; }
 die() { log "ERROR: $*" >&2; exit 1; }
 
+# shellcheck source=infra/image-retention.sh
+source "$APP_DIR/image-retention.sh"
+
 service_for_slot() {
     case "$1" in
         blue)  echo "app-blue"  ;;
@@ -388,13 +391,21 @@ dc stop "$OLD_SERVICE" \
     || log "WARNING: could not stop $OLD_SERVICE — check it manually, two writers is not a safe steady state"
 
 # Record what we replaced so --rollback has a target.
+OLD_ACTIVE_IMAGE=""
 if [[ "$ACTIVE" == "blue" ]]; then
-    echo "$OLD_BLUE" > "$PREV_IMAGE_FILE"
-else
-    echo "$OLD_GREEN" > "$PREV_IMAGE_FILE"
+    OLD_ACTIVE_IMAGE="$OLD_BLUE"
+    echo "$OLD_ACTIVE_IMAGE" > "$PREV_IMAGE_FILE"
+elif [[ "$ACTIVE" == "green" ]]; then
+    OLD_ACTIVE_IMAGE="$OLD_GREEN"
+    echo "$OLD_ACTIVE_IMAGE" > "$PREV_IMAGE_FILE"
 fi
 
-docker image prune -f >/dev/null 2>&1 || true
+IMAGE_REPOSITORY="${NEW_IMAGE%@sha256:*}"
+if [[ -n "$OLD_ACTIVE_IMAGE" && "$OLD_ACTIVE_IMAGE" != "$NEW_IMAGE" ]]; then
+    prune_repository_images "$IMAGE_REPOSITORY" "$NEW_IMAGE" "$OLD_ACTIVE_IMAGE"
+else
+    prune_repository_images "$IMAGE_REPOSITORY" "$NEW_IMAGE"
+fi
 
 log "=============================================="
 log "DEPLOYMENT SUCCESS"

@@ -268,7 +268,8 @@ jobs:
           $SSH "$VPS_USER@$VPS_HOST" 'rm -rf /opt/omniroute/.staging && mkdir -p /opt/omniroute/.staging'
 
           tar -czf /tmp/omniroute-infra.tgz \
-              infra/compose.yml infra/deploy.sh infra/backup.sh infra/caddy/Caddyfile \
+              infra/compose.yml infra/deploy.sh infra/image-retention.sh infra/backup.sh \
+              infra/caddy/Caddyfile \
               infra/systemd/omniroute-ops-bot.service infra/sudoers/omniroute-ops-bot \
               scripts/ops/omniroute_opsctl.py scripts/ops/telegram_ops_bot
           scp -i ~/.ssh/id_ed25519 -P "$VPS_PORT" -o BatchMode=yes \
@@ -287,6 +288,7 @@ jobs:
             install -m 0644 .staging/infra/compose.yml compose.yml.new && mv -f compose.yml.new compose.yml
             install -m 0644 .staging/infra/caddy/Caddyfile caddy/Caddyfile.new && mv -f caddy/Caddyfile.new caddy/Caddyfile
             install -m 0750 .staging/infra/deploy.sh deploy.sh.new && mv -f deploy.sh.new deploy.sh
+            install -m 0644 .staging/infra/image-retention.sh image-retention.sh.new && mv -f image-retention.sh.new image-retention.sh
             install -m 0750 .staging/infra/backup.sh backup.sh.new && mv -f backup.sh.new backup.sh
 
             BOT_RELEASE="releases/${GITHUB_SHA:?missing GITHUB_SHA}"

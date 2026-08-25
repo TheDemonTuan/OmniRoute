@@ -36,6 +36,7 @@ echo "==> Installing stack files"
 install -m 0644 "$SRC_DIR/compose.yml"        "$APP_DIR/compose.yml"
 install -m 0644 "$SRC_DIR/caddy/Caddyfile"    "$APP_DIR/caddy/Caddyfile"
 install -m 0750 "$SRC_DIR/deploy.sh"          "$APP_DIR/deploy.sh"
+install -m 0644 "$SRC_DIR/image-retention.sh" "$APP_DIR/image-retention.sh"
 install -m 0750 "$SRC_DIR/backup.sh"          "$APP_DIR/backup.sh"
 
 # Install the fixed-operation privileged helper as a root-owned immutable path.
