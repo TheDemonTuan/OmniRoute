@@ -1,0 +1,92 @@
+# ──────────────────────────────────────────────────────────────────────
+#  OmniRoute — Docker Compose (Bun 1.4 Native Runtime)
+# ──────────────────────────────────────────────────────────────────────
+#
+#  Production instance running 100% on Native Bun runtime (Zero Node in container).
+#
+#  Usage:
+#    docker compose -f docker-compose.bun.yml up -d --build
+#    docker compose -f docker-compose.bun.yml down
+#    docker compose -f docker-compose.bun.yml logs -f
+#
+#  Image flavors:
+#    runner-base (default) — Lean base (~300-400MB), no Chromium.
+#    runner-web  — With Chromium/Playwright for web-session providers.
+# ──────────────────────────────────────────────────────────────────────
+
+services:
+  # ── Redis (Rate Limiter Backend) ──────────────────────────────────
+  redis:
+    image: redis:8.6.5-alpine
+    container_name: omniroute-redis-bun
+    restart: unless-stopped
+    volumes:
+      - redis-bun-data:/data
+    command: ["redis-server", "--save", "60", "1", "--appendonly", "yes", "--loglevel", "warning"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── OmniRoute (100% Bun Runtime) ───────────────────────────────────
+  omniroute:
+    container_name: omniroute-bun
+    depends_on:
+      redis:
+        condition: service_healthy
+    build:
+      context: .
+      dockerfile: Dockerfile.bun
+      target: runner-base
+      args:
+        OMNIROUTE_USE_TURBOPACK: ${OMNIROUTE_USE_TURBOPACK:-1}
+        OMNIROUTE_BASE_PATH: ${OMNIROUTE_BASE_PATH:-}
+    image: omniroute:bun
+    restart: unless-stopped
+    stop_grace_period: 40s
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - PORT=${PORT:-20128}
+      - DASHBOARD_PORT=${DASHBOARD_PORT:-20128}
+      - HOSTNAME=0.0.0.0
+      - DATA_DIR=/app/data
+      - REDIS_URL=redis://redis:6379
+      - REQUIRE_API_KEY=${REQUIRE_API_KEY:-true}
+      - JWT_SECRET=${JWT_SECRET}
+      - API_KEY_SECRET=${API_KEY_SECRET}
+      - INITIAL_PASSWORD=${INITIAL_PASSWORD}
+      - OMNIROUTE_WS_BRIDGE_SECRET=${OMNIROUTE_WS_BRIDGE_SECRET}
+    ports:
+      - "${OMNIROUTE_BIND_HOST:-127.0.0.1}:${OMNIROUTE_PORT:-20128}:20128"
+    volumes:
+      - omniroute-bun-data:/app/data
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: ${OMNIROUTE_PIDS_LIMIT:-256}
+    mem_limit: ${OMNIROUTE_MEMORY_LIMIT:-1536m}
+    cpus: ${OMNIROUTE_CPUS:-1.5}
+    healthcheck:
+      test: ["CMD", "bun", "healthcheck.mjs"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  omniroute-bun-data:
+  redis-bun-data:
