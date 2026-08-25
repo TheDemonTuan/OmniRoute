@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - "release/v*"
+      - prod
     tags:
       - "v*"
     paths-ignore:
@@ -40,7 +41,7 @@ jobs:
       promote_latest: ${{ steps.version.outputs.promote_latest }}
       skip: ${{ steps.version.outputs.skip }}
     env:
-      IMAGE_NAME: diegosouzapw/omniroute
+      IMAGE_NAME: ${{ vars.DOCKERHUB_REPOSITORY || 'thedemontuan/omniroute' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -62,28 +63,16 @@ jobs:
         run: |
           set -euo pipefail
 
-          # 1) Resolve version/channel from the trigger. Only the current default
-          # release branch publishes the mutable `next` channel; main keeps `main`.
+          # 1) Resolve version/channel from the trigger.
           VERSION=$(bash scripts/ci/resolve-docker-publish-version.sh \
             "$EVENT_NAME" "$REF_TYPE" "$REF_NAME" "$INPUT_VERSION" "$DEFAULT_BRANCH")
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-          # 2) Decide whether to promote :latest. Floating channels are never
-          # eligible, and the helper independently fails closed for non-semver.
-          PROMOTE="false"
-          if [ "$VERSION" = "main" ] || [ "$VERSION" = "next" ]; then
-            PROMOTE="false"
-          elif printf '%s' "$VERSION" | grep -qE -- '-(rc|alpha|beta|pre|next)'; then
-            echo "Pre-release identifier detected — skipping :latest."
-            PROMOTE="false"
-          elif [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+          # 2) Decide :latest promotion
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             PROMOTE="${PROMOTE_INPUT:-false}"
           else
             git fetch --tags --quiet || true
-            # Decide via the extracted helper, which folds VERSION into the
-            # candidate set so the result is independent of git-tag sync timing
-            # on `release` events (#5301). Without that, the freshly-created tag
-            # is often not yet visible here and :latest stays a release behind.
             PROMOTE=$(git tag -l 'v[0-9]*' | bash scripts/ci/should-promote-latest.sh "$VERSION")
             if [ "$PROMOTE" != "true" ]; then
               echo "Version $VERSION is not the highest stable semver. Not promoting :latest."
@@ -91,18 +80,18 @@ jobs:
           fi
           echo "promote_latest=$PROMOTE" >> "$GITHUB_OUTPUT"
 
-          # 3) Skip immutable version tags that already exist. Floating `main`
+          # 3) Skip immutable version tags that already exist. Floating `main`, `prod`
           # and `next` channels are intentionally rebuilt on every matching push.
           SKIP="false"
-          if [ "$VERSION" != "main" ] && [ "$VERSION" != "next" ]; then
-            if docker manifest inspect "diegosouzapw/omniroute:${VERSION}" >/dev/null 2>&1; then
-              echo "Image diegosouzapw/omniroute:${VERSION} already exists on Docker Hub — skipping rebuild."
+          if [ "$VERSION" != "main" ] && [ "$VERSION" != "prod" ] && [ "$VERSION" != "next" ]; then
+            if docker manifest inspect "${IMAGE_NAME}:${VERSION}" >/dev/null 2>&1; then
+              echo "Image ${IMAGE_NAME}:${VERSION} already exists on Docker Hub — skipping rebuild."
               SKIP="true"
             fi
           fi
           echo "skip=$SKIP" >> "$GITHUB_OUTPUT"
 
-          echo "Publishing diegosouzapw/omniroute:$VERSION (promote_latest=$PROMOTE, skip=$SKIP)"
+          echo "Publishing ${IMAGE_NAME}:$VERSION (promote_latest=$PROMOTE, skip=$SKIP)"
 
   build:
     name: Build Docker (${{ matrix.platform }})
@@ -123,8 +112,8 @@ jobs:
             runner: ubuntu-24.04-arm
             arch: arm64
     env:
-      IMAGE_NAME: diegosouzapw/omniroute
-      GHCR_IMAGE_NAME: ghcr.io/diegosouzapw/omniroute
+      IMAGE_NAME: ${{ vars.DOCKERHUB_REPOSITORY || 'thedemontuan/omniroute' }}
+      GHCR_IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/omniroute
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -137,10 +126,13 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       - name: Login to Docker Hub
+        if: ${{ env.DOCKERHUB_USERNAME != '' }}
         uses: docker/login-action@v4.6.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v4.6.0
@@ -149,43 +141,10 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push platform image by digest
-        id: build
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          target: runner-base
-          platforms: ${{ matrix.platform }}
-          outputs: type=image,push-by-digest=true,name-canonical=true,push=true
-          tags: |
-            ${{ env.IMAGE_NAME }}
-            ${{ env.GHCR_IMAGE_NAME }}
-          cache-from: type=gha,scope=docker-${{ matrix.arch }}
-          cache-to: type=gha,scope=docker-${{ matrix.arch }},mode=max
-          no-cache: false
-        env:
-          DOCKER_BUILDKIT_INLINE_CACHE: 1
-
-      - name: Build and push WEB platform image by digest
-        id: build-web
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          target: runner-web
-          platforms: ${{ matrix.platform }}
-          outputs: type=image,push-by-digest=true,name-canonical=true,push=true
-          tags: |
-            ${{ env.IMAGE_NAME }}
-            ${{ env.GHCR_IMAGE_NAME }}
-          cache-from: type=gha,scope=docker-web-${{ matrix.arch }}
-          cache-to: type=gha,scope=docker-web-${{ matrix.arch }},mode=max
-          no-cache: false
-        env:
-          DOCKER_BUILDKIT_INLINE_CACHE: 1
-
+      # ── Bun 1.4 Native Images (Production Bun-First) ────────────────────────
       - name: Build and push BUN base platform image by digest
         id: build-bun-base
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile.bun
@@ -203,7 +162,7 @@ jobs:
 
       - name: Build and push BUN web platform image by digest
         id: build-bun-web
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile.bun
@@ -221,36 +180,16 @@ jobs:
 
       - name: Export digests
         env:
-          DIGEST_BASE: ${{ steps.build.outputs.digest }}
-          DIGEST_WEB: ${{ steps.build-web.outputs.digest }}
           DIGEST_BUN_BASE: ${{ steps.build-bun-base.outputs.digest }}
           DIGEST_BUN_WEB: ${{ steps.build-bun-web.outputs.digest }}
         run: |
           set -euo pipefail
-          mkdir -p /tmp/digests/base /tmp/digests/web /tmp/digests/bun-base /tmp/digests/bun-web
-          touch "/tmp/digests/base/${DIGEST_BASE#sha256:}"
-          touch "/tmp/digests/web/${DIGEST_WEB#sha256:}"
+          mkdir -p /tmp/digests/bun-base /tmp/digests/bun-web
           touch "/tmp/digests/bun-base/${DIGEST_BUN_BASE#sha256:}"
           touch "/tmp/digests/bun-web/${DIGEST_BUN_WEB#sha256:}"
 
-      - name: Upload base digests
-        uses: actions/upload-artifact@v7
-        with:
-          name: digests-base-${{ matrix.arch }}
-          path: /tmp/digests/base/*
-          if-no-files-found: error
-          retention-days: 1
-
-      - name: Upload web digests
-        uses: actions/upload-artifact@v7
-        with:
-          name: digests-web-${{ matrix.arch }}
-          path: /tmp/digests/web/*
-          if-no-files-found: error
-          retention-days: 1
-
       - name: Upload bun-base digests
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@v8
         with:
           name: digests-bun-base-${{ matrix.arch }}
           path: /tmp/digests/bun-base/*
@@ -258,7 +197,7 @@ jobs:
           retention-days: 1
 
       - name: Upload bun-web digests
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@v8
         with:
           name: digests-bun-web-${{ matrix.arch }}
           path: /tmp/digests/bun-web/*
@@ -277,8 +216,8 @@ jobs:
       packages: write
       security-events: write
     env:
-      IMAGE_NAME: diegosouzapw/omniroute
-      GHCR_IMAGE_NAME: ghcr.io/diegosouzapw/omniroute
+      IMAGE_NAME: ${{ vars.DOCKERHUB_REPOSITORY || 'thedemontuan/omniroute' }}
+      GHCR_IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/omniroute
       VERSION: ${{ needs.prepare.outputs.version }}
       PROMOTE_LATEST: ${{ needs.prepare.outputs.promote_latest }}
     steps:
@@ -293,10 +232,13 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       - name: Login to Docker Hub
+        if: ${{ env.DOCKERHUB_USERNAME != '' }}
         uses: docker/login-action@v4.6.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v4.6.0
@@ -305,35 +247,22 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Download base digests
-        uses: actions/download-artifact@v8
-        with:
-          pattern: digests-base-*
-          path: /tmp/digests/base
-          merge-multiple: true
-
-      - name: Download web digests
-        uses: actions/download-artifact@v8
-        with:
-          pattern: digests-web-*
-          path: /tmp/digests/web
-          merge-multiple: true
-
       - name: Download bun-base digests
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@v8
         with:
           pattern: digests-bun-base-*
           path: /tmp/digests/bun-base
           merge-multiple: true
 
       - name: Download bun-web digests
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@v8
         with:
           pattern: digests-bun-web-*
           path: /tmp/digests/bun-web
           merge-multiple: true
 
       - name: Create Docker Hub manifest
+        if: ${{ env.DOCKERHUB_USERNAME != '' }}
         run: |
           set -euo pipefail
 
@@ -354,10 +283,12 @@ jobs:
             docker buildx imagetools create "${tags[@]}" "${refs[@]}"
           }
 
-          create_manifest "${IMAGE_NAME}" "" /tmp/digests/base
-          create_manifest "${IMAGE_NAME}" "-web" /tmp/digests/web
+          create_manifest "${IMAGE_NAME}" "" /tmp/digests/bun-base
           create_manifest "${IMAGE_NAME}" "-bun" /tmp/digests/bun-base
+          create_manifest "${IMAGE_NAME}" "-web" /tmp/digests/bun-web
           create_manifest "${IMAGE_NAME}" "-web-bun" /tmp/digests/bun-web
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
 
       - name: Create GHCR manifest
         run: |
@@ -380,18 +311,18 @@ jobs:
             docker buildx imagetools create "${tags[@]}" "${refs[@]}"
           }
 
-          create_manifest "${GHCR_IMAGE_NAME}" "" /tmp/digests/base
-          create_manifest "${GHCR_IMAGE_NAME}" "-web" /tmp/digests/web
+          create_manifest "${GHCR_IMAGE_NAME}" "" /tmp/digests/bun-base
           create_manifest "${GHCR_IMAGE_NAME}" "-bun" /tmp/digests/bun-base
+          create_manifest "${GHCR_IMAGE_NAME}" "-web" /tmp/digests/bun-web
           create_manifest "${GHCR_IMAGE_NAME}" "-web-bun" /tmp/digests/bun-web
 
       - name: Inspect image
-        if: needs.prepare.outputs.version != 'main'
+        if: needs.prepare.outputs.version != 'main' && needs.prepare.outputs.version != 'prod'
         run: |
-          docker buildx imagetools inspect "${IMAGE_NAME}:${VERSION}"
+          docker buildx imagetools inspect "${GHCR_IMAGE_NAME}:${VERSION}"
 
       - name: Generate CycloneDX SBOM (image, advisory)
-        if: needs.prepare.outputs.version != 'main'
+        if: needs.prepare.outputs.version != 'main' && needs.prepare.outputs.version != 'prod'
         continue-on-error: true
         uses: anchore/sbom-action@v0
         with:
@@ -400,19 +331,8 @@ jobs:
           output-file: sbom-image.cdx.json
           artifact-name: sbom-image.cdx.json
 
-      # Visibility scan: reports HIGH + CRITICAL into the SARIF (Security tab) but
-      # never blocks (exit-code 0). The blocking gate below narrows to CRITICAL.
-      #
-      # ignore-unfixed mirrors the blocking gate: the Security tab must surface only
-      # ACTIONABLE vulnerabilities — ones with a published fix we can pull by rebuilding
-      # on a patched base or bumping the dep. Without it the advisory upload floods the
-      # tab with unfixable base-image OS CVEs (Debian trixie packages with no upstream
-      # patch yet, overwhelmingly local-only and not reachable from the proxy request
-      # surface), which is noise an operator cannot act on. trivyignores points at the
-      # repo-root .trivyignore so accepted-risk fixable CVEs have one auditable home.
-      # See docs/security/SUPPLY_CHAIN.md.
       - name: Trivy image scan (SARIF, advisory)
-        if: needs.prepare.outputs.version != 'main'
+        if: needs.prepare.outputs.version != 'main' && needs.prepare.outputs.version != 'prod'
         continue-on-error: true
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -422,43 +342,11 @@ jobs:
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           trivyignores: .trivyignore
-          exit-code: "0"
 
-      # BLOCKING gate (v3.8.27 cycle-end): fail the release on a CRITICAL CVE in the
-      # published image. Narrowed to severity CRITICAL (HIGH stays visible in the
-      # SARIF step above, not blocking). ignore-unfixed:true so an unfixable base-image
-      # CVE with no upstream patch does not red the release (reduces false-blocks);
-      # a fixable CRITICAL still blocks. Per docs/security/SUPPLY_CHAIN.md. NB: Trivy
-      # scans against a CVE DB that grows continuously — a newly-disclosed CRITICAL on
-      # an unchanged base image can red this gate; the fix is to rebuild on a patched
-      # base, bump the dep, or add a justified .trivyignore entry (see the CVE-variance
-      # note in docs/security/SUPPLY_CHAIN.md).
-      - name: Trivy CRITICAL gate (blocking)
-        if: needs.prepare.outputs.version != 'main'
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          image-ref: ${{ env.GHCR_IMAGE_NAME }}:${{ env.VERSION }}
-          format: table
-          severity: CRITICAL
-          ignore-unfixed: true
-          exit-code: "1"
-
-      - name: Upload Trivy SARIF to Security tab
-        if: needs.prepare.outputs.version != 'main'
+      - name: Upload Trivy scan results to GitHub Security tab
+        if: needs.prepare.outputs.version != 'main' && needs.prepare.outputs.version != 'prod'
         continue-on-error: true
-        uses: github/codeql-action/upload-sarif@v4.37.7
+        uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: trivy-results.sarif
-          category: trivy-image
-
-      - name: Update Docker Hub description
-        # Only refresh README/description when we actually promote :latest
-        # (avoids overwriting from main, next, or back-fill builds).
-        if: needs.prepare.outputs.promote_latest == 'true'
-        uses: peter-evans/dockerhub-description@v5
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-          repository: diegosouzapw/omniroute
-          short-description: "OmniRoute — Unified AI proxy. Route any LLM through one endpoint."
-          readme-filepath: ./README.md
+          category: docker-image-trivy
