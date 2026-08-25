@@ -119,13 +119,16 @@ class CommandDispatcher:
         """Build container status response."""
         containers = self.metrics.get_containers()
         lines = ["<b>🐳 Container Status</b>\n"]
-        for c in containers:
-            lines.append(
-                f"• <b>{escape_html(c.name)}</b> (<code>{escape_html(c.id)}</code>)\n"
-                f"   Status: <i>{escape_html(c.status)}</i>\n"
-                f"   Image: <code>{escape_html(c.image)}</code>\n"
-                f"   CPU: <code>{c.cpu_pct}%</code> | Mem: <code>{c.mem_usage_mb:.1f}MB</code>\n"
-            )
+        if not containers:
+            lines.append("<i>No containers found or docker daemon query timed out.</i>\n<i>Tap 🔄 Refresh to retry.</i>\n")
+        else:
+            for c in containers:
+                lines.append(
+                    f"• <b>{escape_html(c.name)}</b> (<code>{escape_html(c.id)}</code>)\n"
+                    f"   Status: <i>{escape_html(c.status)}</i>\n"
+                    f"   Image: <code>{escape_html(c.image)}</code>\n"
+                    f"   CPU: <code>{c.cpu_pct}%</code> | Mem: <code>{c.mem_usage_mb:.1f}MB</code>\n"
+                )
 
         msg = "\n".join(lines)
         keyboard = make_inline_keyboard([
@@ -197,14 +200,14 @@ class CommandDispatcher:
         clean_logs = redact_sensitive(raw_logs)
         safe_logs = escape_html(clean_logs)
 
-        header = f"<b>📜 Recent Logs ({escape_html(target or 'All Services')})</b>\n\n"
+        header = f"<b>📜 Recent Logs ({escape_html(target or 'Active App')})</b>\n\n"
         # Reserve room for header and tags
         max_log_len = 4096 - len(header) - 30
         truncated_logs = truncate_message(safe_logs, max_length=max_log_len)
 
         msg = f"{header}<pre>{truncated_logs}</pre>"
         keyboard = make_inline_keyboard([
-            [("🔄 Refresh Logs", "refresh:logs"), ("🐳 Containers", "view:containers")],
+            [("🔄 Refresh Logs", "refresh:logs" if not target else f"view:logs:{target}"), ("🐳 Containers", "view:containers")],
             [("🏠 Status", "view:status")],
         ])
         return msg, keyboard
@@ -575,8 +578,9 @@ class CommandDispatcher:
             new_text, new_markup = self.handle_omniroute()
         elif data in ("refresh:deploy", "view:deploy"):
             new_text, new_markup = self.handle_deploy()
-        elif data in ("refresh:logs", "view:logs"):
-            new_text, new_markup = self.handle_logs()
+        elif data in ("refresh:logs", "view:logs") or data.startswith("view:logs:") or data.startswith("refresh:logs:"):
+            target = data.split(":", 2)[2] if data.count(":") >= 2 else None
+            new_text, new_markup = self.handle_logs(target=target)
         elif data in ("refresh:backups", "view:backups"):
             new_text, new_markup = self.handle_backups()
         elif data in ("refresh:security", "view:security"):

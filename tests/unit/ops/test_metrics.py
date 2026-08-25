@@ -158,6 +158,30 @@ class TestMetrics(unittest.TestCase):
         self.assertEqual(mock_run.call_count, 1)
 
     @patch("subprocess.run")
+    @patch("os.geteuid", return_value=1000)
+    def test_logs_normalizes_aliases(
+        self,
+        _mock_geteuid: MagicMock,
+        mock_run: MagicMock,
+    ) -> None:
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout='{"logs":"aliased log line"}',
+            stderr="",
+        )
+        collector = MetricsCollector(opsctl_path="/usr/local/sbin/omniroute-opsctl")
+
+        collector.get_logs("omniroute", lines=10)
+        self.assertEqual(mock_run.call_args.args[0][7], "app")
+
+        collector.get_logs("green", lines=10)
+        self.assertEqual(mock_run.call_args.args[0][7], "app-green")
+
+        collector.get_logs("tuan-portfolio", lines=10)
+        self.assertEqual(mock_run.call_args.args[0][7], "portfolio")
+
+    @patch("subprocess.run")
     @patch("os.geteuid", return_value=0)
     def test_root_runs_opsctl_without_sudo(
         self,

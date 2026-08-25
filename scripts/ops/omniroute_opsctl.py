@@ -61,6 +61,10 @@ ALLOWED_LOG_SERVICES = frozenset({
     "cloudflared",
     "redis",
     "omniroute-ops-bot",
+    "portfolio",
+    "tuan-portfolio",
+    "tuan-portfolio-tunnel",
+    "tunnel",
 })
 
 MIN_LOG_LINES = 1
@@ -479,7 +483,15 @@ def get_logs(
                 active_slot = "blue"
         target_service = f"app-{active_slot}"
 
-    if target_service == "omniroute-ops-bot":
+    if target_service in ("portfolio", "tuan-portfolio"):
+        cmd = ["docker", "logs", "--tail", str(bounded_lines), "tuan-portfolio"]
+        code, out, err = safe_run_command(cmd, timeout=8.0)
+        logs_text = out if code == 0 and out else (err or "No log output available")
+    elif target_service in ("tuan-portfolio-tunnel", "tunnel"):
+        cmd = ["docker", "logs", "--tail", str(bounded_lines), "tuan-portfolio-tunnel"]
+        code, out, err = safe_run_command(cmd, timeout=8.0)
+        logs_text = out if code == 0 and out else (err or "No log output available")
+    elif target_service == "omniroute-ops-bot":
         cmd = ["journalctl", "-u", "omniroute-ops-bot.service", "-n", str(bounded_lines), "--no-pager"]
         code, out, err = safe_run_command(cmd, timeout=8.0)
         logs_text = out if code == 0 and out else (err or "No log output available")
@@ -491,7 +503,7 @@ def get_logs(
             "--tail", str(bounded_lines),
             target_service,
         ]
-        code, out, err = safe_run_command(cmd, timeout=10.0)
+        code, out, err = safe_run_command(cmd, timeout=12.0)
         logs_text = out if code == 0 and out else (err or "No log output available")
 
     return {

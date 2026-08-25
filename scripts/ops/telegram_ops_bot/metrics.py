@@ -23,6 +23,48 @@ from .security import redact_sensitive
 logger = logging.getLogger("telegram_ops_bot.metrics")
 
 
+def normalize_service_name(name: Optional[str]) -> str:
+    """Map common container names and aliases to allowed opsctl service names."""
+    if not name:
+        return "app"
+    raw = str(name).strip().lower()
+    if raw.startswith("/"):
+        raw = raw[1:]
+
+    aliases = {
+        "app": "app",
+        "omniroute": "app",
+        "omniroute-app": "app",
+        "omniroute-app-green": "app-green",
+        "omniroute-app-green-1": "app-green",
+        "app-green": "app-green",
+        "green": "app-green",
+        "omniroute-app-blue": "app-blue",
+        "omniroute-app-blue-1": "app-blue",
+        "app-blue": "app-blue",
+        "blue": "app-blue",
+        "caddy": "caddy",
+        "omniroute-caddy": "caddy",
+        "omniroute-caddy-1": "caddy",
+        "cloudflared": "cloudflared",
+        "omniroute-cloudflared": "cloudflared",
+        "omniroute-cloudflared-1": "cloudflared",
+        "tunnel": "cloudflared",
+        "redis": "redis",
+        "omniroute-redis": "redis",
+        "omniroute-redis-1": "redis",
+        "bot": "omniroute-ops-bot",
+        "ops-bot": "omniroute-ops-bot",
+        "omniroute-ops-bot": "omniroute-ops-bot",
+        "telegram": "omniroute-ops-bot",
+        "portfolio": "portfolio",
+        "tuan-portfolio": "portfolio",
+        "tuan-portfolio-tunnel": "tuan-portfolio-tunnel",
+        "portfolio-tunnel": "tuan-portfolio-tunnel",
+    }
+    return aliases.get(raw, raw)
+
+
 @dataclass(frozen=True)
 class HostMetrics:
     """Host machine resource utilization metrics."""
@@ -187,7 +229,7 @@ class MetricsCollector:
     def _run_opsctl_args(
         self,
         args: List[str],
-        timeout: float = 5.0,
+        timeout: float = 12.0,
     ) -> Optional[Dict[str, Any]]:
         """Run one prevalidated opsctl argument array and parse its JSON output."""
         if not self.opsctl_path:
@@ -366,7 +408,7 @@ class MetricsCollector:
 
     def get_containers(self) -> List[ContainerInfo]:
         """Fetch container metrics via opsctl or return default state."""
-        ops_data = self._run_opsctl_json("containers")
+        ops_data = self._run_opsctl_args(["containers"], timeout=15.0)
         if ops_data and isinstance(ops_data, dict):
             containers_list = ops_data.get("containers", [])
             results: List[ContainerInfo] = []
@@ -432,13 +474,17 @@ class MetricsCollector:
             "cloudflared",
             "redis",
             "omniroute-ops-bot",
+            "portfolio",
+            "tuan-portfolio",
+            "tuan-portfolio-tunnel",
         }
-        service = service_or_container or "app"
+        service = normalize_service_name(service_or_container)
         if service not in allowed_services:
-            return "[Logs unavailable: service is not allowed]"
+            allowed_preview = "app, caddy, cloudflared, redis, bot, portfolio"
+            return f"[Logs unavailable: service '{service}' is not allowed (allowed: {allowed_preview})]"
         payload = self._run_opsctl_args(
             ["logs", "--lines", str(min(max(1, lines), 200)), "--service", service],
-            timeout=8.0,
+            timeout=15.0,
         )
         if payload and isinstance(payload.get("logs"), str):
             return redact_sensitive(payload["logs"][-12000:])
