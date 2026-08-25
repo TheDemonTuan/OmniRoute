@@ -88,6 +88,14 @@ RUN mkdir -p /app/data
 COPY --from=builder /app/.build/next/standalone ./
 COPY --from=builder /app/scripts/dev/healthcheck.mjs ./healthcheck.mjs
 
+# Bun uses bun:sqlite. Remove every standalone/vendor copy of the Node-only
+# addon so no traced chunk can dlopen it and abort the process before fallback.
+RUN find /app \
+      -path '*/node_modules/better-sqlite3' \
+      -prune \
+      -exec rm -rf '{}' + \
+  && test -z "$(find /app -type f -name 'better_sqlite3.node' -print -quit)"
+
 RUN chown -R bun:bun /app /app/data
 
 USER bun
