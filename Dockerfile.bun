@@ -39,6 +39,9 @@ RUN if [ -f "node_modules/tls-client-node/scripts/postinstall.js" ] && [ ! -d "n
       bun node_modules/tls-client-node/scripts/postinstall.js || true; \
     fi
 
+# Smoke check native database driver under Bun
+RUN bun -e "try { require('better-sqlite3')(':memory:').close(); console.log('better-sqlite3 smoke: OK'); } catch(e) { console.warn('better-sqlite3 fallback will be used:', e.message); }"
+
 # Copy complete project source code
 COPY . .
 
