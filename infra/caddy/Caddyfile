@@ -5,7 +5,6 @@
 #  the private `edge` Docker network, so HTTP here is correct and :8080 is never
 #  published to the VPS host.
 # ──────────────────────────────────────────────────────────────────────────────
-
 {
 	auto_https off
 	admin localhost:2019
