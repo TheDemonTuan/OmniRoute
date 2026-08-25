@@ -31,16 +31,13 @@ COPY scripts/dev/sync-env.mjs ./scripts/dev/sync-env.mjs
 # Fast Bun native package install with trustedDependencies and bun ci (reproducible installs from bun.lock)
 RUN bun ci --include=optional --quiet
 
-# Ensure native better-sqlite3 Node-API addon and tls-client-node are built/fetched if needed (safe fallback)
-RUN if [ -d "node_modules/better-sqlite3" ]; then \
-      (cd node_modules/better-sqlite3 && bunx node-gyp rebuild) || true; \
-    fi
+# Ensure native tls-client-node binary is fetched if needed (stealth transport fallback)
 RUN if [ -f "node_modules/tls-client-node/scripts/postinstall.js" ] && [ ! -d "node_modules/tls-client-node/bin" ]; then \
       bun node_modules/tls-client-node/scripts/postinstall.js || true; \
     fi
 
-# Smoke check native database driver under Bun
-RUN bun -e "try { require('better-sqlite3')(':memory:').close(); console.log('better-sqlite3 smoke: OK'); } catch(e) { console.warn('better-sqlite3 fallback will be used:', e.message); }"
+# Smoke check native database driver used by Bun production (bun:sqlite)
+RUN bun -e "import { Database } from 'bun:sqlite'; const db = new Database(':memory:'); db.query('SELECT 1 AS ok').get(); db.close(); console.log('bun:sqlite smoke: OK');"
 
 # Copy complete project source code
 COPY . .
