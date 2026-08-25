@@ -54,6 +54,7 @@ export const VOLCENGINE_CODING_PLAN_MODELS: RegistryModel[] = [
     name: "MiniMax M3 (Coding Plan)",
     contextLength: 1048576,
     toolCalling: true,
+    supportsVision: true,
     supportsReasoning: true,
   },
   {

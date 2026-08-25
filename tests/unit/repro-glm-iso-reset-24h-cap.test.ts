@@ -102,7 +102,13 @@ describe("Z.AI GLM weekly quota — absolute ISO reset", () => {
     assert.equal(parseDayGranularityResetMs("quota will reset in 3 days", MAX_MS, NOW), 3 * DAY_MS);
   });
 
-  it("buildWeeklyQuotaFallback uses the parsed ISO reset, not the 24h default", () => {
+  it("buildWeeklyQuotaFallback uses the parsed ISO reset, not the 24h default", (t) => {
+    // The fixture carries an ABSOLUTE reset instant, so the expected wait is only
+    // meaningful against a fixed clock: with the real wall clock the remaining
+    // window shrinks every day and the test would first drift below the
+    // multi-day floor and then, past 2026-08-29, parse to null (24h default).
+    // Freeze Date at NOW so this asserts the parser, not the calendar.
+    t.mock.timers.enable({ apis: ["Date"], now: NOW });
     const result = buildWeeklyQuotaFallback(GLM_BODY);
     assert.ok(result);
     assert.equal(result!.reason, RateLimitReason.QUOTA_EXHAUSTED);
@@ -115,10 +121,15 @@ describe("Z.AI GLM weekly quota — absolute ISO reset", () => {
     assert.ok(result!.cooldownMs !== DAY_MS, "must not fall back to WEEKLY_QUOTA_COOLDOWN_MS (24h)");
   });
 
-  it("checkFallbackError classifies the GLM 429 as QUOTA_EXHAUSTED with the real wait", async () => {
+  it("checkFallbackError classifies the GLM 429 as QUOTA_EXHAUSTED with the real wait", async (t) => {
     const { checkFallbackError, parseRetryFromErrorText } = await import(
       "../../open-sse/services/accountFallback.ts"
     );
+
+    // Same absolute-instant fixture as above — freeze the clock AFTER the module
+    // import so module-load time is unaffected but every reset computation below
+    // is measured from NOW.
+    t.mock.timers.enable({ apis: ["Date"], now: NOW });
 
     const parsed = parseRetryFromErrorText(GLM_BODY);
     assert.ok(parsed && parsed > 5 * DAY_MS, `parsed reset was ${parsed}`);

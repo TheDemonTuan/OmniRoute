@@ -792,6 +792,14 @@ jobs:
       # D3 (plano mestre): a coverage é coletada NESTE mesmo run (c8/NODE_V8_COVERAGE propaga
       # aos filhos através do npm) — elimina a matrix Coverage Shard ×8, que re-executava a
       # suíte inteira só para medir o gate. Padrão usado pelo CI do próprio nodejs/node.
+      # Heap: os shards rodam sob instrumentacao de cobertura do V8, que retem muito
+      # mais memoria que a suite crua. Com o teto antigo de 4096 MB os shards passaram
+      # a abortar com SIGABRT (exit 134, "Ineffective mark-compacts near heap limit")
+      # ao redor de 4086 MB conforme o catalogo de providers cresceu no ciclo v3.8.50 —
+      # todos os testes passavam e o processo morria no fim, o que le como falha de
+      # teste sem ser. O teto vive em `test:unit:ci:shard` (package.json) e agora
+      # acompanha os 8192 MB ja usados pelas variantes nao-shardadas; os runners
+      # GitHub-hosted tem 16 GB.
       - name: Unit tests (shard ${{ matrix.shard }}/8) with V8 coverage
         env:
           TEST_SHARD: ${{ matrix.shard }}/8

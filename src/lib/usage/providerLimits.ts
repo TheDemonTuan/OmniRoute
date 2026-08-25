@@ -464,6 +464,42 @@ function windowStillExhaustedAfterRealReset(value: unknown, nowMs: number): bool
 }
 
 /**
+ * May an active cooldown be released because the REAL quota windows recovered?
+ *
+ * Only the synthetic-cooldown case (#10534) qualifies: lastErrorType
+ * "quota_exhausted" plus every governing window past its real reset with quota
+ * left. A window that is still exhausted — or whose reset is unknown/unparseable
+ * — keeps the connection locked, matching the kimi-coding partial-refresh
+ * semantics.
+ */
+function isQuotaExhaustedCooldownReleasable(
+  connection: Pick<
+    ProviderConnectionLike,
+    "lastErrorType" | "lastErrorSource" | "provider" | "providerSpecificData"
+  >,
+  usage: JsonRecord
+): boolean {
+  if (connection.lastErrorType !== "quota_exhausted") return false;
+  // An extra-usage block is a POLICY lock, not a quota window: the session and
+  // weekly windows genuinely look recovered in the very same fetch, so the
+  // window scan below would happily release it. It stays locked while the
+  // policy is on and upstream still reports extra usage queued.
+  if (
+    connection.lastErrorSource === CLAUDE_EXTRA_USAGE_ERROR_SOURCE &&
+    isClaudeExtraUsageBlockEnabled(connection.provider, connection.providerSpecificData) &&
+    isClaudeExtraUsageQueued(usage)
+  ) {
+    return false;
+  }
+  const quotas = usage?.quotas;
+  if (!isRecord(quotas)) return false;
+  const values = Object.values(quotas);
+  if (values.length === 0) return false;
+  const nowMs = Date.now();
+  return !values.some((value) => windowStillExhaustedAfterRealReset(value, nowMs));
+}
+
+/**
  * Is an explicit cooldown still in the future?
  *
  * A rateLimitedUntil set by the upstream 429 handler is a hard statement and
@@ -513,7 +549,19 @@ export async function maybeClearRecoveredQuotaState(
 ): Promise<ProviderConnectionLike> {
   if (!hasUsableQuota(usage)) return connection;
   if (isTerminalStatusForQuotaRecovery(connection.testStatus)) return connection;
-  if (hasActiveCooldown(connection)) return connection;
+  if (hasActiveCooldown(connection)) {
+    // #11355 made an active rateLimitedUntil an unconditional stop, which is right
+    // for an upstream-derived cooldown but over-broad for the one case #10534 was
+    // built for: a Claude-subscription 429 persists a SYNTHETIC 1h cooldown because
+    // the upstream sent no parseable reset. When the later poll shows every window
+    // that governs this connection has really reset WITH quota available, holding
+    // that synthetic cooldown just deadlocks the connection for an hour.
+    //
+    // Narrow by design: only lastErrorType "quota_exhausted" (the synthetic-cooldown
+    // writer) is eligible, and a single still-exhausted or unknown-reset window keeps
+    // the lock. Every other reason keeps #11355/#11277 semantics untouched.
+    if (!isQuotaExhaustedCooldownReleasable(connection, usage)) return connection;
+  }
 
   const hasTransientState =
     connection.testStatus === "unavailable" ||
