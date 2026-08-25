@@ -55,8 +55,8 @@ ENV DASHBOARD_ALLOW_EMBED=$DASHBOARD_ALLOW_EMBED
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
 
-# Bun native Next.js build execution
-RUN bun run --quiet build
+# Bun native Next.js build execution (direct script invocation without relying on node shim)
+RUN bun scripts/build/build-next-isolated.mjs
 
 # ── Runner Base stage (100% Bun Native Production Runtime) ──────────────────
 FROM oven/bun:1.4.0-slim AS runner-base
