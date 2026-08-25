@@ -1524,7 +1524,8 @@ async function handleComboChatInner({
             );
             if (persistedRetrySkip) {
               log.info("COMBO", persistedRetrySkip);
-              return { ok: false, reason: "persisted_cooldown" };
+              if (i > 0) fallbackCount++;
+              return null;
             }
           }
 

@@ -100,6 +100,9 @@ const PROVIDER_LIMITS_APIKEY_PROVIDERS = new Set([
   "hyperagent",
   "ha",
   "firecrawl",
+  // Volcano Ark Plan subscriptions (agent-plan / coding-plan)
+  "volcengine-agent-plan",
+  "volcengine-coding-plan",
   // Command Code API key → /alpha/billing/credits + windowLimits
   "command-code",
   "conol-web",
