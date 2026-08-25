@@ -162,6 +162,19 @@ class TestCommands(unittest.TestCase):
         self.assertIn("Container Status", kwargs["text"])
         self.assertIn("omniroute-app", kwargs["text"])
 
+    def test_handle_containers_empty_fallback(self) -> None:
+        self.mock_metrics.get_containers.return_value = []
+        msg = {
+            "from": {"id": 1001},
+            "chat": {"id": 2001, "type": "private"},
+            "text": "/containers",
+        }
+        self.dispatcher.dispatch_message(msg)
+
+        self.mock_telegram.send_message.assert_called_once()
+        _, kwargs = self.mock_telegram.send_message.call_args
+        self.assertIn("No containers found or docker daemon query timed out", kwargs["text"])
+
     def test_handle_omniroute_command(self) -> None:
         msg = {
             "from": {"id": 1001},

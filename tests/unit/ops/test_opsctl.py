@@ -217,6 +217,14 @@ class TestOpsctlLogs(unittest.TestCase):
         self.assertEqual(res["lines"], 20)
         self.assertIn("Service started", res["logs"])
 
+    @patch("scripts.ops.omniroute_opsctl.safe_run_command")
+    def test_logs_portfolio_service(self, mock_run: MagicMock) -> None:
+        mock_run.return_value = (0, "2026-08-25 09:00:00 [notice] nginx ready", "")
+        res = omniroute_opsctl.get_logs(self.paths, service="portfolio", lines=15)
+        self.assertEqual(res["status"], "SUCCESS")
+        self.assertEqual(res["service"], "portfolio")
+        self.assertEqual(mock_run.call_args[0][0], ["docker", "logs", "--tail", "15", "tuan-portfolio"])
+
     def test_logs_disallowed_service(self) -> None:
         res = omniroute_opsctl.get_logs(self.paths, service="evil_service", lines=50)
         self.assertEqual(res["status"], "ERROR")
