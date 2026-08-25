@@ -11,9 +11,10 @@ permissions:
 
 jobs:
   deploy:
+    # Disabled by default for Bun-native Docker VPS. Set vars.DEPLOY_LEGACY_NPM_ENABLED=true to run legacy PM2.
     if: >-
-      (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
-      && vars.DEPLOY_ENABLED == 'true'
+      (github.event_name == 'workflow_dispatch')
+      && vars.DEPLOY_LEGACY_NPM_ENABLED == 'true'
     name: Deploy OmniRoute to VPS
     runs-on: ubuntu-latest
     steps:

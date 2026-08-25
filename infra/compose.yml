@@ -54,7 +54,7 @@ x-app: &app
   # restated here only to widen start_period: a cold OmniRoute boot runs
   # migrations and rebuilds the model catalog and can exceed the image default.
   healthcheck:
-    test: ["CMD", "node", "healthcheck.mjs"]
+    test: ["CMD", "bun", "healthcheck.mjs"]
     interval: 10s
     timeout: 5s
     retries: 6

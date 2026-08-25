@@ -137,6 +137,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
+          file: Dockerfile.bun
           push: true
 
           # runner-base is the lean flavour and matches upstream's :latest.
@@ -152,7 +153,7 @@ jobs:
 
           build-args: |
             OMNIROUTE_BUILD_MEMORY_MB=6144
-            OMNIROUTE_USE_TURBOPACK=0
+            OMNIROUTE_USE_TURBOPACK=1
 
           # The digest below is what actually gets deployed. These tags exist
           # for humans reading the package page.

@@ -154,7 +154,7 @@ PROBE_JS='const p=process.env.PROBE_PORT||"20128";'\
 
 probe_app_ready() {
     local service="$1"
-    dc exec -T -e "PROBE_PORT=$APP_PORT" "$service" node -e "$PROBE_JS" >/dev/null 2>&1
+    dc exec -T -e "PROBE_PORT=$APP_PORT" "$service" bun -e "$PROBE_JS" >/dev/null 2>&1
 }
 
 wait_app_ready() {

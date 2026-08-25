@@ -87,6 +87,10 @@ RUN mkdir -p /app/data
 COPY --from=builder /app/.build/next/standalone ./
 COPY --from=builder /app/scripts/dev/healthcheck.mjs ./healthcheck.mjs
 
+RUN chown -R bun:bun /app /app/data
+
+USER bun
+
 EXPOSE 20128
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
