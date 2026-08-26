@@ -185,24 +185,29 @@ openssl rand -hex 32      # -> API_KEY_SECRET
 nano /opt/omniroute/.app.env
 ```
 
-Bắt buộc điền:
+Bắt buộc điền và cấu hình:
 
 | Biến                   | Ghi chú                                                                                                                          |
 | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
 | `JWT_SECRET`           | đổi = mọi phiên đăng nhập dashboard bị vô hiệu                                                                                   |
 | `API_KEY_SECRET`       | **đặt một lần, đừng bao giờ đổi** — nó mã hoá API key của provider trong SQLite; đổi sau khi đã có dữ liệu = mất sạch key đã lưu |
 | `INITIAL_PASSWORD`     | mật khẩu dashboard lần đầu, đổi trong Settings → Security sau khi vào được                                                       |
-| `NEXT_PUBLIC_BASE_URL` | `https://<domain-của-bạn>`                                                                                                       |
+| `DASHBOARD_HOST`       | Hostname quản trị dashboard (vd: `omniroute-admin.<domain-của-bạn>` hoặc `omniroute.<domain-của-bạn>`)                           |
+| `API_HOST`             | Hostname phục vụ model API cho client (vd: `omniroute-api.<domain-của-bạn>` hoặc `ai-api.<domain-của-bạn>`)                     |
+| `NEXT_PUBLIC_BASE_URL` | `https://${DASHBOARD_HOST}` (vd: `https://omniroute-admin.<domain-của-bạn>`)                                                     |
+| `CORS_ORIGIN`          | `https://${DASHBOARD_HOST}`                                                                                                       |
+| `LIVE_WS_ALLOWED_ORIGINS` | `https://${DASHBOARD_HOST}`                                                                                                    |
 
-Các giá trị đã set sẵn hợp lý, đừng sửa nếu không có lý do:
-`AUTH_COOKIE_SECURE=true`, `REQUIRE_API_KEY=true`,
+Các giá trị bảo mật đã set sẵn hợp lý trong template, đừng sửa nếu không có lý do:
+`AUTH_COOKIE_SECURE=true`, `REQUIRE_API_KEY=true`, `ALLOW_API_KEY_REVEAL=false`,
 `DISABLE_SQLITE_AUTO_BACKUP=true`, `REDIS_URL=redis://redis:6379`,
 `OMNIROUTE_TRUST_PROXY=private`.
 
+> `ALLOW_API_KEY_REVEAL=false`: Bảo vệ production bằng cách không bao giờ hiển thị lại các API key bí mật của Provider trong giao diện UI hoặc API response sau khi đã nhập.
+>
 > `DISABLE_SQLITE_AUTO_BACKUP=true` **không phải tuỳ chọn**. Trong cửa sổ
 > blue/green có lúc 2 container cùng sống; nếu bật, cả hai sẽ cùng chạy
 > auto-backup trên một file SQLite. Backup do `backup.sh` + cron lo.
-
 ### 3.5 Quyền pull image — không cần làm gì
 
 Package `ghcr.io/thedemontuan/omniroute` hiện **public**: nó được publish từ một
@@ -260,17 +265,30 @@ Phải in ra `(not deployed yet — ...)`. Nếu lỗi ở đây thì CI cũng s
 
 ---
 
-## 5. Cloudflare Tunnel ⬜
+## 5. Cloudflare Tunnel & Split-Domain Setup ⬜
 
+Kiến trúc **Split-Domain Hardening** phân tách rõ rệt 2 hostname vào cùng Caddy reverse proxy:
+1. **Dashboard Host** (`DASHBOARD_HOST`): UI quản trị, cài đặt, tạo API key — **bảo vệ sau Cloudflare Access + MFA**.
+2. **API Host** (`API_HOST`): Model Gateway cho client AI/IDE — **chỉ mở các route model (`/v1/*`, `/chat/completions`, ...) và chặn toàn bộ route dashboard/admin**.
+
+### 5.1 Cấu hình Cloudflare Tunnel
 1. Cloudflare Dashboard → **Zero Trust** → Networks → **Tunnels** → Create a tunnel
-2. Chọn **Cloudflared**, đặt tên, **copy token** (chuỗi `eyJ...`)
-3. Tab **Public Hostname** → Add a public hostname:
+2. Chọn **Cloudflared**, đặt tên (vd: `omniroute-prod`), **copy token** (chuỗi `eyJ...`)
+3. Tab **Public Hostname** → Thêm **cả 2 hostname** sau:
 
-   | Trường             | Giá trị                      |
-   | ------------------ | ---------------------------- |
-   | Subdomain / Domain | `omniroute.<domain-của-bạn>` |
-   | Type               | `HTTP`                       |
-   | URL                | `caddy:8080`                 |
+   **Hostname 1 (Dashboard Admin):**
+   | Trường             | Giá trị                                                 |
+   | ------------------ | ------------------------------------------------------- |
+   | Subdomain / Domain | `<DASHBOARD_HOST>` (vd: `omniroute-admin.<domain-bạn>`) |
+   | Type               | `HTTP`                                                  |
+   | URL                | `caddy:8080`                                            |
+
+   **Hostname 2 (Model Serving API):**
+   | Trường             | Giá trị                                                 |
+   | ------------------ | ------------------------------------------------------- |
+   | Subdomain / Domain | `<API_HOST>` (vd: `omniroute-api.<domain-bạn>`)         |
+   | Type               | `HTTP`                                                  |
+   | URL                | `caddy:8080`                                            |
 
    ⚠️ **Không** điền `localhost:8080`. `cloudflared` chạy trong container riêng,
    `localhost` với nó là chính nó. Docker DNS phân giải `caddy` được vì hai
@@ -285,6 +303,20 @@ chmod 600 /opt/omniroute/.tunnel.env
 
 Không cần mở port 80/443 trên VPS. Tunnel là đường vào duy nhất.
 
+### 5.2 Khóa Dashboard bằng Cloudflare Zero Trust Access ⬜
+Để bảo vệ bề mặt quản trị không bị quét hoặc tấn công brute-force:
+1. Cloudflare Dashboard → **Zero Trust** → **Access** → **Applications** → **Add an application** → Chọn **Self-hosted**.
+2. Cấu hình Application:
+   - **Application name**: `OmniRoute Admin Dashboard`
+   - **Application domain**: Điền đúng `<DASHBOARD_HOST>` (vd: `omniroute-admin.yourdomain.com`).
+   - **Session Duration**: 24 hours (hoặc tuỳ chọn).
+3. Cấu hình Policies:
+   - Policy name: `Allow Admins Only`
+   - Action: `Allow`
+   - Rule: `Include` → `Emails` (hoặc `Emails ending in`) → Nhập email của bạn (hoặc kết nối Google / GitHub SSO IdP).
+4. **LƯU Ý QUAN TRỌNG**: **KHÔNG** gán Cloudflare Access Application lên `<API_HOST>`.
+   - `<API_HOST>` là endpoint để các client AI (Cline, Cursor, Roo Code, LibreChat, scripts) gửi request mang `Authorization: Bearer sk-...`.
+   - Caddy và Edge Approval Gateway trên `<API_HOST>` sẽ tự động chặn mọi request truy cập `/dashboard`, `/login`, `/api/settings` và chỉ cho phép các API route hợp lệ.
 ---
 
 ## 6. GitHub ⬜
@@ -361,16 +393,26 @@ start caddy + cloudflared
 ghi state/active_slot = blue
 ```
 
-### 7.3 Kiểm tra
+### 7.3 Kiểm tra Split-Domain Hardening
 
 ```bash
 ssh <user>@<vps> '/opt/omniroute/deploy.sh --status'
-curl https://omniroute.<domain>/api/monitoring/health   # -> {"status":"healthy",...}
+
+# 1. Kiểm tra liveness và health của app:
+curl https://<DASHBOARD_HOST>/api/monitoring/health   # -> {"status":"healthy",...}
+curl https://<API_HOST>/api/monitoring/health         # -> {"status":"healthy",...}
+
+# 2. Kiểm tra chặn Dashboard & Admin routes trên API host (phải trả về 404):
+curl -I https://<API_HOST>/dashboard                 # -> HTTP/2 404
+curl -I https://<API_HOST>/login                     # -> HTTP/2 404
+curl -I https://<API_HOST>/api/settings              # -> HTTP/2 404
+
+# 3. Kiểm tra Model Serving trên API host:
+curl -H "Authorization: Bearer <API_KEY>" https://<API_HOST>/v1/models   # -> 200 OK (danh sách models)
 ```
 
-Mở `https://omniroute.<domain>` → đăng nhập bằng `INITIAL_PASSWORD` → **đổi mật
+Mở `https://<DASHBOARD_HOST>` (qua Cloudflare Zero Trust Access OTP) → đăng nhập bằng `INITIAL_PASSWORD` → **đổi mật
 khẩu ngay** trong Settings → Security.
-
 ---
 
 ## 8. Vận hành hàng ngày
@@ -571,7 +613,7 @@ VPS
 [ ] cài docker-ce + docker-compose-plugin + sqlite3 (+ cronie nếu RHEL-family)
 [ ] usermod -aG docker <user>
 [ ] chạy infra/bootstrap-vps.sh
-[ ] điền /opt/omniroute/.app.env  (JWT_SECRET, API_KEY_SECRET, INITIAL_PASSWORD, NEXT_PUBLIC_BASE_URL)
+[ ] điền /opt/omniroute/.app.env (JWT_SECRET, API_KEY_SECRET, INITIAL_PASSWORD, DASHBOARD_HOST, API_HOST, NEXT_PUBLIC_BASE_URL)
 [ ] chmod 600 .app.env
 [ ] xác nhận UFW chỉ mở 22
 
@@ -583,10 +625,11 @@ SSH CHO CI
 
 CLOUDFLARE
 [ ] tạo tunnel, copy token
-[ ] public hostname -> http://caddy:8080   (KHÔNG phải localhost:8080)
+[ ] public hostname 1: <DASHBOARD_HOST> -> http://caddy:8080 (KHÔNG phải localhost:8080)
+[ ] public hostname 2: <API_HOST> -> http://caddy:8080
+[ ] Cloudflare Zero Trust Access Application: bảo vệ <DASHBOARD_HOST> (KHÔNG gán lên <API_HOST>)
 [ ] echo 'TUNNEL_TOKEN=...' > /opt/omniroute/.tunnel.env
 [ ] chmod 600 .tunnel.env
-
 GITHUB
 [ ] Environment tên chính xác 'production'
 [ ] secret VPS_HOST

@@ -1,6 +1,7 @@
 export type ApprovalStatus = "UNKNOWN" | "PENDING" | "APPROVED" | "DENIED";
 
 export interface ApprovalRow {
+  [key: string]: string | number | null;
   client_id: string;
   key_id: string;
   key_prefix: string;
@@ -74,4 +75,6 @@ export interface Env {
   FAIL_CLOSED?: string;
   DEFAULT_APPROVAL_DURATION_SECONDS?: string;
   APPROVAL_WAIT_SECONDS?: string;
+  API_HOST?: string;
+  DASHBOARD_HOST?: string;
 }

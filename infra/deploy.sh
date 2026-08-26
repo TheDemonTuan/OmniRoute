@@ -33,7 +33,7 @@ READY_TIMEOUT="${READY_TIMEOUT:-300}"   # cold boot runs migrations + catalog re
 STABILIZE_SECONDS="${STABILIZE_SECONDS:-30}"
 DRAIN_SECONDS="${DRAIN_SECONDS:-15}"    # let in-flight SSE/WS finish before stopping old
 
-dc() { docker compose --env-file "$DEPLOY_ENV" -f "$COMPOSE" "$@"; }
+dc() { docker compose --env-file "$APP_DIR/.app.env" --env-file "$DEPLOY_ENV" -f "$COMPOSE" "$@"; }
 
 log() { printf '%s  %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*"; }
 die() { log "ERROR: $*" >&2; exit 1; }

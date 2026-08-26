@@ -46,6 +46,21 @@
 		@opsbot path /tg-ops/*
 		reverse_proxy @opsbot host.docker.internal:20129
 
+		# Split-Domain Hardening:
+		# The API host is a model-serving plane, not every route living under
+		# OmniRoute's broad /api/v1 namespace. Management endpoints below that
+		# namespace must stay on the Access-protected dashboard host.
+		@api_blocked {
+			host {$API_HOST:api.*}
+			path /api/v1/accounts/* /api/v1/agents/* /api/v1/management/* /api/v1/registered-keys /api/v1/registered-keys/*
+		}
+		@api_unknown {
+			host {$API_HOST:api.*}
+			not path /v1 /v1/* /api/v1 /api/v1/* /v1beta /v1beta/* /api/v1beta /api/v1beta/* /chat/completions /chat/completions/* /responses /responses/* /models /models/* /codex /codex/* /api/cursor-cli /api/cursor-cli/* /api/monitoring/health
+		}
+		respond @api_blocked 404
+		respond @api_unknown 404
+
 		import /etc/caddy/active.caddy
 	}
 }

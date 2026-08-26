@@ -1,4 +1,4 @@
-import type { RouteType, ExtractedCredential } from "./types";
+import type { RouteType, ExtractedCredential } from "./types.ts";
 
 const STATIC_EXTENSIONS = new Set([
   "js",
@@ -56,6 +56,13 @@ const CLIENT_API_PREFIXES = [
   "/api/cursor-cli",
 ];
 
+const CLIENT_API_MANAGEMENT_PREFIXES = [
+  "/api/v1/accounts",
+  "/api/v1/agents",
+  "/api/v1/management",
+  "/api/v1/registered-keys",
+];
+
 /**
  * Classify incoming request URL path into functional RouteType
  */
@@ -94,6 +101,15 @@ export function classifyRequestPath(pathname: string): RouteType {
     const ext = normalized.slice(dotIndex + 1).toLowerCase();
     if (STATIC_EXTENSIONS.has(ext)) {
       return "PUBLIC";
+    }
+  }
+
+  // Management APIs exist below /api/v1 for dashboard and operator tooling.
+  // Keep them off the public model-serving hostname even though /api/v1 is
+  // otherwise a client-compatible inference prefix.
+  for (const prefix of CLIENT_API_MANAGEMENT_PREFIXES) {
+    if (normalized === prefix || normalized.startsWith(prefix + "/")) {
+      return "DASHBOARD";
     }
   }
 
@@ -179,4 +195,34 @@ export function maskApiKey(apiKey: string): string {
   if (!apiKey || typeof apiKey !== "string") return "sk-unknown";
   if (apiKey.length <= 12) return apiKey.slice(0, 4) + "****";
   return apiKey.slice(0, 10) + "****" + apiKey.slice(-4);
+}
+
+/**
+ * Check if the request hostname corresponds to the dedicated client API gateway
+ */
+export function isApiHostname(hostname: string, configuredApiHost?: string): boolean {
+  const normHost = (hostname || "").toLowerCase().trim();
+  if (!normHost) return false;
+
+  if (configuredApiHost) {
+    const configuredList = configuredApiHost
+      .toLowerCase()
+      .split(",")
+      .map((h) => h.trim())
+      .filter(Boolean);
+    if (configuredList.length > 0) {
+      return configuredList.includes(normHost);
+    }
+  }
+
+  // Fallback heuristics when API_HOST is not explicitly configured
+  return (
+    normHost.startsWith("api.") ||
+    normHost.includes("-api.") ||
+    normHost.includes(".api.") ||
+    normHost.startsWith("ai-api.") ||
+    normHost.includes("-ai-api.") ||
+    normHost.startsWith("ai-gateway.") ||
+    normHost.includes("-ai-gateway.")
+  );
 }

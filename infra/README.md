@@ -170,18 +170,22 @@ openssl rand -hex 32       # API_KEY_SECRET
 > `API_KEY_SECRET` mã hoá API key của provider trong SQLite. Đổi nó sau khi đã có
 > dữ liệu = mất toàn bộ key đã lưu. Đặt một lần, trước lần boot đầu tiên.
 
-### 4.2 Cloudflare Tunnel
+### 4.2 Cloudflare Tunnel & Split-Domain Hardening
 
-Trong Cloudflare Zero Trust, tạo tunnel, lấy token, và trỏ public hostname:
+Trong Cloudflare Zero Trust, tạo tunnel, lấy token, và trỏ **cả 2 public hostnames** về cùng reverse proxy `caddy:8080`:
 
 ```
-Hostname : omniroute.example.com
+# 1. Management Dashboard Host (Bảo vệ qua Cloudflare Zero Trust Access + MFA):
+Hostname : omniroute-admin.example.com (hoặc omniroute.example.com)
+Service  : http://caddy:8080
+
+# 2. Client Model API Host (Chỉ cho phép model serving routes, chặn toàn bộ dashboard/admin UI):
+Hostname : omniroute-api.example.com (hoặc ai-api.example.com)
 Service  : http://caddy:8080
 ```
 
 **Không** dùng `http://localhost:8080` — `cloudflared` chạy trong container riêng,
 `localhost` với nó là chính nó. Docker DNS lo phần `caddy:8080`.
-
 ### 4.3 GitHub
 
 Trong `TheDemonTuan/OmniRoute` → Settings → Environments → tạo `production`, thêm

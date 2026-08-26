@@ -19,17 +19,16 @@ test("key-verifier: computeSha256Hex produces standard hex digest", async () => 
 test("key-verifier: verifyKeyV2 validates valid 128-bit MAC", async () => {
   const keyId = "a1b2c3d4e5f6";
   const encoder = new TextEncoder();
-  const key = await globalThis.crypto.subtle.importKey(
+  const key = await crypto.subtle.importKey(
     "raw",
     encoder.encode(TEST_SECRET),
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign"]
   );
-  const sig = await globalThis.crypto.subtle.sign("HMAC", key, encoder.encode(`v2:${keyId}`));
+  const sig = await crypto.subtle.sign("HMAC", key, encoder.encode(`v2:${keyId}`));
   const hex = Array.from(new Uint8Array(sig), (b) => b.toString(16).padStart(2, "0")).join("");
   const mac = hex.slice(0, 32);
-
   const apiKey = `sk-v2-${keyId}-${mac}`;
   const res = await verifyKeyV2(apiKey, TEST_SECRET);
   assert.equal(res.valid, true);
@@ -65,14 +64,14 @@ test("key-verifier: verifyApiKeySignature handles v2 and v1", async () => {
   // Key v2
   const keyId = "fe9876543210";
   const encoder = new TextEncoder();
-  const key = await globalThis.crypto.subtle.importKey(
+  const key = await crypto.subtle.importKey(
     "raw",
     encoder.encode(TEST_SECRET),
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign"]
   );
-  const sig = await globalThis.crypto.subtle.sign("HMAC", key, encoder.encode(`v2:${keyId}`));
+  const sig = await crypto.subtle.sign("HMAC", key, encoder.encode(`v2:${keyId}`));
   const mac = Array.from(new Uint8Array(sig), (b) => b.toString(16).padStart(2, "0")).join("").slice(0, 32);
   const v2Key = `sk-v2-${keyId}-${mac}`;
 
@@ -81,7 +80,6 @@ test("key-verifier: verifyApiKeySignature handles v2 and v1", async () => {
   assert.equal(verifiedV2.valid, true);
   assert.equal(verifiedV2.keyId, keyId);
   assert.equal(verifiedV2.version, "v2");
-
   // Key v1
   const machineId = "testmachine12345";
   const v1KeyId = "123456";
