@@ -1266,7 +1266,7 @@
     "agentBridge": "Agent Bridge",
     "agentBridgeSubtitle": "Interceptar tráfego de agentes IDE",
     "trafficInspector": "Inspector de Tráfego",
-    "trafficInspectorSubtitle": "Inspecione o tráfego de requisições e respostas dos seus apps",
+    "trafficInspectorSubtitle": "__MISSING__:Inspect request and response traffic from your apps",
     "trafficInspectorPurpose": "Veja exatamente o que sua aplicação envia e recebe dos provedores de IA. Funciona com qualquer cliente compatível com OpenAI.",
     "cliCode": "CLI Code's",
     "cliCodeSubtitle": "Ferramentas de código que apontam para o OmniRoute",
@@ -7550,6 +7550,8 @@
     "resilienceRequestsPerMinute": "Requests per minute",
     "resilienceMinTimeBetweenRequests": "Minimum time between requests",
     "resilienceConcurrentRequests": "Concurrent requests",
+    "resilienceConnectionScopeConcurrentRequests": "Solicitações simultâneas por conexão/escopo de cota",
+    "resilienceGlobalConcurrentRequests": "Solicitações upstream simultâneas globais (0 = desativado)",
     "resilienceMaxQueueWaitTime": "Tempo máximo de espera na fila",
     "resilienceBaseCooldown": "Base cooldown",
     "resilienceUseUpstreamRetryHints": "Use upstream retry hints",
@@ -12485,7 +12487,12 @@
     "typeApikey": "Chave da API",
     "sortTypeFirst": "Mais fácil primeiro",
     "sortTypeFirstHelp": "Agrupar por esforço de inscrição (Sem Inscrição → Login OAuth → Chave da API), mantendo a ordem de qualidade dentro de cada grupo",
-    "typeLegend": "Sem Cadastro = zero configuração · Login OAuth = faça login com sua própria conta · Chave API = traga sua própria chave ou o nível gratuito daquele provedor"
+    "typeLegend": "Sem Cadastro = zero configuração · Login OAuth = faça login com sua própria conta · Chave API = traga sua própria chave ou o nível gratuito daquele provedor",
+    "colReliability": "__MISSING__:Reliability",
+    "colReliabilityHelp": "__MISSING__:Share of calls this provider actually answered over the last 24 hours. A dash means it served too little traffic to state a rate.",
+    "reliabilitySample": "__MISSING__:{successes} of {requests} calls succeeded in the last {hours}h",
+    "reliabilityTooFew": "__MISSING__:Only {requests} calls in the last {hours}h — too few to state a rate",
+    "reliabilityNoTraffic": "__MISSING__:No calls recorded in the last 24h"
   },
   "discovery": {
     "title": "Descoberta de provedores",

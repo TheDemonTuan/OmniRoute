@@ -16,7 +16,6 @@ const { __setTlsFetchOverrideForTesting: __setPplxTlsFetchOverride } =
 const { __setTlsFetchOverrideForTesting: __setGrokTlsFetchOverride } =
   await import("../../open-sse/services/grokTlsClient.ts");
 
-
 const originalFetch = globalThis.fetch;
 
 test.afterEach(() => {
@@ -1232,9 +1231,13 @@ test("local OpenAI-style providers validate without sending Authorization when a
 });
 
 test("OpenAI-compatible validator covers /responses mode and final ping fallback", async () => {
-  const calls = [];
+  const calls: Array<{ url: string; method: string; body: string | undefined }> = [];
   globalThis.fetch = async (url, init = {}) => {
-    calls.push({ url: String(url), method: init.method || "GET" });
+    calls.push({
+      url: String(url),
+      method: init.method || "GET",
+      body: typeof init.body === "string" ? init.body : undefined,
+    });
     if (String(url).endsWith("/models")) {
       return new Response(JSON.stringify({ error: "no models" }), { status: 500 });
     }
@@ -1282,6 +1285,11 @@ test("OpenAI-compatible validator covers /responses mode and final ping fallback
     calls.map((call) => call.url),
     ["https://openai-like.example.com/v1/models", "https://openai-like.example.com/v1/responses"]
   );
+  const responsesBody = JSON.parse(calls[1].body || "{}");
+  assert.deepEqual(responsesBody.input, [{ role: "user", content: "test" }]);
+  assert.equal(responsesBody.max_output_tokens, 1);
+  assert.equal(responsesBody.messages, undefined);
+  assert.equal(responsesBody.max_tokens, undefined);
   assert.equal(pingFallback.valid, true);
   assert.equal(pingFallback.error, null);
 });
@@ -2359,6 +2367,52 @@ test("validateCommandCodeProvider rejects auth failures and provider outages", a
     valid: false,
     error: "Provider unavailable (500)",
   });
+});
+
+test("validateCommandCodeProvider falls back to /alpha/generate when /provider/v1 returns 403 (Go plan)", async () => {
+  const calls: Array<{
+    url: string;
+    headers: Record<string, string>;
+    body: Record<string, unknown>;
+  }> = [];
+  globalThis.fetch = async (url, init = {}) => {
+    const urlStr = String(url);
+    calls.push({
+      url: urlStr,
+      headers: (init.headers || {}) as Record<string, string>,
+      body: JSON.parse(String(init.body)) as Record<string, unknown>,
+    });
+
+    if (urlStr.includes("/provider/v1/chat/completions")) {
+      return new Response(
+        JSON.stringify({
+          error: {
+            message: "Your Go plan doesn't include API access.",
+            type: "permission_error",
+            code: "upgrade_required",
+          },
+        }),
+        { status: 403, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    if (urlStr.includes("/alpha/generate")) {
+      return new Response("ok", { status: 200 });
+    }
+
+    return new Response("Not found", { status: 404 });
+  };
+
+  const result = await validateCommandCodeProvider({ apiKey: "cc_go_plan_key" });
+
+  assert.equal(result.valid, true);
+  assert.equal(result.error, null);
+  assert.equal(calls.length, 2);
+  assert.ok(calls[0].url.includes("/provider/v1/chat/completions"));
+  assert.ok(calls[1].url.includes("/alpha/generate"));
+  assert.equal(calls[1].headers["x-cli-environment"], "external");
+  assert.equal(calls[1].headers["x-command-code-version"], "1.15.1");
+  assert.equal(calls[1].body.config.environment, "external");
 });
 
 // ─── claude-web validator ────────────────────────────────────────────────────

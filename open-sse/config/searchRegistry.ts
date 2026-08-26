@@ -330,6 +330,25 @@ export const SEARCH_PROVIDERS: Record<string, SearchProviderConfig> = {
     timeoutMs: 60_000,
     cacheTTLMs: 5 * 60 * 1000,
   },
+
+  // Direct X API search through Xquik. Keep it fallback-only so the existing
+  // SuperGrok provider remains the default for search_type "x".
+  "xquik-search": {
+    id: "xquik-search",
+    name: "Xquik X Search",
+    baseUrl: "https://xquik.com/api/v1/x/tweets/search",
+    method: "GET",
+    authType: "apikey",
+    authHeader: "x-api-key",
+    costPerQuery: 0.00075,
+    freeMonthlyQuota: 0,
+    searchTypes: ["x"],
+    defaultMaxResults: 5,
+    maxMaxResults: 20,
+    timeoutMs: 15_000,
+    cacheTTLMs: 5 * 60 * 1000,
+    fallbackOnly: true,
+  },
 };
 
 /**
@@ -377,6 +396,8 @@ export const SEARCH_PROVIDER_ALIASES: Record<string, string> = {
   c7: "context7",
   x_search: "x-search",
   x: "x-search",
+  xquik: "xquik-search",
+  xquik_search: "xquik-search",
 };
 
 export function resolveSearchProviderId(providerId: string): string {

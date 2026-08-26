@@ -28,6 +28,11 @@ import { buildFamilyCandidateFilter, type ModelFamily } from "./modelFamily";
 import { getHiddenModelsByProvider } from "@/models";
 import { getSyncedAvailableModelsByConnection, getCustomModels } from "@/lib/db/models";
 import { filterPaidOnlyCandidates } from "./paidModelFilter";
+import {
+  filterSubscriptionOnlyCandidates,
+  orderPoolByRung,
+  type LadderOptions,
+} from "./subscriptionLadder";
 import { filterStrictZeroCostCandidates, filterTosAvoidCandidates } from "./strictZeroCostFilter";
 import { resolveFreeAccessState } from "./freeAccessQuota";
 import { isModelExcludedByConnection } from "@/domain/connectionModelRules";
@@ -145,6 +150,98 @@ type VirtualAutoCombo = AutoComboConfig & {
 export interface PreparedVirtualAutoComboInputs {
   readonly regularCandidates: readonly VirtualAutoComboCandidate[];
   readonly familyCandidates: readonly VirtualAutoComboCandidate[];
+  /**
+   * `provider_connections.auth_type` per connection id. Subscription-first
+   * routing classifies billing per CONNECTION (`connectionBilling.ts`), and
+   * the candidate pool only carries connection ids — so the auth types are
+   * captured here, during the one bulk connection read this function already
+   * does, instead of re-reading the DB per pool narrowing.
+   */
+  readonly authTypeByConnectionId?: ReadonlyMap<string, string | null>;
+  /** Operator settings for the subscription ladder; absent = feature off. */
+  readonly subscriptionLadder?: SubscriptionLadderSettings;
+}
+
+/**
+ * Operator-facing knobs for subscription-first routing. Mirrors the Zod shape
+ * in `src/shared/validation/settingsSchemas.ts`.
+ *
+ * Deliberately TUNING ONLY — there is no `enabled` flag here. `auto/subscription`
+ * and `auto/thrifty` are new ids that nothing routes through unless a caller
+ * asks for them by name, so requesting the id IS the opt-in. A settings toggle
+ * that could switch them off would be actively dangerous: it would leave an id
+ * whose whole promise is "plan-included only" quietly serving the full pool,
+ * paid models included.
+ */
+export interface SubscriptionLadderSettings {
+  exitCutoffPercent?: number;
+  reentryMinRemainingPercent?: number;
+  rungBudgetUsd?: Record<string, number>;
+  /** Staleness bound for a cached quota reading, derived from the existing
+   * `autoRefreshProviderQuotaInterval` exactly as STRICT_ZERO_COST does. */
+  maxStateAgeMs: number;
+}
+
+function readSubscriptionLadderSettings(
+  settings: Record<string, unknown>
+): SubscriptionLadderSettings {
+  const maxStateAgeMs = (Number(settings.autoRefreshProviderQuotaInterval) || 180) * 1000;
+  const raw = settings.subscriptionLadder;
+  if (!raw || typeof raw !== "object") return { maxStateAgeMs };
+  const value = raw as Record<string, unknown>;
+  const numeric = (key: string): number | undefined =>
+    typeof value[key] === "number" && Number.isFinite(value[key] as number)
+      ? (value[key] as number)
+      : undefined;
+  const exitCutoffPercent = numeric("exitCutoffPercent");
+  const reentryMinRemainingPercent = numeric("reentryMinRemainingPercent");
+  return {
+    maxStateAgeMs,
+    ...(exitCutoffPercent === undefined ? {} : { exitCutoffPercent }),
+    ...(reentryMinRemainingPercent === undefined ? {} : { reentryMinRemainingPercent }),
+    ...(value.rungBudgetUsd && typeof value.rungBudgetUsd === "object"
+      ? { rungBudgetUsd: value.rungBudgetUsd as Record<string, number> }
+      : {}),
+  };
+}
+
+/**
+ * Build the injected dependencies the pure ladder module needs. Everything it
+ * touches is resolved here — the live quota cache, connection auth types, and
+ * the economic tier resolver — so `subscriptionLadder.ts` itself stays free of
+ * DB, network, and registry imports.
+ */
+function buildLadderOptions(
+  prepared: PreparedVirtualAutoComboInputs,
+  tier: "subscription" | "thrifty"
+): LadderOptions {
+  const tuning = prepared.subscriptionLadder;
+  const authTypes = prepared.authTypeByConnectionId;
+  return {
+    enabled: true,
+    resolveFreeAccessState,
+    resolveAuthType: (connectionId: string) => authTypes?.get(connectionId) ?? null,
+    resolveEconomicTier: (provider: string, model: string) => {
+      try {
+        const resolved = classifyTier(provider, model).tier;
+        return resolved === "free" || resolved === "premium" ? resolved : "cheap";
+      } catch {
+        // Same conservative default `safeClassifyTier` uses in suffixComposition.
+        return "cheap";
+      }
+    },
+    maxStateAgeMs: tuning?.maxStateAgeMs ?? 180_000,
+    // The two groupings read a missing quota reading OPPOSITELY on purpose —
+    // see `LadderOptions.admitUnknownQuota`.
+    admitUnknownQuota: tier === "thrifty",
+    ...(tuning?.exitCutoffPercent === undefined
+      ? {}
+      : { exitCutoffPercent: tuning.exitCutoffPercent }),
+    ...(tuning?.reentryMinRemainingPercent === undefined
+      ? {}
+      : { reentryMinRemainingPercent: tuning.reentryMinRemainingPercent }),
+    ...(tuning?.rungBudgetUsd ? { rungBudgetUsd: tuning.rungBudgetUsd } : {}),
+  };
 }
 
 function toExpiryMs(value: unknown): number | null {
@@ -656,8 +753,15 @@ export async function prepareVirtualAutoComboInputs(
   const regularCandidates = buildPreparedPool(false);
   // #6453/#8183: family selectors bypass the reliability-curated no-auth allowlist.
   const familyCandidates = buildPreparedPool(true);
+  // Subscription-first routing inputs, captured from the connection read above
+  // so no later stage has to touch the DB again.
+  const authTypeByConnectionId = new Map<string, string | null>();
+  for (const conn of connections) {
+    authTypeByConnectionId.set(conn.id, typeof conn.authType === "string" ? conn.authType : null);
+  }
+  const subscriptionLadder = readSubscriptionLadderSettings(settings);
   if (!options.includeResolvedCapabilities) {
-    return { regularCandidates, familyCandidates };
+    return { regularCandidates, familyCandidates, authTypeByConnectionId, subscriptionLadder };
   }
 
   // One uninterrupted bulk read of all three capability tables for this prepare only.
@@ -671,6 +775,8 @@ export async function prepareVirtualAutoComboInputs(
   return {
     regularCandidates: await attachPreparedCapabilityValues(regularCandidates, capabilityState),
     familyCandidates: await attachPreparedCapabilityValues(familyCandidates, capabilityState),
+    authTypeByConnectionId,
+    subscriptionLadder,
   };
 }
 
@@ -839,6 +945,32 @@ export async function createVirtualAutoComboFromPrepared(
         `${label} matched no connected models; returning an empty pool.${spec?.family ? "" : ' Set OMNIROUTE_AUTO_FREE_FALLBACK_TO_FULL_POOL=true to restore the legacy "use full pool" behavior.'}`
       );
       effectivePool = [];
+    }
+  }
+
+  // Subscription-first routing (`auto/subscription`, `auto/thrifty`). Applied
+  // AFTER the category/tier narrowing above because, unlike every other tier,
+  // these two select on the connection's billing class and its live quota
+  // state rather than on the model's catalog price — see
+  // `subscriptionLadder.ts` and `docs/routing/SUBSCRIPTION_LADDER.md`.
+  if (spec?.tier === "subscription" || spec?.tier === "thrifty") {
+    const ladderOptions = buildLadderOptions(prepared, spec.tier);
+    const beforeCount = effectivePool.length;
+    effectivePool =
+      spec.tier === "subscription"
+        ? filterSubscriptionOnlyCandidates(effectivePool, ladderOptions)
+        : orderPoolByRung(effectivePool, ladderOptions);
+    if (spec.tier === "subscription" && effectivePool.length === 0 && beforeCount > 0) {
+      // Intended, not a defect: the operator asked for plan-included capacity
+      // only, and right now there is none with verified headroom. Failing
+      // closed here is the entire promise of the id — the caller's existing
+      // empty-pool path turns it into a clear error rather than a silent,
+      // billable fallback.
+      warnEmptyAutoPoolOnce(
+        "auto/subscription",
+        "auto/subscription: no plan-included connection has verified quota headroom; " +
+          "returning an empty pool rather than falling back to paid capacity."
+      );
     }
   }
 

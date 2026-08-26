@@ -52,7 +52,7 @@ test("v1 search GET lists all search providers", async () => {
 
   assert.equal(response.status, 200);
   assert.equal(body.object, "list");
-  assert.equal(body.data.length, 17);
+  assert.equal(body.data.length, 18);
   assert.deepEqual(ids, [
     "serper-search",
     "brave-search",
@@ -71,6 +71,7 @@ test("v1 search GET lists all search providers", async () => {
     "context7",
     "duckduckgo-free",
     "x-search",
+    "xquik-search",
   ]);
 });
 

@@ -396,7 +396,7 @@ import {
 } from "../services/rateLimitManager.ts";
 import * as localLimiterErrors from "../services/rateLimitManager/errors.ts";
 import {
-  acquire as acquireAccountSemaphore,
+  acquireMany as acquireConcurrencyGates,
   markBlocked as markAccountSemaphoreBlocked,
 } from "../services/accountSemaphore.ts";
 import { lockModel, lockModelIfPerModelQuota } from "../services/accountFallback.ts";
@@ -447,6 +447,7 @@ import { extractFacts } from "@/lib/memory/extraction";
 import { handleToolCallExecution } from "@/lib/skills/interception";
 import { MEMORY_BUILTIN_TOOL_NAMES } from "@/lib/skills/memoryBuiltins";
 import { OMNIROUTE_RESPONSE_HEADERS } from "@/shared/constants/headers";
+import { resolveProviderId } from "@/shared/constants/providers";
 import { getClaudeCodeCompatibleRequestDefaults } from "@/lib/providers/requestDefaults";
 import {
   buildClaudeCodeCompatibleRequest,
@@ -525,6 +526,7 @@ export async function handleChatCore({
   managedLease = null,
 }) {
   let { provider, model, extendedContext } = modelInfo;
+  const resilienceSettings = resolveResilienceSettings(cachedSettings);
   if (!skipResourcePressureGuard) {
     try {
       const pressureGuard = checkResourcePressureGuard();
@@ -3051,6 +3053,10 @@ export async function handleChatCore({
               connectionId: attemptConnectionId,
               credentials: execCreds,
             });
+            const canonicalProviderKey = resolveProviderId(String(provider).trim().toLowerCase());
+            const providerConcurrency =
+              resilienceSettings.providerQuotaOverrides[canonicalProviderKey]
+                ?.providerConcurrency ?? 0;
 
             trace("pre_semaphore", {
               semaphoreKey: accountSemaphoreKey,
@@ -3061,13 +3067,27 @@ export async function handleChatCore({
                 stage: "waiting_account_slot",
               });
             }
-            const releaseAccountSemaphore =
-              accountSemaphoreKey && accountSemaphoreMaxConcurrency != null
-                ? await acquireAccountSemaphore(accountSemaphoreKey, {
-                    maxConcurrency: accountSemaphoreMaxConcurrency,
-                    signal: streamController.signal,
-                  })
-                : () => {};
+            const releaseAccountSemaphore = await acquireConcurrencyGates(
+              [
+                {
+                  key: "global",
+                  maxConcurrency: resilienceSettings.requestQueue.globalConcurrentRequests,
+                },
+                {
+                  key: `provider:${canonicalProviderKey}`,
+                  maxConcurrency: providerConcurrency,
+                },
+                {
+                  key: accountSemaphoreKey || "",
+                  maxConcurrency: accountSemaphoreKey ? accountSemaphoreMaxConcurrency : null,
+                },
+              ],
+              {
+                timeoutMs: resilienceSettings.requestQueue.maxWaitMs,
+                maxQueueSize: resilienceSettings.requestQueue.maxQueueDepth,
+                signal: streamController.signal,
+              }
+            );
             trace("post_semaphore");
             updatePendingScope(pendingScope, {
               stage: "waiting_rate_limit",
@@ -3328,6 +3348,7 @@ export async function handleChatCore({
                       "ANTIGRAVITY_BYOP_ROTATION",
                       `BYOP 422 on connection ${String(byopFailedId).slice(0, 8)} → rotating to ${String(byopNextCreds.connectionId).slice(0, 8)}`
                     );
+                    releaseAccountSemaphore();
                     Object.assign(credentials, byopNextCreds);
                     antigravityByopRotationPending = true;
                     continue;

@@ -105,7 +105,11 @@ Deno.serve(async (request) => {
     return new Response(resolved.reason, { status: resolved.status });
   }
   const headers = new Headers(request.headers);
-  ["x-relay-target", "x-relay-path", "x-relay-auth", "host"].forEach(h => headers.delete(h));
+  [
+    "host", "connection", "content-length", "keep-alive", "proxy-connection",
+    "proxy-authenticate", "proxy-authorization", "transfer-encoding", "te", "trailer", "upgrade",
+    "x-relay-target", "x-relay-path", "x-relay-auth",
+  ].forEach(h => headers.delete(h));
   const init = { method: request.method, headers };
   if (request.method !== "GET" && request.method !== "HEAD") {
     init.body = request.body;

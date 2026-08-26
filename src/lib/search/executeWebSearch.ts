@@ -127,7 +127,10 @@ export async function executeWebSearch(
 
   const log = input.log || defaultLog;
   if (input.provider === "x_search") input.provider = "x-search";
-  if (input.provider === "x-search") input.search_type = "x";
+  if (input.provider === "xquik" || input.provider === "xquik_search") {
+    input.provider = "xquik-search";
+  }
+  if (input.provider === "x-search" || input.provider === "xquik-search") input.search_type = "x";
   const searchType = input.search_type || "web";
 
   if (input.provider) {

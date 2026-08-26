@@ -7,12 +7,30 @@
  * Resolution chain (highest → lowest priority):
  * 1. User override — DB `model_intelligence` where source='user_override'
  * 2. Arena ELO — DB `model_intelligence` where source='arena_elo'
+ * 2b. Layers 1-2 retried against the base model this id inherits quality scores
+ *     from, when `resolveScoresAs` resolves one (#11489). Reported as
+ *     `<source>:inherited`.
  * 3. Models.dev tier — derived from `model_capabilities` table capability data
- * 4. Static FITNESS_TABLE — existing hardcoded lookup (current behavior)
- * 5. Wildcard boosts — existing pattern matching boosts (current behavior)
+ * 4. Static FITNESS_TABLE — small hand-maintained table of VERSIONED model ids
+ * 5. Wildcard boosts — pattern matching boosts over a neutral 0.5 baseline
+ *
+ * Layer 4 is deliberately small and versioned (#11503). It used to carry
+ * version-less family patterns (`claude-sonnet`, `qwen`, `llama`, `codex`, …) that
+ * matched by substring, so it kept scoring model families whose members the vendors
+ * had already retired — and it scored them ABOVE live flagships it had never heard
+ * of. Recognition by the table, not availability, decided rank.
+ *
+ * Two rules keep it honest:
+ *  - Every row names a versioned id that exists in the provider catalog. A family
+ *    pattern that would silently adopt every future member of that family does not
+ *    belong here; `scripts/check/check-model-lifecycle.mjs` fails the build when a
+ *    row starts matching an id the vendor has retired.
+ *  - An id this table does not know falls through to the wildcard baseline of 0.5.
+ *    That 0.5 means "no evidence", NOT "mediocre model" — it is the neutral point,
+ *    and it must never be read as a quality claim about the model.
  */
 
-// ─── Static fitness table (unchanged, fallback layer 4) ─────────────────
+// ─── Static fitness table (versioned rows only, fallback layer 4) ────────
 
 import { getDbInstance } from "../../../src/lib/db/core.ts";
 import {
@@ -20,21 +38,15 @@ import {
   setUserFitnessOverrideEntry,
   deleteUserFitnessOverrideEntry,
 } from "../../../src/lib/db/modelIntelligence.ts";
+import { resolveScoresAs } from "./scoresAs.ts";
 
 const FITNESS_TABLE: Record<string, Record<string, number>> = {
   coding: {
-    "claude-sonnet": 0.95,
-    "claude-opus": 0.92,
-    "claude-haiku": 0.78,
     "gpt-4o": 0.9,
     "gpt-4o-mini": 0.8,
     "gpt-4-turbo": 0.88,
-    o1: 0.93,
     o3: 0.95,
     "o4-mini": 0.88,
-    codex: 0.98,
-    "gemini-pro": 0.85,
-    "gemini-flash": 0.8,
     "gemini-2.5-pro": 0.92,
     "gemini-2.5-flash": 0.82,
     "deepseek-coder": 0.9,
@@ -42,98 +54,54 @@ const FITNESS_TABLE: Record<string, Record<string, number>> = {
     "deepseek-r1": 0.88,
     "deepseek-chat": 0.84, // DeepSeek V3.2 Chat — strong code performance
     "deepseek-v3.2": 0.86, // Explicit V3.2 alias
-    qwen: 0.78,
-    llama: 0.72,
-    mistral: 0.75,
-    mixtral: 0.77,
-    // Grok-4 fast — good code, ultra-low latency (1143ms P50)
-    "grok-4-fast": 0.8,
-    "grok-4": 0.82,
     "grok-3": 0.8,
-    // Kimi K2.5 — agentic with tool calling, good at code tasks
-    "kimi-k2": 0.82,
-    // GLM-5.1 / GLM-5 — Z.AI reasoning models, 200K context / 128k output
+    // GLM-5.1 — Z.AI reasoning model, 200K context / 128k output
     "glm-5.1": 0.78,
-    "glm-5": 0.78,
     // MiniMax M2.5 — reasoning support helps complex code
     "minimax-m2.5": 0.75,
     "minimax-m2": 0.72,
   },
   review: {
-    "claude-sonnet": 0.92,
-    "claude-opus": 0.95,
-    "claude-haiku": 0.7,
     "gpt-4o": 0.88,
     "gpt-4o-mini": 0.72,
-    o1: 0.9,
     o3: 0.92,
-    "gemini-pro": 0.9,
     "gemini-2.5-pro": 0.93,
-    "gemini-flash": 0.75,
     "deepseek-r1": 0.85,
     "deepseek-v3": 0.8,
   },
   planning: {
-    "claude-opus": 0.95,
-    "claude-sonnet": 0.9,
     "gpt-4o": 0.88,
-    o1: 0.92,
     o3: 0.95,
     "gemini-2.5-pro": 0.93,
-    "gemini-pro": 0.88,
     "deepseek-r1": 0.85,
   },
   analysis: {
-    "claude-opus": 0.95,
-    "claude-sonnet": 0.92,
     "gemini-2.5-pro": 0.95,
-    "gemini-pro": 0.88,
     "gemini-3.1-pro": 0.95, // Gemini 3.1 Pro — 1M context, ideal for long analysis
     "gpt-4o": 0.85,
-    o1: 0.9,
     o3: 0.93,
     "deepseek-r1": 0.88,
     "deepseek-chat": 0.8,
-    "kimi-k2": 0.82, // Kimi K2.5 agentic — good for analysis
     "glm-5.1": 0.82, // GLM-5.1 free reasoning, 200K context for long analysis
-    "glm-5": 0.78, // GLM-5 with 128k output for long analysis
     "minimax-m2.5": 0.76,
   },
   debugging: {
-    "claude-sonnet": 0.93,
-    "claude-opus": 0.9,
     "gpt-4o": 0.88,
-    o1: 0.85,
     "deepseek-coder": 0.9,
     "deepseek-v3": 0.82,
-    "gemini-flash": 0.78,
-    codex: 0.92,
   },
   documentation: {
-    "claude-sonnet": 0.9,
-    "claude-opus": 0.88,
     "gpt-4o": 0.92,
     "gpt-4o-mini": 0.85,
-    "gemini-pro": 0.88,
-    "gemini-flash": 0.82,
     "deepseek-v3": 0.78,
   },
   default: {
-    "claude-sonnet": 0.85,
-    "claude-opus": 0.85,
     "gpt-4o": 0.85,
-    "gemini-pro": 0.8,
     "gemini-3.1-pro": 0.85,
     "deepseek-v3": 0.75,
     "deepseek-chat": 0.74,
-    "gemini-flash": 0.72,
-    // New models from ClawRouter analysis (2026-03-17):
-    "grok-4-fast": 0.72, // ultra-fast, suitable for all tasks
-    "grok-4": 0.74,
     "grok-3": 0.73,
-    "kimi-k2": 0.76, // agentic multi-step tasks
     "glm-5.1": 0.75,
-    "glm-5": 0.7,
     "minimax-m2.5": 0.7,
   },
 };
@@ -297,6 +265,36 @@ export function getModelsDevTierFitness(model: string, taskType: string): number
 
 // ─── Resolution chain ───────────────────────────────────────────────────
 
+/** Characters that separate the segments of a model id (`openai/gpt-4o-2024-05-13`). */
+const SEGMENT_SEPARATORS = new Set(["-", ".", "/"]);
+
+/**
+ * True when `pattern` occurs in `model` delimited by segment boundaries on BOTH sides —
+ * i.e. it starts at the beginning of the id or right after a `-` / `.` / `/`, and ends at
+ * the end of the id or right before one.
+ *
+ * This is what makes a versioned row safe to keep (#11503). Substring matching scored
+ * models the row was never about:
+ *   - `o3` matched `solar-pro3` (an unrelated Upstage model)
+ *   - `gpt-4o` matched `chatgpt-4o-latest`, which OpenAI shut down on 2026-02-17 —
+ *     so a dead model inherited the live flagship's 0.9. With boundary matching the
+ *     `-4o-` inside `chatgpt-4o-latest` is not a `gpt-4o` occurrence at a boundary
+ *     (the preceding character is `t`), so it falls through to the neutral 0.5.
+ * Legitimate forms still match: `o3`, `o3-mini`, `openai/o3`, `gpt-4o-2024-05-13`.
+ */
+function matchesAtSegmentBoundary(model: string, pattern: string): boolean {
+  if (!pattern) return false;
+  let index = model.indexOf(pattern);
+  while (index !== -1) {
+    const startsAtBoundary = index === 0 || SEGMENT_SEPARATORS.has(model[index - 1]);
+    const endIndex = index + pattern.length;
+    const endsAtBoundary = endIndex === model.length || SEGMENT_SEPARATORS.has(model[endIndex]);
+    if (startsAtBoundary && endsAtBoundary) return true;
+    index = model.indexOf(pattern, index + 1);
+  }
+  return false;
+}
+
 /**
  * Resolve a model id against the static fitness table, LONGEST PATTERN FIRST (#8603).
  *
@@ -311,6 +309,11 @@ export function getModelsDevTierFitness(model: string, taskType: string): number
  * DB (user_override / arena_elo / models.dev tier) before reaching layer 4, so pinning
  * the ordering guarantee through `getTaskFitness` would depend on DB fixture state.
  * `taskFitness-pattern-order-8603.test.ts` calls this directly instead.
+ *
+ * Matching is anchored to SEGMENT BOUNDARIES since #11503: a plain `String.includes`
+ * let a row leak into ids that merely contain its characters — `o3` scored
+ * `solar-pro3`, and `gpt-4o` scored `chatgpt-4o-latest` (a different, retired model).
+ * See `matchesAtSegmentBoundary`.
  */
 export function getStaticFitnessTableScore(model: string, taskType: string): number | null {
   const normalizedModel = model.toLowerCase();
@@ -318,7 +321,7 @@ export function getStaticFitnessTableScore(model: string, taskType: string): num
   const table = FITNESS_TABLE[normalizedTask] || FITNESS_TABLE.default;
   const sortedEntries = Object.entries(table).sort((a, b) => b[0].length - a[0].length);
   for (const [pattern, score] of sortedEntries) {
-    if (normalizedModel.includes(pattern)) return score;
+    if (matchesAtSegmentBoundary(normalizedModel, pattern)) return score;
   }
   return null;
 }
@@ -353,20 +356,23 @@ export function getTaskFitnessWithSource(
     return { score: userOverride, source: "user_override" };
   }
 
-  // Try arena_elo with the literal model id first (e.g. "mimo-v2.5"). If that's
-  // a miss and the model id carries a "-free" suffix (e.g. "mimo-v2.5-free"),
-  // try the un-suffixed base id so free-tier variants inherit the arena_elo
-  // score of their paid counterpart. This is what operators expect: the
-  // upstream's `mimo-v2.5` is benchmarked once, and `mimo-v2.5-free` should
-  // pick up the same signal rather than falling through to the wildcard 0.5
-  // and losing every free-vs-paid comparison.
   const arenaElo = queryModelIntelligence(normalizedModel, normalizedTask, "arena_elo");
   if (arenaElo !== null) {
     return { score: arenaElo, source: "arena_elo" };
   }
-  const arenaEloBase = lookupFreeAliasArenaElo(normalizedModel, normalizedTask);
-  if (arenaEloBase !== null) {
-    return { score: arenaEloBase, source: "arena_elo_free_alias" };
+
+  // Layers 1-2, retried against the base model this id inherits quality from
+  // (#11489). Every DB-backed source publishes scores for BASE models only, so
+  // a variant id — an effort suffix (`gpt-5.6-sol-xhigh`), a vendor alias
+  // (`gpt-5.6`), a `-free` tier marker (`mimo-v2.5-free`, #4517) — misses both
+  // literal lookups and used to fall all the way to the wildcard 0.5, losing
+  // every comparison against a base model that happens to be benchmarked.
+  // The score is inherited VERBATIM: the 12-factor scoring already prices cost
+  // and latency per variant, so there is no basis for inventing an effort
+  // delta. `:inherited` keeps the indirection visible to callers.
+  const inherited = lookupInheritedFitness(normalizedModel, normalizedTask);
+  if (inherited !== null) {
+    return inherited;
   }
 
   const tierScore = getModelsDevTierFitness(normalizedModel, normalizedTask);
@@ -382,24 +388,29 @@ export function getTaskFitnessWithSource(
   return { score: lookupWildcardBoosts(normalizedModel, normalizedTask), source: "wildcard_boost" };
 }
 
-/** Suffix used to mark free-tier model variants (e.g. "mimo-v2.5-free"). */
-const FREE_SUFFIX = "-free";
-
 /**
- * Strip a trailing "-free" suffix from the model id and re-query arena_elo.
- * Returns `null` when the original id has no "-free" suffix, when the base id
- * is identical to the original, or when no arena_elo row exists for the base.
+ * Re-run the two DB-backed layers against the base model `normalizedModel`
+ * inherits quality scores from (#11489). Returns `null` when the id resolves to
+ * itself (nothing to inherit) or when the base has no row either.
  *
- * Examples:
- *   "mimo-v2.5-free"   → look up "mimo-v2.5"
- *   "deepseek-v4-flash-free" → look up "deepseek-v4-flash"
- *   "big-pickle"       → no "-free" suffix → return null (skip)
+ * This subsumes the former `-free` arena_elo special case (#4517) and extends
+ * it: the `-free` base is now consulted for `user_override` too, and the same
+ * indirection now covers effort suffixes and vendor aliases. `resolveScoresAs`
+ * is catalog-anchored, so a base that is not a routable id is never queried.
  */
-function lookupFreeAliasArenaElo(normalizedModel: string, normalizedTask: string): number | null {
-  if (!normalizedModel.endsWith(FREE_SUFFIX)) return null;
-  const baseId = normalizedModel.slice(0, -FREE_SUFFIX.length);
-  if (baseId.length === 0 || baseId === normalizedModel) return null;
-  return queryModelIntelligence(baseId, normalizedTask, "arena_elo");
+function lookupInheritedFitness(
+  normalizedModel: string,
+  normalizedTask: string
+): { score: number; source: string } | null {
+  const { base, via } = resolveScoresAs(normalizedModel);
+  if (via === null || base === normalizedModel) return null;
+  const normalizedBase = base.toLowerCase();
+
+  for (const source of ["user_override", "arena_elo"] as const) {
+    const score = queryModelIntelligence(normalizedBase, normalizedTask, source);
+    if (score !== null) return { score, source: `${source}:inherited` };
+  }
+  return null;
 }
 
 export function setUserFitnessOverride(model: string, category: string, score: number): void {

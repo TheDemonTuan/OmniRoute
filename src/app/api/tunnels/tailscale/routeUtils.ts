@@ -6,7 +6,7 @@ import { isValidationFailure, validateBody } from "@/shared/validation/helpers";
 export const tailscaleEnableSchema = z.object({
   sudoPassword: z.string().optional(),
   hostname: z.string().optional(),
-  port: z.number().int().positive().optional(),
+  port: z.number().int().min(1).max(65535).optional(),
 });
 
 export const tailscaleLoginSchema = z.object({

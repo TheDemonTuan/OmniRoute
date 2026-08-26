@@ -26,7 +26,7 @@ export async function validateKimiWebProvider({ apiKey }: any) {
   if (!rawCred) {
     return {
       valid: false,
-      error: "Missing Kimi access_token from www.kimi.com localStorage",
+      error: "Missing Kimi access_token from www.kimi.ai localStorage",
     };
   }
 
@@ -35,17 +35,17 @@ export async function validateKimiWebProvider({ apiKey }: any) {
     return {
       valid: false,
       error:
-        "Could not find a Kimi access_token. Re-login at https://www.kimi.com and copy it from localStorage.",
+        "Could not find a Kimi access_token. Re-login at https://www.kimi.ai and copy it from localStorage.",
     };
   }
 
   try {
-    const resp = await fetch("https://www.kimi.com/api/user", {
+    const resp = await fetch("https://www.kimi.ai/api/user", {
       headers: {
         Accept: "application/json, text/plain, */*",
         Authorization: `Bearer ${accessToken}`,
-        Origin: "https://www.kimi.com",
-        Referer: "https://www.kimi.com/",
+        Origin: "https://www.kimi.ai",
+        Referer: "https://www.kimi.ai/",
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
       },
@@ -55,7 +55,7 @@ export async function validateKimiWebProvider({ apiKey }: any) {
       return {
         valid: false,
         error:
-          "Kimi session is invalid or expired — re-login at https://www.kimi.com and paste a fresh access_token",
+          "Kimi session is invalid or expired — re-login at https://www.kimi.ai and paste a fresh access_token",
       };
     }
     if (!resp.ok) {
@@ -69,7 +69,7 @@ export async function validateKimiWebProvider({ apiKey }: any) {
         return {
           valid: false,
           error:
-            "Kimi session token is invalid or expired — re-login at https://www.kimi.com and paste a fresh access_token",
+            "Kimi session token is invalid or expired — re-login at https://www.kimi.ai and paste a fresh access_token",
         };
       }
     } catch {

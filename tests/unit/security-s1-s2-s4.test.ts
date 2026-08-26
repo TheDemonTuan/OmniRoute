@@ -41,11 +41,13 @@ describe("S2 — agent-card topology sanitisation", () => {
     assert.equal(res.status, 200);
     const card = (await res.json()) as { url?: string; supportedInterfaces?: { url?: string }[] };
     assert.ok(card.url, "card must have a url");
-    assert.ok(card.url.startsWith("https://gateway.example.com"), `expected gateway.example.com, got ${card.url}`);
+    assert.equal(new URL(card.url).origin, "https://gateway.example.com", `expected gateway.example.com origin, got ${card.url}`);
     if (card.supportedInterfaces && card.supportedInterfaces.length > 0) {
-      assert.ok(
-        card.supportedInterfaces[0].url?.startsWith("https://gateway.example.com"),
-        `interface URL should use dynamic origin, got ${card.supportedInterfaces[0].url}`
+      const ifaceUrl = card.supportedInterfaces[0].url;
+      assert.equal(
+        ifaceUrl ? new URL(ifaceUrl).origin : undefined,
+        "https://gateway.example.com",
+        `interface URL should use dynamic origin, got ${ifaceUrl}`
       );
     }
   });
@@ -62,7 +64,8 @@ describe("S2 — agent-card topology sanitisation", () => {
     const res = await mod.GET(request);
     assert.equal(res.status, 200);
     const card = (await res.json()) as { url?: string };
-    assert.ok(card.url?.startsWith("https://custom.example.com"), `expected custom.example.com, got ${card.url}`);
+    assert.ok(card.url, "card must have a url");
+    assert.equal(new URL(card.url).origin, "https://custom.example.com", `expected custom.example.com origin, got ${card.url}`);
   });
 
   it("agent.json derives URL from request.nextUrl.origin when OMNIROUTE_BASE_URL is unset", async () => {
@@ -76,7 +79,8 @@ describe("S2 — agent-card topology sanitisation", () => {
     const res = await mod.GET(request);
     assert.equal(res.status, 200);
     const card = (await res.json()) as { url?: string };
-    assert.ok(card.url?.startsWith("https://gateway.example.com"), `expected gateway.example.com, got ${card.url}`);
+    assert.ok(card.url, "card must have a url");
+    assert.equal(new URL(card.url).origin, "https://gateway.example.com", `expected gateway.example.com origin, got ${card.url}`);
   });
 });
 

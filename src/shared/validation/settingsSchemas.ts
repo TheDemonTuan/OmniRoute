@@ -138,6 +138,24 @@ export const updateSettingsSchema = z.object({
   // curated `tos` verdict is "avoid" (proxy/self-hosted use conflicts with the
   // provider's own terms) — a contractual concern, not an economic one.
   excludeTosAvoid: z.boolean().optional(),
+  // Subscription-first routing tuning (`auto/subscription`, `auto/thrifty`).
+  // TUNING ONLY — there is deliberately no `enabled` flag: both ids are opt-in
+  // by being requested, and a toggle able to switch them off would leave
+  // `auto/subscription` silently serving paid capacity under a name that
+  // promises the opposite. See open-sse/services/autoCombo/subscriptionLadder.ts.
+  subscriptionLadder: z
+    .object({
+      // Remaining-% at or below which a plan-included connection counts as
+      // exhausted. Matches quotaPreflight.defaultThresholdPercent's default.
+      exitCutoffPercent: z.number().min(0).max(100).optional(),
+      // Remaining-% a connection must EXCEED to be re-admitted after having
+      // been exhausted. The gap above exitCutoffPercent is the hysteresis band
+      // that stops a connection hovering at the cutoff from oscillating.
+      reentryMinRemainingPercent: z.number().min(0).max(100).optional(),
+      // Per-rung spend ceiling in USD. 0 disables a rung outright.
+      rungBudgetUsd: z.record(z.string().max(32), z.number().min(0)).optional(),
+    })
+    .optional(),
   hideHealthCheckLogs: z.boolean().optional(),
   hideEndpointCloudflaredTunnel: z.boolean().optional(),
   hideEndpointTailscaleFunnel: z.boolean().optional(),

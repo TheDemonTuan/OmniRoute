@@ -276,7 +276,16 @@ function resolveProviderModelAlias(
   return aliases?.[modelId] || modelId;
 }
 
-function hasKnownProviderModel(providerOrAlias: string | null | undefined, modelId: string | null) {
+/**
+ * True when the provider serves `modelId` under that exact id (static model list or
+ * a provider-specific alias). Exported for the deprecation-alias provider guard
+ * (#11503): a globally deprecated id that this provider still serves must not be
+ * rewritten out from under the request.
+ */
+export function hasKnownProviderModel(
+  providerOrAlias: string | null | undefined,
+  modelId: string | null
+) {
   if (!providerOrAlias || !modelId) return false;
 
   const providerId = resolveProviderAlias(providerOrAlias);

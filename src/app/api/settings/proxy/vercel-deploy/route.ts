@@ -53,7 +53,11 @@ export default async function handler(req) {
     return new Response(resolved.reason, { status: resolved.status });
   }
   const headers = new Headers(req.headers);
-  ["x-relay-target", "x-relay-path", "x-relay-auth", "host"].forEach(h => headers.delete(h));
+  [
+    "host", "connection", "content-length", "keep-alive", "proxy-connection",
+    "proxy-authenticate", "proxy-authorization", "transfer-encoding", "te", "trailer", "upgrade",
+    "x-relay-target", "x-relay-path", "x-relay-auth",
+  ].forEach(h => headers.delete(h));
   const upstream = await fetch(resolved.url, {
     method: req.method,
     headers,
