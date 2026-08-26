@@ -1,0 +1,79 @@
+name: Edge Approval Gateway Deploy
+
+on:
+  push:
+    branches: [prod, main]
+    paths:
+      - "infra/cloudflare/approval-gateway/**"
+  pull_request:
+    branches: [prod, main]
+    paths:
+      - "infra/cloudflare/approval-gateway/**"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (test only, skip deploy)"
+        type: boolean
+        required: false
+        default: false
+
+concurrency:
+  group: edge-approval-gateway-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: infra/cloudflare/approval-gateway
+
+jobs:
+  test:
+    name: 0 · Test & Typecheck Edge Worker
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 0.1 Checkout source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: 0.2 Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: 0.3 Run Edge Worker Unit Tests
+        run: node --import tsx/esm --test tests/*.test.ts
+        working-directory: infra/cloudflare/approval-gateway
+
+  deploy:
+    name: 1 · Deploy to Cloudflare Workers
+    needs: [test]
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.dry_run)
+    runs-on: ubuntu-latest
+
+    environment:
+      name: production
+
+    steps:
+      - name: 1.1 Checkout source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: 1.2 Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      - name: 1.3 Deploy Worker with Wrangler
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: infra/cloudflare/approval-gateway
+          command: deploy
