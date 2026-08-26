@@ -1,3 +1,7 @@
+---
+title: Cloudflare Edge Approval Gateway
+---
+
 # Cloudflare Edge Approval Gateway
 
 > **Zero-Origin Overhead Approval Architecture with SQLite Durable Objects & Telegram Decision Plane.**
@@ -51,6 +55,7 @@ The **Edge Approval Gateway** moves access gating to the Cloudflare Edge network
 ```
 
 ### Key Guarantees
+
 - **Zero Origin Load for Unapproved Requests**: Requests that are pending, denied, or presenting invalid/random tokens are terminated at the Cloudflare edge with `403 Forbidden`. Zero requests reach Cloudflare Tunnel, Caddy, or the VPS.
 - **Strict Anti-Spam Notification Guarantee**: Atomic state transitions inside SQLite Durable Objects ensure that even with 1,000+ parallel requests, exactly **1 Telegram alert** is sent to the operator for each pending approval cycle.
 - **Unbuffered Streaming**: Approved traffic is forwarded using raw `fetch(request)` streaming, preserving low TTFT (Time To First Token) for SSE `/v1/chat/completions`, `/v1/responses`, and WebSocket channels.
@@ -63,6 +68,7 @@ The **Edge Approval Gateway** moves access gating to the Cloudflare Edge network
 The gateway authenticates client identity without storing raw keys by enforcing cryptographic signatures at the edge:
 
 ### Key v2 Format (128-Bit MAC)
+
 $$\texttt{sk-v2-\{keyId\}-\{mac32\}}$$
 
 - `v2`: Explicit version tag.
@@ -71,7 +77,9 @@ $$\texttt{sk-v2-\{keyId\}-\{mac32\}}$$
   $$\text{mac32} = \text{HMAC-SHA256}_{\text{EDGE\_API\_KEY\_SIGNING\_SECRET}}(\texttt{"v2:"} \parallel \text{keyId})[0..32]$$
 
 ### Client Credential Transports
+
 The Edge Gateway extracts credentials in accordance with OmniRoute standards:
+
 1. `Authorization: Bearer <key>`
 2. `x-api-key: <key>`
 3. `x-goog-api-key: <key>` (Gemini CLI compatibility)
@@ -106,29 +114,30 @@ stateDiagram-v2
 The gateway integrates directly with the existing host systemd bot (`omniroute-ops-bot.service`):
 
 ### Alert Card Layout (Telegram HTML)
+
 ```html
 🔐 <b>New OmniRoute API Access Request</b>
 
-<b>Client:</b> <code>sk-v2-a3f8****</code>
-<b>Key ID:</b> <code>a3f891b2c4e0</code>
+<b>Client:</b> <code>sk-v2-a3f8****</code> <b>Key ID:</b> <code>a3f891b2c4e0</code>
 <b>Client Hash:</b> <code>73698dc7...</code>
 
-<b>IP:</b> <code>14.162.x.x</code>
-<b>Country:</b> 🇻🇳 VN
-<b>Endpoint:</b> <code>POST /v1/responses</code>
-<b>User-Agent:</b> <code>codex_cli_rs/0.1.0</code>
+<b>IP:</b> <code>14.162.x.x</code> <b>Country:</b> 🇻🇳 VN <b>Endpoint:</b>
+<code>POST /v1/responses</code> <b>User-Agent:</b> <code>codex_cli_rs/0.1.0</code>
 <b>First Seen:</b> <code>26/08/2026 10:45:12 UTC</code>
 
 <b>Status:</b> ⏳ <b>PENDING APPROVAL</b>
 ```
 
 ### Inline Interactive Buttons
+
 - `[ ✅ Allow 24h ]`: Approves client traffic for 24 hours. The bot posts a signed decision to `/__edge-control/decision` and edits the message in place.
 - `[ ❌ Deny ]`: Persistently denies access. Subsequent requests are blocked with zero alerts.
 - `[ ♻️ Reset ]`: Deletes the Durable Object state, allowing the client to re-prompt for approval on the next request.
 
 ### Signed Decision Protocol
+
 Requests from the bot to the edge control endpoint require HMAC-SHA256 authentication:
+
 - **Header `X-Edge-Timestamp`**: Unix timestamp in seconds (valid within $\pm 300\text{s}$).
 - **Header `X-Edge-Nonce`**: 32-character random nonce.
 - **Header `X-Edge-Signature`**: $\text{HMAC-SHA256}_{\text{EDGE\_CONTROL\_SECRET}}(\text{Timestamp} \parallel \texttt{"."} \parallel \text{Nonce} \parallel \texttt{"."} \parallel \text{RawBody})$.
@@ -140,18 +149,22 @@ Requests from the bot to the edge control endpoint require HMAC-SHA256 authentic
 ### 5.1 Environment Variables & Secrets
 
 #### Cloudflare Worker Encrypted Secrets
+
 Set via Wrangler CLI or Cloudflare Dashboard:
+
 - `EDGE_API_KEY_SIGNING_SECRET`: Secret used to verify Key v2 128-bit MAC signatures.
 - `EDGE_CONTROL_SECRET`: Secret used to authenticate decision requests from the Ops Bot.
 - `TELEGRAM_BOT_TOKEN`: Telegram bot token from `@BotFather`.
 - `TELEGRAM_CHAT_ID`: Operator numeric chat ID for approval notifications.
 
 #### VPS `.app.env` (`/opt/omniroute/.app.env`)
+
 ```bash
 EDGE_API_KEY_SIGNING_SECRET=<same-secret-as-worker>
 ```
 
 #### VPS Ops Bot Environment (`/etc/omniroute/ops-bot.env`)
+
 ```bash
 OPS_EDGE_PUBLIC_URL=https://api.yourdomain.com
 OPS_EDGE_CONTROL_SECRET=<same-secret-as-worker>
@@ -191,16 +204,21 @@ node --import tsx/esm --test tests/unit/api-key-v2.test.ts
 If edge traffic needs to bypass approval immediately:
 
 ### Option A: Instant Pass-Through Mode (Under 10 Seconds)
+
 Deploy an environment variable override:
+
 ```bash
 npx wrangler deploy --env production --var ENFORCE_APPROVAL:false
 ```
 
 ### Option B: Cloudflare Worker Rollback
+
 Roll back to a prior published version in one command:
+
 ```bash
 npx wrangler rollback <VERSION_ID>
 ```
 
 ### Option C: DNS / Tunnel Direct Cutover
+
 In Cloudflare Zero Trust Dashboard -> Tunnels: point `api.<domain>` directly to `http://caddy:8080` without passing through the Worker route.
