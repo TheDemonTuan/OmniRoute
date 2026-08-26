@@ -22,11 +22,16 @@ test("routes: classifyRequestPath correctly identifies route categories", () => 
   // Edge control
   assert.equal(classifyRequestPath("/__edge-control/decision"), "EDGE_CONTROL");
 
-  // Dashboard
+  // Dashboard pages & internal management APIs pass through to origin
+  assert.equal(classifyRequestPath("/"), "DASHBOARD");
   assert.equal(classifyRequestPath("/dashboard"), "DASHBOARD");
   assert.equal(classifyRequestPath("/dashboard/settings"), "DASHBOARD");
+  assert.equal(classifyRequestPath("/api/keys"), "DASHBOARD");
+  assert.equal(classifyRequestPath("/api/providers"), "DASHBOARD");
+  assert.equal(classifyRequestPath("/api/combos"), "DASHBOARD");
+  assert.equal(classifyRequestPath("/api/stats"), "DASHBOARD");
 
-  // Client API
+  // Client API routes that require API Key approval gating
   assert.equal(classifyRequestPath("/v1/chat/completions"), "CLIENT_API");
   assert.equal(classifyRequestPath("/v1/responses"), "CLIENT_API");
   assert.equal(classifyRequestPath("/api/v1/models"), "CLIENT_API");

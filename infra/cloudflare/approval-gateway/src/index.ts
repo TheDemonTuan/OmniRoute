@@ -7,11 +7,12 @@ import type { ApprovalRow, Env, EvaluationResult, RequestMetadata } from "./type
 
 export { ApprovalDurableObject };
 
-function jsonError(
+function jsonResponse(
   status: number,
   type: string,
   code: string,
-  message: string
+  message: string,
+  extraHeaders: Record<string, string> = {}
 ): Response {
   return new Response(
     JSON.stringify({
@@ -26,6 +27,7 @@ function jsonError(
       headers: {
         "Content-Type": "application/json",
         "X-Edge-Gateway": "OmniRoute-Approval-v1",
+        ...extraHeaders,
       },
     }
   );
@@ -41,7 +43,7 @@ export default {
       return handleControlDecisionRequest(request, env);
     }
 
-    // 2. Telegram Webhook, Public routes, Assets, or Dashboard pages -> pass through to origin
+    // 2. Telegram Webhook, Public routes, Assets, or Dashboard pages -> pass through directly to origin
     if (
       routeType === "TELEGRAM_WEBHOOK" ||
       routeType === "PUBLIC" ||
@@ -59,11 +61,11 @@ export default {
     try {
       const extracted = extractClientCredential(request);
       if (!extracted) {
-        return jsonError(
-          403,
+        return jsonResponse(
+          401,
           "invalid_request_error",
           "unauthorized",
-          "A valid OmniRoute API key is required."
+          "A valid OmniRoute API key (Bearer sk-...) is required for client API endpoints."
         );
       }
 
@@ -77,8 +79,8 @@ export default {
 
       // Invalid signature / random token -> Block silent at edge (0 Telegram, 0 Origin)
       if (!keyProof || !keyProof.valid) {
-        return jsonError(
-          403,
+        return jsonResponse(
+          401,
           "invalid_request_error",
           "invalid_api_key",
           "Invalid or unverified API key signature."
@@ -144,18 +146,19 @@ export default {
         return fetch(request);
       }
 
-      // Case B: Explicitly DENIED -> Reject immediately
+      // Case B: Explicitly DENIED -> Reject immediately with 403
       if (evalResult.status === "DENIED") {
-        return jsonError(
+        return jsonResponse(
           403,
           "access_denied",
           "access_denied",
-          "This API key is not authorized for access."
+          "❌ OmniRoute Access Denied: This API key was denied access by the owner.",
+          { "X-OmniRoute-Approval": "denied" }
         );
       }
 
-      // Case C: PENDING -> Hold and wait for operator approval on Telegram!
-      const waitSeconds = parseInt(env.APPROVAL_WAIT_SECONDS || "45", 10);
+      // Case C: PENDING -> Brief hold window (default 10s), then return retryable 429
+      const waitSeconds = parseInt(env.APPROVAL_WAIT_SECONDS || "10", 10);
       if (waitSeconds > 0) {
         const deadline = Date.now() + waitSeconds * 1000;
         while (Date.now() < deadline) {
@@ -177,11 +180,12 @@ export default {
               }
 
               if (currentStatus === "DENIED") {
-                return jsonError(
+                return jsonResponse(
                   403,
                   "access_denied",
                   "access_denied",
-                  "This API key is not authorized for access."
+                  "❌ OmniRoute Access Denied: This API key was denied access by the owner.",
+                  { "X-OmniRoute-Approval": "denied" }
                 );
               }
             }
@@ -191,17 +195,21 @@ export default {
         }
       }
 
-      // Default when timeout expires without approval
-      return jsonError(
-        403,
+      // Return 429 with Retry-After and a clear message for CLI agents
+      return jsonResponse(
+        429,
         "access_pending",
         "approval_required",
-        "This API key is awaiting operator approval. Tap Allow on Telegram to grant access."
+        "⏳ OmniRoute Access Pending: Your API key is awaiting owner approval on Telegram. Tap [Allow 24h] on Telegram, then retry.",
+        {
+          "Retry-After": "5",
+          "X-OmniRoute-Approval": "pending",
+        }
       );
     } catch (err: unknown) {
       const failClosed = env.FAIL_CLOSED !== "false";
       if (failClosed) {
-        return jsonError(
+        return jsonResponse(
           503,
           "edge_gateway_error",
           "edge_unavailable",

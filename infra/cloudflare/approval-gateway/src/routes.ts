@@ -44,6 +44,18 @@ const PUBLIC_PREFIXES = [
   "/api/telegram/",
 ];
 
+const CLIENT_API_PREFIXES = [
+  "/v1",
+  "/api/v1",
+  "/v1beta",
+  "/api/v1beta",
+  "/chat/completions",
+  "/responses",
+  "/models",
+  "/codex",
+  "/api/cursor-cli",
+];
+
 /**
  * Classify incoming request URL path into functional RouteType
  */
@@ -54,7 +66,7 @@ export function classifyRequestPath(pathname: string): RouteType {
     normalized = normalized.slice(0, -1);
   }
 
-  // Telegram bot webhook route -> pass directly to origin
+  // Telegram bot webhook route -> pass directly to origin Caddy
   if (normalized === "/tg-ops" || normalized.startsWith("/tg-ops/")) {
     return "TELEGRAM_WEBHOOK";
   }
@@ -64,12 +76,12 @@ export function classifyRequestPath(pathname: string): RouteType {
     return "EDGE_CONTROL";
   }
 
-  // Exact public endpoints
+  // Exact public endpoints (health checks, login/logout, static)
   if (PUBLIC_EXACT_PATHS.has(normalized)) {
     return "PUBLIC";
   }
 
-  // Public prefixes (Next assets, OAuth callbacks, Telegram update proxy)
+  // Public prefixes (Next.js assets, OAuth callbacks, Telegram update proxy)
   for (const prefix of PUBLIC_PREFIXES) {
     if (normalized.startsWith(prefix)) {
       return "PUBLIC";
@@ -85,13 +97,16 @@ export function classifyRequestPath(pathname: string): RouteType {
     }
   }
 
-  // Dashboard pages and root dashboard redirect
-  if (normalized === "/" || normalized === "/dashboard" || normalized.startsWith("/dashboard/")) {
-    return "DASHBOARD";
+  // Client API routes that require API Key approval gating
+  for (const prefix of CLIENT_API_PREFIXES) {
+    if (normalized === prefix || normalized.startsWith(prefix + "/")) {
+      return "CLIENT_API";
+    }
   }
 
-  // Default to CLIENT_API for all proxy / completions / responses routes
-  return "CLIENT_API";
+  // Everything else (/, /dashboard, /dashboard/*, /api/keys, /api/providers, /api/settings/*, etc.)
+  // belongs to the dashboard / management plane, which is authenticated by OmniRoute's own password/cookie.
+  return "DASHBOARD";
 }
 
 /**
