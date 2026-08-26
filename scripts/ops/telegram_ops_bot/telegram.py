@@ -285,6 +285,11 @@ class TelegramClient:
         result = self._request("getWebhookInfo", timeout=10.0)
         return result if isinstance(result, dict) else {}
 
+    def set_my_commands(self, commands: List[Dict[str, str]]) -> bool:
+        """Register the list of bot commands with Telegram."""
+        result = self._request("setMyCommands", payload={"commands": commands}, timeout=10.0)
+        return bool(result)
+
     def get_updates(
         self,
         offset: Optional[int] = None,

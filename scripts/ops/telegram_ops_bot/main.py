@@ -196,8 +196,31 @@ class TelegramOpsBot:
         except TelegramError as e:
             logger.warning("Could not reach Telegram during initial probe: %s. Continuing...", e)
 
+    def _register_bot_commands(self) -> None:
+        """Register the standard command list with Telegram for autocomplete."""
+        commands = [
+            {"command": "status", "description": "Operational dashboard & health overview"},
+            {"command": "access", "description": "Edge approval gateway & client management"},
+            {"command": "system", "description": "Host CPU, RAM, Disk, Load metrics"},
+            {"command": "containers", "description": "Docker container status"},
+            {"command": "omniroute", "description": "AI router engine & circuit breakers"},
+            {"command": "deploy", "description": "Current release version & git status"},
+            {"command": "logs", "description": "Tail recent sanitized service logs"},
+            {"command": "backups", "description": "SQLite database backup status"},
+            {"command": "security", "description": "Firewall, audit trails & security posture"},
+            {"command": "upstream", "description": "Upstream release commits & sync"},
+            {"command": "actions", "description": "Production workflow runs & actions"},
+            {"command": "prs", "description": "Open sync pull requests"},
+            {"command": "help", "description": "Show available commands list"},
+        ]
+        try:
+            self.telegram.set_my_commands(commands)
+        except Exception as err:
+            logger.debug("Failed registering bot commands: %s", err)
+
     def _run_webhook(self) -> None:
         """Register the webhook with Telegram and serve until stopped."""
+        self._register_bot_commands()
         self._webhook = WebhookServer(
             dispatch=self._dispatch_update,
             state=self.state,
@@ -227,6 +250,7 @@ class TelegramOpsBot:
 
     def _run_polling(self) -> None:
         """Fallback intake: long polling, needing only outbound connectivity."""
+        self._register_bot_commands()
         self.telegram.delete_webhook(drop_pending_updates=False)
 
         offset = self.state.get_offset()
