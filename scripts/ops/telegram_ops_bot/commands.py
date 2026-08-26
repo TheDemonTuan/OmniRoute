@@ -429,17 +429,43 @@ class CommandDispatcher:
                     make_inline_keyboard([[("🏠 Status", "view:status")]]),
                 )
 
-        # Overview
-        msg = (
-            "<b>🔐 Cloudflare Edge Approval Gateway</b>\n\n"
-            f"<b>Edge URL:</b> <code>{escape_html(self.edge_client.edge_public_url)}</code>\n"
-            "<b>Status:</b> 🟢 Active\n\n"
-            "<b>Operations:</b>\n"
-            "• <code>/access reset &lt;client_id&gt;</code> - Reset approval state for a key\n"
-            "• <code>/access allow &lt;client_id&gt;</code> - Manually approve for 24h\n"
-            "• <code>/access deny &lt;client_id&gt;</code> - Manually deny access"
-        )
-        return msg, make_inline_keyboard([[("🏠 Status", "view:status")]])
+        # Overview with recent access audit history
+        recent_audits = self.state.get_recent_audit_logs(50)
+        access_events = [
+            a for a in recent_audits
+            if str(a.get("command", "")).startswith("access")
+        ][:5]
+
+        lines = [
+            "<b>🔐 Cloudflare Edge Approval Gateway</b>",
+            "",
+            f"<b>Edge URL:</b> <code>{escape_html(self.edge_client.edge_public_url)}</code>",
+            "<b>Status:</b> 🟢 Active",
+        ]
+
+        buttons: List[List[Tuple[str, str]]] = []
+        if access_events:
+            lines.append("")
+            lines.append("<b>📋 Lịch sử duyệt gần đây:</b>")
+            for ev in access_events:
+                ts = time.strftime("%d/%m %H:%M", time.gmtime(float(ev.get("timestamp", 0))))
+                cmd = str(ev.get("command", "")).replace("access:", "")
+                target = str(ev.get("args", ""))[:16]
+                icon = "✅" if "allow" in cmd else ("❌" if "deny" in cmd else "♻️")
+                lines.append(f"• {icon} <code>{escape_html(target)}...</code> ({escape_html(cmd)}) - <i>{ts} UTC</i>")
+                if target and len(target) >= 8:
+                    buttons.append([(f"♻️ Reset {target[:8]}", f"access:reset:{target}")])
+
+        lines.extend([
+            "",
+            "<b>Lệnh quản trị:</b>",
+            "• <code>/access allow &lt;client_hash&gt;</code> - Duyệt thủ công 24h",
+            "• <code>/access deny &lt;client_hash&gt;</code> - Chặn truy cập",
+            "• <code>/access reset &lt;client_hash&gt;</code> - Xóa trạng thái để xin duyệt lại",
+        ])
+
+        buttons.append([("🔄 Refresh", "refresh:access"), ("🏠 Status", "view:status")])
+        return "\n".join(lines), make_inline_keyboard(buttons)
 
     def _execute_action(self, action_type: str, payload: Dict[str, Any]) -> str:
         """Execute one fixed allow-listed operation and return a redacted result."""
@@ -788,6 +814,8 @@ class CommandDispatcher:
             new_text, new_markup = self.handle_upstream()
         elif data in ("refresh:actions", "view:actions"):
             new_text, new_markup = self.handle_actions()
+        elif data in ("refresh:access", "view:access"):
+            new_text, new_markup = self.handle_access()
         elif data in ("refresh:prs", "view:prs"):
             new_text, new_markup = self.handle_prs()
         elif data.startswith("prepare:"):
