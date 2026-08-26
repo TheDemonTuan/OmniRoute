@@ -73,4 +73,5 @@ export interface Env {
   ALLOW_LEGACY_V1?: string;
   FAIL_CLOSED?: string;
   DEFAULT_APPROVAL_DURATION_SECONDS?: string;
+  APPROVAL_WAIT_SECONDS?: string;
 }

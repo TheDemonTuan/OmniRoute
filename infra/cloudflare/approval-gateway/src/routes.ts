@@ -69,7 +69,7 @@ export function classifyRequestPath(pathname: string): RouteType {
     return "PUBLIC";
   }
 
-  // Public prefixes (assets, OAuth callbacks, Telegram update proxy)
+  // Public prefixes (Next assets, OAuth callbacks, Telegram update proxy)
   for (const prefix of PUBLIC_PREFIXES) {
     if (normalized.startsWith(prefix)) {
       return "PUBLIC";
@@ -85,8 +85,8 @@ export function classifyRequestPath(pathname: string): RouteType {
     }
   }
 
-  // Dashboard pages
-  if (normalized === "/dashboard" || normalized.startsWith("/dashboard/")) {
+  // Dashboard pages and root dashboard redirect
+  if (normalized === "/" || normalized === "/dashboard" || normalized.startsWith("/dashboard/")) {
     return "DASHBOARD";
   }
 

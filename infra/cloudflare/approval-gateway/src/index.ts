@@ -3,7 +3,7 @@ import { handleControlDecisionRequest } from "./control";
 import { computeSha256Hex, verifyApiKeySignature } from "./key-verifier";
 import { classifyRequestPath, extractClientCredential, maskApiKey } from "./routes";
 import { sendTelegramPendingAlert } from "./telegram";
-import type { Env, EvaluationResult, RequestMetadata } from "./types";
+import type { ApprovalRow, Env, EvaluationResult, RequestMetadata } from "./types";
 
 export { ApprovalDurableObject };
 
@@ -85,8 +85,10 @@ export default {
         );
       }
 
-      // Key signature valid -> Query Durable Object by SHA-256 client hash
-      const clientId = await computeSha256Hex(extracted.apiKey);
+      // Key signature valid -> 32-character client hash fits within Telegram 64-byte callback limit
+      const fullHash = await computeSha256Hex(extracted.apiKey);
+      const clientId = fullHash.slice(0, 32);
+
       const doId = env.APPROVAL_DO.idFromName(clientId);
       const stub = env.APPROVAL_DO.get(doId);
 
@@ -122,7 +124,6 @@ export default {
             env.TELEGRAM_CHAT_ID
           ).then((alertRes) => {
             if (alertRes.success && alertRes.messageId) {
-              // Update telegram message ID in DO for future interactive edits
               void stub.fetch("http://do/decision", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -138,12 +139,12 @@ export default {
         );
       }
 
-      // Handle evaluation outcome
+      // Case A: Already APPROVED -> Forward immediately to origin
       if (evalResult.status === "APPROVED") {
-        // Stream transparently to origin without body buffering
         return fetch(request);
       }
 
+      // Case B: Explicitly DENIED -> Reject immediately
       if (evalResult.status === "DENIED") {
         return jsonError(
           403,
@@ -153,12 +154,49 @@ export default {
         );
       }
 
-      // Default: PENDING
+      // Case C: PENDING -> Hold and wait for operator approval on Telegram!
+      const waitSeconds = parseInt(env.APPROVAL_WAIT_SECONDS || "45", 10);
+      if (waitSeconds > 0) {
+        const deadline = Date.now() + waitSeconds * 1000;
+        while (Date.now() < deadline) {
+          if (request.signal?.aborted) {
+            break;
+          }
+
+          await new Promise((resolve) => setTimeout(resolve, 800));
+
+          try {
+            const statusRes = await stub.fetch(`http://do/status?clientId=${clientId}`);
+            if (statusRes.ok) {
+              const data = (await statusRes.json()) as { record: ApprovalRow | null };
+              const currentStatus = data.record?.status;
+
+              if (currentStatus === "APPROVED") {
+                // Operator approved on Telegram! Stream request immediately to origin!
+                return fetch(request);
+              }
+
+              if (currentStatus === "DENIED") {
+                return jsonError(
+                  403,
+                  "access_denied",
+                  "access_denied",
+                  "This API key is not authorized for access."
+                );
+              }
+            }
+          } catch {
+            /* retry polling until timeout */
+          }
+        }
+      }
+
+      // Default when timeout expires without approval
       return jsonError(
         403,
         "access_pending",
         "approval_required",
-        "This API key is awaiting operator approval."
+        "This API key is awaiting operator approval. Tap Allow on Telegram to grant access."
       );
     } catch (err: unknown) {
       const failClosed = env.FAIL_CLOSED !== "false";

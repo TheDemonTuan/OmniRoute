@@ -2,17 +2,6 @@
  * Web Crypto cryptographic verifier for API key signatures at the Cloudflare Edge.
  */
 
-function hexToBytes(hex: string): Uint8Array | null {
-  if (hex.length % 2 !== 0) return null;
-  const bytes = new Uint8Array(hex.length / 2);
-  for (let i = 0; i < hex.length; i += 2) {
-    const val = parseInt(hex.substring(i, i + 2), 16);
-    if (Number.isNaN(val)) return null;
-    bytes[i / 2] = val;
-  }
-  return bytes;
-}
-
 function bytesToHex(bytes: Uint8Array): string {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
@@ -78,7 +67,7 @@ export async function verifyKeyV2(
 
 /**
  * Verify Key v1 format: sk-{machineId}-{keyId}-{crc8}
- * Uses PBKDF2-SHA256(machineId + keyId, secret, 1000, 32) truncated to 8 hex chars.
+ * Uses PBKDF2-SHA256(password=machineId+keyId, salt=secret, iterations=1000, keylen=32) truncated to 8 hex chars.
  */
 export async function verifyKeyV1(
   apiKey: string,
@@ -100,9 +89,11 @@ export async function verifyKeyV1(
 
   try {
     const encoder = new TextEncoder();
+    // In Node.js: crypto.pbkdf2Sync(machineId + keyId, secret, 1000, 32, "sha256")
+    // Password is (machineId + keyId), Salt is secret
     const keyMaterial = await crypto.subtle.importKey(
       "raw",
-      encoder.encode(secret),
+      encoder.encode(machineId + keyId),
       { name: "PBKDF2" },
       false,
       ["deriveBits"]
@@ -111,7 +102,7 @@ export async function verifyKeyV1(
     const derivedBits = await crypto.subtle.deriveBits(
       {
         name: "PBKDF2",
-        salt: encoder.encode(machineId + keyId),
+        salt: encoder.encode(secret),
         iterations: 1000,
         hash: "SHA-256",
       },

@@ -47,16 +47,14 @@ export function buildTelegramAlertPayload(
     `<b>User-Agent:</b> <code>${escapeHtml(record.user_agent || "unknown")}</code>`,
     `<b>First Seen:</b> <code>${escapeHtml(formatDateIso(record.first_seen_at))}</code>`,
     "",
-    "<b>Status:</b> ⏳ <b>PENDING APPROVAL</b>",
+    "<b>Status:</b> ⏳ <b>PENDING APPROVAL (Waiting for you...)</b>",
   ].join("\n");
 
-  // Keep callback_data well under Telegram's 64-byte limit:
-  // e.g. "access:allow:73698dc75cbda123:1" (~34 bytes)
-  const idPrefix = record.client_id.slice(0, 16);
-  const allowData = `access:allow:${idPrefix}:${record.epoch}`;
-  const denyData = `access:deny:${idPrefix}:${record.epoch}`;
-  const infoData = `access:info:${idPrefix}`;
-  const resetData = `access:reset:${idPrefix}`;
+  // Format: "access:allow:<32_hex_clientId>:<epoch>" (48 bytes <= 64 bytes)
+  const allowData = `access:allow:${record.client_id}:${record.epoch}`;
+  const denyData = `access:deny:${record.client_id}:${record.epoch}`;
+  const infoData = `access:info:${record.client_id}`;
+  const resetData = `access:reset:${record.client_id}`;
 
   return {
     chat_id: chatId,
