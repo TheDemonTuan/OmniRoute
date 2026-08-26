@@ -348,7 +348,7 @@ test("buildHealthPayload projects allowlisted structural chatAdmission fields on
     waiting: 2,
     queuedBytes: 524_288,
     shedTotal: 3,
-    shedsByReason: { queue_timeout: 2, queued_bytes_budget: 1 },
+    shedsByReason: { queue_timeout: 2, body_exceeds_budget: 1 },
     lanes: [
       { key: "key_c49d1c242feda590", waiting: 1 },
       { key: "anonymous", waiting: 1 },
@@ -393,7 +393,7 @@ test("buildHealthPayload projects allowlisted structural chatAdmission fields on
     waiting: 2,
     queuedBytes: 524_288,
     shedTotal: 3,
-    shedsByReason: { queue_timeout: 2, queued_bytes_budget: 1 },
+    shedsByReason: { queue_timeout: 2, body_exceeds_budget: 1 },
     lanes: [
       { key: "key_c49d1c242feda590", waiting: 1 },
       { key: "anonymous", waiting: 1 },

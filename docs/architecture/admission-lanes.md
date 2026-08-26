@@ -31,8 +31,11 @@ complementary; operators should know which one they are looking at.
   process's real memory ceiling (`src/shared/middleware/admissionBudget.ts`):
   25% of the tighter of the V8 heap limit and any cgroup/container limit,
   divided by an 8x transient-amplification factor, clamped between 8 MiB and
-  2 GiB. This scales itself from a 512 MB container to a 32 GB desktop with no
-  env tuning. A live multi-signal resource-pressure tracker (V8 heap ratio,
+  2 GiB. Explicit overrides use the same clamps. This scales itself from a
+  512 MB container to a 32 GB desktop with no env tuning. A body that cannot
+  fit within the effective budget fails immediately with `413 body_exceeds_budget`;
+  only contention among individually serviceable bodies enters the bounded
+  fairness queue. A live multi-signal resource-pressure tracker (V8 heap ratio,
   cgroup, PSI, OOM events — `open-sse/utils/resourcePressurePolicy.ts`) shortens
   the bounded wait under `high` pressure and sheds immediately with
   `503 resource_pressure` under `critical` pressure, before any bytes are even

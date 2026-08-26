@@ -15,12 +15,28 @@
  * connection's burst cannot starve others (#9654).
  */
 
-import { CORS_HEADERS } from "../utils/cors";
 import { createLogger } from "../utils/logger";
-import { createHmac } from "crypto";
 import v8 from "node:v8";
 import { trackRequest } from "../../lib/gracefulShutdown";
 import { resolveIngestByteBudget, type IngestBudgetSource } from "./admissionBudget";
+import {
+  ADMISSION_BYPASS_HEADER,
+  isInternalAdmissionBypass,
+  resolveSelfLoopBearer,
+  resolveSessionId,
+} from "./chatAdmissionIdentity";
+import {
+  bodyExceedsBudgetResponse,
+  chatAdmissionRejectionResponse,
+  resourcePressureRejectionResponse,
+  structuralRejectionResponse,
+} from "./chatAdmissionResponses";
+import { estimateStructureTokens } from "./chatAdmissionStructureEstimate";
+import {
+  composeAdmissionLease,
+  IngestByteAdmissionController,
+  type IngestBudgetAcquireResult,
+} from "./ingestByteAdmission";
 import {
   getResourcePressureObservation,
   type PressureSeverity,
@@ -188,21 +204,11 @@ interface AdmissionWaiter {
 export type ChatAdmissionShedReason =
   | "queue_timeout"
   | "queued_bytes_budget"
-  /** #503-fanout: the additive ingest byte-budget gate ran out of headroom. */
+  | "body_exceeds_budget"
   | "inflight_bytes_budget"
-  /** #503-fanout: shed before ingestion because the multi-signal resource-pressure
-   * tracker reported "critical" (V8 heap ratio, cgroup, PSI, OOM events — see
-   * open-sse/utils/resourcePressurePolicy.ts). */
   | "resource_pressure";
 
-/**
- * Live multi-signal resource-pressure severity, consulted by the ingest
- * byte-budget gate (#503-fanout). Deliberately reads
- * `getResourcePressureObservation()` (cheap, cached, hysteresis-smoothed) —
- * NOT `checkResourcePressureGuard()`, which builds a full 503 Response; this
- * gate only wants the severity. Any read failure fails open to "normal" so a
- * transient sampling error never turns into a false shed.
- */
+/** Read cached pressure severity; sampling failures must not cause false sheds. */
 export function defaultPressureSeverity(): PressureSeverity {
   try {
     return getResourcePressureObservation().state.severity;
@@ -268,22 +274,7 @@ export class ChatAdmissionController {
   #shedsByReason = new Map<string, number>();
   readonly #onShed: ChatAdmissionShedSink;
 
-  /**
-   * Additive ingest byte-budget gate (#503-fanout). Fully independent of
-   * `#activeHeavy`/`#queues` above — a second, isolated accounting so the
-   * legacy count-based gate's tested behavior (every existing test constructs
-   * a `ChatAdmissionController` directly and never touches these fields) is
-   * byte-identical to before. Only the production singleton wires a real
-   * budget; every other caller gets the default "unlimited, always normal
-   * pressure" no-op below.
-   */
-  #inflightBytes = 0;
-  readonly maxInflightBytes: number;
-  readonly budgetSource: IngestBudgetSource;
-  readonly #checkPressureSeverity: () => PressureSeverity;
-  #budgetQueues = new Map<string, Array<{ resolve: () => void }>>();
-  #budgetFairKeys: string[] = [];
-  #budgetFairCursor = 0;
+  readonly #ingestBudget: IngestByteAdmissionController;
 
   constructor(
     readonly maxHeavyInFlight = 1,
@@ -312,9 +303,10 @@ export class ChatAdmissionController {
       throw new RangeError("healthyHeadroom must be a non-negative integer");
     }
     this.#onShed = onShed;
-    this.maxInflightBytes = budgetOptions.maxInflightBytes ?? Number.MAX_SAFE_INTEGER;
-    this.budgetSource = budgetOptions.budgetSource ?? "v8_heap";
-    this.#checkPressureSeverity = budgetOptions.checkPressureSeverity ?? (() => "normal");
+    this.#ingestBudget = new IngestByteAdmissionController({
+      ...budgetOptions,
+      onShed: (reason, lane) => this.recordShed(reason, lane),
+    });
   }
 
   get activeHeavy(): number {
@@ -561,136 +553,37 @@ export class ChatAdmissionController {
     }
   }
 
-  // ── Ingest byte-budget gate (additive, #503-fanout) ──────────────────────
-  //
-  // Everything below is a second, isolated accounting layer alongside the
-  // count-based gate above. It never reads or writes `#activeHeavy`/`#queues`,
-  // so every existing test (which constructs a `ChatAdmissionController`
-  // directly and only calls `tryAcquireHeavy`/`acquireHeavyWithin`) is
-  // unaffected. `maxInflightBytes` defaults to unlimited, so these methods are
-  // a true no-op for any controller that doesn't opt in via `budgetOptions`.
-
-  /** Live ingest bytes currently reserved through the byte-budget gate. */
   get inflightBytes(): number {
-    return this.#inflightBytes;
+    return this.#ingestBudget.inflightBytes;
   }
 
-  /** Live pressure severity consulted by the byte-budget gate. */
+  get maxInflightBytes(): number {
+    return this.#ingestBudget.maxInflightBytes;
+  }
+
+  get budgetSource(): IngestBudgetSource {
+    return this.#ingestBudget.budgetSource;
+  }
+
   pressureSeverity(): PressureSeverity {
-    return this.#checkPressureSeverity();
+    return this.#ingestBudget.pressureSeverity();
   }
 
-  /** Reserve `bytes` from the byte-budget gate. `bytes <= 0` never fails. */
+  canFitBudget(bytes: number): boolean {
+    return this.#ingestBudget.canFit(bytes);
+  }
+
   tryAcquireBudget(bytes: number): ChatAdmissionLease | null {
-    const charge = Math.max(0, Math.floor(bytes));
-    if (this.#inflightBytes + charge > this.maxInflightBytes) return null;
-    this.#inflightBytes += charge;
-    let released = false;
-    return {
-      get released() {
-        return released;
-      },
-      release: () => {
-        if (released) return;
-        released = true;
-        this.#inflightBytes = Math.max(0, this.#inflightBytes - charge);
-        this.#dispatchBudgetFair();
-      },
-    };
+    return this.#ingestBudget.tryAcquire(bytes);
   }
 
-  /**
-   * Bounded wait for byte-budget capacity, mirroring `acquireHeavyWithin`'s
-   * per-key round-robin fairness against the independent byte counter above.
-   * `timeoutMs <= 0` is immediate reject-on-busy.
-   */
-  async acquireBudgetWithin(
+  acquireBudgetWithin(
     bytes: number,
     timeoutMs: number,
     signal?: AbortSignal,
     sessionKey = "default"
-  ): Promise<ChatAdmissionLease | null> {
-    const deadline = Date.now() + Math.max(0, Math.floor(timeoutMs));
-    for (;;) {
-      if (signal?.aborted) return null;
-      const lease = this.tryAcquireBudget(bytes);
-      if (lease) return lease;
-      const remaining = deadline - Date.now();
-      if (remaining <= 0) {
-        this.recordShed("inflight_bytes_budget", sessionKey);
-        return null;
-      }
-      let queue = this.#budgetQueues.get(sessionKey);
-      if (!queue) {
-        queue = [];
-        this.#budgetQueues.set(sessionKey, queue);
-        this.#budgetFairKeys.push(sessionKey);
-      }
-      const lane = queue;
-      let resolveParked: (() => void) | null = null;
-      const waiter = { resolve: () => resolveParked?.() };
-      const parked = new Promise<void>((resolve) => {
-        resolveParked = () => resolve();
-        lane.push(waiter);
-      });
-      let deadlineTimer: ReturnType<typeof setTimeout> | null = null;
-      const races: Array<Promise<boolean>> = [
-        parked.then(() => false),
-        new Promise<boolean>((resolve) => {
-          deadlineTimer = setTimeout(() => resolve(true), remaining);
-        }),
-      ];
-      let onAbort: (() => void) | null = null;
-      if (signal) {
-        races.push(
-          new Promise<boolean>((resolve) => {
-            const listener = () => resolve(true);
-            onAbort = listener;
-            signal.addEventListener("abort", listener, { once: true });
-            if (signal.aborted) resolve(true);
-          })
-        );
-      }
-      const timedOut = await Promise.race(races);
-      this.#removeBudgetWaiter(sessionKey, waiter);
-      if (deadlineTimer) clearTimeout(deadlineTimer);
-      if (onAbort) signal?.removeEventListener("abort", onAbort);
-      if (timedOut) {
-        if (!signal?.aborted) this.recordShed("inflight_bytes_budget", sessionKey);
-        return null;
-      }
-    }
-  }
-
-  #removeBudgetWaiter(key: string, waiter: { resolve: () => void }): void {
-    const queue = this.#budgetQueues.get(key);
-    if (!queue) return;
-    const index = queue.indexOf(waiter);
-    if (index >= 0) queue.splice(index, 1);
-    if (queue.length === 0) this.#removeBudgetFairKey(key);
-  }
-
-  #removeBudgetFairKey(key: string): void {
-    this.#budgetQueues.delete(key);
-    const index = this.#budgetFairKeys.indexOf(key);
-    if (index < 0) return;
-    this.#budgetFairKeys.splice(index, 1);
-    if (index < this.#budgetFairCursor) this.#budgetFairCursor -= 1;
-    if (this.#budgetFairKeys.length === 0) this.#budgetFairCursor = 0;
-  }
-
-  #dispatchBudgetFair(): void {
-    if (this.#budgetFairKeys.length === 0) return;
-    for (let i = 0; i < this.#budgetFairKeys.length; i++) {
-      const key = this.#budgetFairKeys[this.#budgetFairCursor % this.#budgetFairKeys.length];
-      this.#budgetFairCursor += 1;
-      const queue = this.#budgetQueues.get(key);
-      if (!queue || queue.length === 0) continue;
-      const waiter = queue.shift() as { resolve: () => void };
-      if (queue.length === 0) this.#removeBudgetFairKey(key);
-      waiter.resolve();
-      return;
-    }
+  ): Promise<IngestBudgetAcquireResult> {
+    return this.#ingestBudget.acquireWithin(bytes, timeoutMs, signal, sessionKey);
   }
 }
 
@@ -713,53 +606,12 @@ const defaultAdmissionController = new ChatAdmissionController(CHAT_MAX_HEAVY_IN
  * per-key capacity being allocated.
  */
 
-export function resolveSessionId(request: Request): string {
-  // Fairness scheduling key ONLY (never a capacity shard): hashed so raw key
-  // material never appears in diagnostics. Reuses the internal-bypass auth
-  // extraction: bearer token from Authorization, x-api-key (Anthropic-style),
-  // or Google API key header.
-  // CodeQL: Intentionally HMAC-SHA256 with a fixed context key, NOT password hashing. The
-  // digest is a deterministic, non-reversible per-key fairness key for the shared admission
-  // budget — never stored or used for password-style verification.
-  const authHeader = request.headers.get("authorization") || "";
-  const bearerMatch = /^bearer\s+(\S+)$/i.exec(authHeader.trim());
-  if (bearerMatch) {
-    // Fingerprint for the admission-budget bucket key, not a password/credential hash — keyed
-    // with a fixed context label so it reads as a domain-separated digest, not a bare hash.
-    return (
-      "key_" +
-      createHmac("sha256", "omniroute-admission-fingerprint-v1")
-        .update(bearerMatch[1])
-        .digest("hex")
-        .slice(0, 16)
-    );
-  }
-  const xApiKey = request.headers.get("x-api-key") || "";
-  if (xApiKey.trim().length > 0) {
-    // Fingerprint for the admission-budget bucket key, not a password/credential hash — keyed
-    // with a fixed context label so it reads as a domain-separated digest, not a bare hash.
-    return (
-      "key_" +
-      createHmac("sha256", "omniroute-admission-fingerprint-v1")
-        .update(xApiKey.trim())
-        .digest("hex")
-        .slice(0, 16)
-    );
-  }
-  const xGoogApiKey = request.headers.get("x-goog-api-key") || "";
-  if (xGoogApiKey.trim().length > 0) {
-    // Fingerprint for the admission-budget bucket key, not a password/credential hash — keyed
-    // with a fixed context label so it reads as a domain-separated digest, not a bare hash.
-    return (
-      "key_" +
-      createHmac("sha256", "omniroute-admission-fingerprint-v1")
-        .update(xGoogApiKey.trim())
-        .digest("hex")
-        .slice(0, 16)
-    );
-  }
-  return "anonymous";
-}
+export { ADMISSION_BYPASS_HEADER, resolveSelfLoopBearer, resolveSessionId };
+
+const NULL_LEASE: ChatAdmissionLease = {
+  released: true,
+  release() {},
+};
 
 export class PerConnectionAdmissionController {
   readonly #controller: ChatAdmissionController;
@@ -892,147 +744,7 @@ export type ChatRequestAdmission =
 export type ChatStructureAdmission =
   { admit: true; lease: ChatAdmissionLease | null } | { admit: false; response: Response };
 
-function rejectionResponse(status: 413 | 503, hardMaxBytes: number): Response {
-  const isPayload = status === 413;
-  const headers: Record<string, string> = {
-    ...CORS_HEADERS,
-    "Content-Type": "application/json",
-  };
-  if (!isPayload) headers["Retry-After"] = "2";
-  return new Response(
-    JSON.stringify({
-      error: {
-        message: isPayload
-          ? `Request body too large for chat completions (max ${Math.floor(
-              hardMaxBytes / (1024 * 1024)
-            )} MB).`
-          : "Chat admission capacity is temporarily unavailable. Retry shortly.",
-        type: isPayload ? "payload_too_large" : "server_error",
-        code: isPayload ? "PAYLOAD_TOO_LARGE" : "chat_admission_busy",
-      },
-    }),
-    { status, headers }
-  );
-}
-
-/**
- * #503-fanout: shed BEFORE ingestion when the multi-signal resource-pressure
- * tracker reports "critical" — distinct from `rejectionResponse`'s
- * `chat_admission_busy` (a capacity-exhaustion shed) so operators can tell
- * "the process is genuinely under memory pressure" apart from "the ingest
- * byte budget is momentarily busy."
- */
-function resourcePressureRejectionResponse(): Response {
-  return new Response(
-    JSON.stringify({
-      error: {
-        message: "Service temporarily unavailable due to resource pressure. Retry shortly.",
-        type: "server_error",
-        code: "resource_pressure",
-      },
-    }),
-    {
-      status: 503,
-      headers: { ...CORS_HEADERS, "Content-Type": "application/json", "Retry-After": "2" },
-    }
-  );
-}
-
-/**
- * Bounded wait for the ingest byte-budget gate under NORMAL pressure
- * (#503-fanout): capped short so a momentarily-busy budget resolves quickly
- * instead of dragging the full `queueMs` when nothing is actually wrong.
- * `high` pressure uses the full `queueMs` — the bounded wait genuinely
- * matters there.
- */
 const INGEST_NORMAL_MAX_WAIT_MS = 250;
-
-function composeChatAdmissionLease(...leases: ChatAdmissionLease[]): ChatAdmissionLease {
-  let released = false;
-  return {
-    get released() {
-      return released;
-    },
-    release: () => {
-      if (released) return;
-      released = true;
-      for (const lease of leases) lease.release();
-    },
-  };
-}
-
-function structuralRejectionResponse(status: 413 | 503, maxMessages: number): Response {
-  const historyLimit = status === 413;
-  const headers: Record<string, string> = {
-    ...CORS_HEADERS,
-    "Content-Type": "application/json",
-  };
-  if (!historyLimit) headers["Retry-After"] = "1";
-
-  return new Response(
-    JSON.stringify({
-      error: {
-        message: historyLimit
-          ? `Chat history exceeds the ${maxMessages}-message limit; compact the conversation and retry.`
-          : "Structurally heavy chat request capacity is busy; retry shortly.",
-        type: historyLimit ? "payload_too_large" : "server_error",
-        code: historyLimit ? "chat_history_too_large" : "chat_admission_busy",
-        reason: historyLimit ? "message_limit" : "structure_limit",
-      },
-    }),
-    { status, headers }
-  );
-}
-
-type TokenEstimate = { tokens: number; exhausted: boolean };
-
-function conservativeStringTokens(value: string, remaining: number): number {
-  let tokens = 0;
-  for (const character of value) {
-    tokens += character.codePointAt(0)! < 0x80 ? 0.25 : 1;
-    if (tokens >= remaining) return remaining;
-  }
-  return tokens;
-}
-
-function estimateStructureTokens(value: unknown, limit: number): TokenEstimate {
-  let tokens = 0;
-  let visited = 0;
-  const maxNodes = 10_000;
-  const stack: Array<{ value: unknown; depth: number }> = [{ value, depth: 0 }];
-  while (stack.length > 0 && tokens < limit && visited < maxNodes) {
-    const current = stack.pop();
-    if (!current) break;
-    visited += 1;
-    if (typeof current.value === "string") {
-      tokens += conservativeStringTokens(current.value, limit - tokens);
-      continue;
-    }
-    if (!current.value || typeof current.value !== "object") continue;
-    if (current.depth >= 12) return { tokens, exhausted: true };
-
-    const remainingNodes = maxNodes - visited - stack.length;
-    if (Array.isArray(current.value)) {
-      if (current.value.length > remainingNodes) return { tokens, exhausted: true };
-      for (const child of current.value) stack.push({ value: child, depth: current.depth + 1 });
-      continue;
-    }
-
-    let children = 0;
-    for (const key in current.value) {
-      if (!Object.hasOwn(current.value, key)) continue;
-      children += 1;
-      if (children > remainingNodes) return { tokens, exhausted: true };
-      tokens += conservativeStringTokens(key, limit - tokens);
-      if (tokens >= limit) return { tokens: limit, exhausted: false };
-      stack.push({
-        value: (current.value as Record<string, unknown>)[key],
-        depth: current.depth + 1,
-      });
-    }
-  }
-  return { tokens, exhausted: stack.length > 0 && tokens < limit };
-}
 
 export async function admitChatStructure(
   body: unknown,
@@ -1100,7 +812,7 @@ export async function admitChatStructure(
   if (immediateCount) {
     const immediateBudget = controller.tryAcquireBudget(CHAT_LARGE_BODY_BYTES);
     if (immediateBudget) {
-      return { admit: true, lease: composeChatAdmissionLease(immediateCount, immediateBudget) };
+      return { admit: true, lease: composeAdmissionLease(immediateCount, immediateBudget) };
     }
     immediateCount.release();
   }
@@ -1148,11 +860,14 @@ export async function admitChatStructure(
     options.signal,
     options.sessionId
   );
-  if (!acquiredBudget) {
+  if (acquiredBudget.status !== "acquired") {
     acquiredCount.release();
     return { admit: false, response: structuralRejectionResponse(503, maxMessages) };
   }
-  return { admit: true, lease: composeChatAdmissionLease(acquiredCount, acquiredBudget) };
+  return {
+    admit: true,
+    lease: composeAdmissionLease(acquiredCount, acquiredBudget.lease),
+  };
 }
 
 function parseContentLength(header: string | null): number | null {
@@ -1172,83 +887,6 @@ function rebuildRequest(request: Request, body: Uint8Array): Request {
     signal: request.signal,
     duplex: "half",
   } as RequestInit & { duplex: "half" });
-}
-
-/**
- * Internal self-loop bypass marker for the vision-bridge describe call (and any
- * other trusted in-process sub-request). An external client cannot spoof it:
- * it is honored ONLY when combined with a trusted self-loop credential — the
- * local-mode `sk_omniroute` sentinel or the operator-configured env key
- * (`OMNIROUTE_API_KEY` / `ROUTER_API_KEY`, #1350) so REQUIRE_API_KEY=true
- * deployments can run the describe sub-request.
- */
-export const ADMISSION_BYPASS_HEADER = "x-omniroute-admission-bypass";
-const ADMISSION_BYPASS_VALUE = "internal";
-const SELF_LOOP_KEY = "sk_omniroute";
-
-/**
- * Resolve the bearer credential used by trusted in-process self-loop
- * sub-requests (the vision-bridge describe call).
- *
- * Local mode uses the `sk_omniroute` sentinel. Deployments that force API key
- * auth (`REQUIRE_API_KEY=true`) reject that sentinel with 401, so they must use
- * a real key — the persistent env-var key (#1350, `OMNIROUTE_API_KEY` /
- * `ROUTER_API_KEY`) is the natural choice because it always validates and
- * survives restarts. Falls back to the sentinel when no env key is configured
- * so local-mode behavior is unchanged.
- */
-export function resolveSelfLoopBearer(): string {
-  return (
-    process.env.OMNIROUTE_API_KEY?.trim() || process.env.ROUTER_API_KEY?.trim() || SELF_LOOP_KEY
-  );
-}
-
-/**
- * Sentinel lease returned by the admission byte stage for an internal self-loop
- * sub-request (the vision-bridge describe call). The parent request already holds
- * the single heavyweight lease, so the describe call must never reserve again —
- * but a NON-NULL lease is still required so the route's later structural stage
- * (`admitChatStructure`) treats the body as covered. With `lease: null` the
- * structural stage classifies the base64-heavy describe body as "heavy" and tries
- * to acquire the busy capacity, returning 503 `chat_admission_busy` anyway — the
- * gap that kept the Zoo Code / api-key describe call failing even after the byte
- * stage was bypassed. Release is a no-op; capacity was never reserved.
- */
-function createNoopLease(): ChatAdmissionLease {
-  return {
-    get released() {
-      return true;
-    },
-    release() {
-      // No-op: this sentinel never reserved heavyweight capacity.
-    },
-  };
-}
-
-const NULL_LEASE: ChatAdmissionLease = createNoopLease();
-
-/**
- * True when the request is a trusted in-process self-loop sub-request that must
- * not consume a heavyweight admission lease. The describe call runs WHILE the
- * parent request already holds the single heavyweight lease (`CHAT_MAX_HEAVY_IN_FLIGHT=1`),
- * so without this bypass it is rejected with 503 `chat_admission_busy` and the
- * image is never described (#vision-bridge self-loop).
- */
-function isInternalAdmissionBypass(request: Request): boolean {
-  const bypass =
-    request.headers.get(ADMISSION_BYPASS_HEADER)?.trim().toLowerCase() === ADMISSION_BYPASS_VALUE;
-  if (!bypass) return false;
-
-  // Credential gate: the bypass only applies to trusted self-loop credentials —
-  // the local `sk_omniroute` sentinel OR the operator-configured env key
-  // (`OMNIROUTE_API_KEY` / `ROUTER_API_KEY`, #1350) so REQUIRE_API_KEY=true
-  // deployments can still run the vision-bridge describe sub-request. The env
-  // key is a secret like any other API key, so honoring it here does not widen
-  // the attack surface: a third-party that holds it can already call every API.
-  const auth = request.headers.get("authorization") || "";
-  const match = /^bearer\s+(\S+)$/i.exec(auth.trim());
-  if (!match) return false;
-  return match[1].trim().toLowerCase() === resolveSelfLoopBearer().toLowerCase();
 }
 
 /**
@@ -1281,9 +919,8 @@ export async function admitChatRequest(
   // Internal self-loop: skip the heavyweight reservation entirely (the parent
   // request already holds the single lease) but still enforce the hard byte bound.
   if (internalBypass) {
-    const contentLengthHeader = request.headers.get("content-length");
     if (contentLength !== null && contentLength > hardMaxBytes) {
-      return { admit: false, response: rejectionResponse(413, hardMaxBytes) };
+      return { admit: false, response: chatAdmissionRejectionResponse(413, hardMaxBytes) };
     }
     // Sniff bytes for the hard bound without reserving a lease.
     const reader = request.body?.getReader();
@@ -1297,7 +934,7 @@ export async function admitChatRequest(
         totalBytes += value.byteLength;
         if (totalBytes > hardMaxBytes) {
           await reader.cancel("chat request exceeds hard body limit").catch(() => undefined);
-          return { admit: false, response: rejectionResponse(413, hardMaxBytes) };
+          return { admit: false, response: chatAdmissionRejectionResponse(413, hardMaxBytes) };
         }
         chunks.push(value);
       }
@@ -1324,7 +961,15 @@ export async function admitChatRequest(
   }
 
   if (contentLength !== null && contentLength > hardMaxBytes) {
-    return { admit: false, response: rejectionResponse(413, hardMaxBytes) };
+    return { admit: false, response: chatAdmissionRejectionResponse(413, hardMaxBytes) };
+  }
+  if (
+    contentLength !== null &&
+    contentLength >= largeBodyBytes &&
+    !controller.canFitBudget(contentLength)
+  ) {
+    controller.recordShed("body_exceeds_budget", sessionId);
+    return { admit: false, response: bodyExceedsBudgetResponse(controller.maxInflightBytes) };
   }
 
   let lease: ChatAdmissionLease | null = null;
@@ -1346,18 +991,18 @@ export async function admitChatRequest(
     const severity = controller.pressureSeverity();
     const budgetWaitMs =
       severity === "high" ? queueMs : Math.min(queueMs, INGEST_NORMAL_MAX_WAIT_MS);
-    const budgetLease = await controller.acquireBudgetWithin(
+    const budgetResult = await controller.acquireBudgetWithin(
       bytes,
       budgetWaitMs,
       request.signal,
       sessionId
     );
-    if (!budgetLease) {
+    if (budgetResult.status !== "acquired") {
       countLease.release();
       return false;
     }
 
-    lease = composeChatAdmissionLease(countLease, budgetLease);
+    lease = composeAdmissionLease(countLease, budgetResult.lease);
     return true;
   };
 
@@ -1368,7 +1013,7 @@ export async function admitChatRequest(
     contentLength >= largeBodyBytes &&
     !(await reserve(Math.min(contentLength, hardMaxBytes)))
   ) {
-    return { admit: false, response: rejectionResponse(503, hardMaxBytes) };
+    return { admit: false, response: chatAdmissionRejectionResponse(503, hardMaxBytes) };
   }
 
   const reader = request.body?.getReader();
@@ -1384,11 +1029,17 @@ export async function admitChatRequest(
       if (totalBytes > hardMaxBytes) {
         await reader.cancel("chat request exceeds hard body limit").catch(() => undefined);
         lease?.release();
-        return { admit: false, response: rejectionResponse(413, hardMaxBytes) };
+        return { admit: false, response: chatAdmissionRejectionResponse(413, hardMaxBytes) };
+      }
+      if (totalBytes >= largeBodyBytes && !controller.canFitBudget(totalBytes)) {
+        controller.recordShed("body_exceeds_budget", sessionId);
+        await reader.cancel("chat request exceeds ingest budget").catch(() => undefined);
+        lease?.release();
+        return { admit: false, response: bodyExceedsBudgetResponse(controller.maxInflightBytes) };
       }
       if (totalBytes >= largeBodyBytes && !(await reserve(totalBytes))) {
         await reader.cancel("chat admission capacity unavailable").catch(() => undefined);
-        return { admit: false, response: rejectionResponse(503, hardMaxBytes) };
+        return { admit: false, response: chatAdmissionRejectionResponse(503, hardMaxBytes) };
       }
       chunks.push(value);
     }

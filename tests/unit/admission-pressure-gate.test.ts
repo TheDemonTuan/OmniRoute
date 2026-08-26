@@ -7,9 +7,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-const { ChatAdmissionController, admitChatRequest } = await import(
-  "../../src/shared/middleware/chatBodyAdmission.ts"
-);
+const { ChatAdmissionController, admitChatRequest } =
+  await import("../../src/shared/middleware/chatBodyAdmission.ts");
 
 const silentSink = () => {};
 
@@ -26,10 +25,16 @@ function requestFor(body: string): Request {
 }
 
 test("normal pressure: a request within the byte budget is admitted", async () => {
-  const controller = new ChatAdmissionController(Number.MAX_SAFE_INTEGER, undefined, 0, silentSink, {
-    maxInflightBytes: 1024 * 1024,
-    checkPressureSeverity: () => "normal",
-  });
+  const controller = new ChatAdmissionController(
+    Number.MAX_SAFE_INTEGER,
+    undefined,
+    0,
+    silentSink,
+    {
+      maxInflightBytes: 1024 * 1024,
+      checkPressureSeverity: () => "normal",
+    }
+  );
 
   const result = await admitChatRequest(requestFor(bodyOf(4096)), {
     controller,
@@ -42,21 +47,30 @@ test("normal pressure: a request within the byte budget is admitted", async () =
   if (result.admit) result.lease?.release();
 });
 
-test("normal pressure: an over-budget request sheds quickly (bounded to ~250ms), not the full queueMs", async () => {
-  const controller = new ChatAdmissionController(Number.MAX_SAFE_INTEGER, undefined, 0, silentSink, {
-    maxInflightBytes: 1024, // smaller than the body below
-    checkPressureSeverity: () => "normal",
-  });
+test("normal pressure: contention sheds within the short wait instead of the full queueMs", async () => {
+  const controller = new ChatAdmissionController(
+    Number.MAX_SAFE_INTEGER,
+    undefined,
+    0,
+    silentSink,
+    {
+      maxInflightBytes: 4096,
+      checkPressureSeverity: () => "normal",
+    }
+  );
+  const occupied = controller.tryAcquireBudget(4096);
+  assert.ok(occupied);
 
   const start = Date.now();
-  const result = await admitChatRequest(requestFor(bodyOf(4096)), {
+  const result = await admitChatRequest(requestFor(bodyOf(2048)), {
     controller,
     sessionId: "budget-exhausted",
     largeBodyBytes: 1024,
     hardMaxBytes: 10 * 1024 * 1024,
-    queueMs: 5000, // if this were honored in full, the assertion below would fail
+    queueMs: 5000,
   });
   const elapsedMs = Date.now() - start;
+  occupied.release();
 
   assert.equal(result.admit, false);
   if (!result.admit) assert.equal(result.response.status, 503);
@@ -66,14 +80,57 @@ test("normal pressure: an over-budget request sheds quickly (bounded to ~250ms),
   );
 });
 
-test("high pressure: an over-budget request waits up to the full queueMs before shedding", async () => {
-  const controller = new ChatAdmissionController(Number.MAX_SAFE_INTEGER, undefined, 0, silentSink, {
-    maxInflightBytes: 1024,
-    checkPressureSeverity: () => "high",
-  });
+test("a body larger than the whole budget fails immediately with a distinct diagnosis", async () => {
+  const sheds: string[] = [];
+  const controller = new ChatAdmissionController(
+    Number.MAX_SAFE_INTEGER,
+    undefined,
+    0,
+    (event) => sheds.push(event.reason),
+    { maxInflightBytes: 1024, checkPressureSeverity: () => "high" }
+  );
 
   const start = Date.now();
   const result = await admitChatRequest(requestFor(bodyOf(4096)), {
+    controller,
+    sessionId: "unservable-body",
+    largeBodyBytes: 1024,
+    hardMaxBytes: 10 * 1024 * 1024,
+    queueMs: 5000,
+  });
+  const elapsedMs = Date.now() - start;
+
+  assert.equal(result.admit, false);
+  if (result.admit) return;
+  const payload = (await result.response.json()) as { error: { code: string } };
+  assert.equal(result.response.status, 413);
+  assert.equal(result.response.headers.get("retry-after"), null);
+  assert.equal(payload.error.code, "body_exceeds_budget");
+  assert.deepEqual(sheds, ["body_exceeds_budget"]);
+  assert.equal(controller.activeHeavy, 0);
+  assert.equal(controller.inflightBytes, 0);
+  assert.ok(
+    elapsedMs < 1000,
+    `an impossible charge must not enter the wait queue (took ${elapsedMs}ms)`
+  );
+});
+
+test("high pressure: contention waits up to the full queueMs before shedding", async () => {
+  const controller = new ChatAdmissionController(
+    Number.MAX_SAFE_INTEGER,
+    undefined,
+    0,
+    silentSink,
+    {
+      maxInflightBytes: 4096,
+      checkPressureSeverity: () => "high",
+    }
+  );
+  const occupied = controller.tryAcquireBudget(4096);
+  assert.ok(occupied);
+
+  const start = Date.now();
+  const result = await admitChatRequest(requestFor(bodyOf(2048)), {
     controller,
     sessionId: "high-pressure-wait",
     largeBodyBytes: 1024,
@@ -81,16 +138,26 @@ test("high pressure: an over-budget request waits up to the full queueMs before 
     queueMs: 300,
   });
   const elapsedMs = Date.now() - start;
+  occupied.release();
 
   assert.equal(result.admit, false);
-  assert.ok(elapsedMs >= 280, `high pressure must honor the full bounded wait (took ${elapsedMs}ms)`);
+  assert.ok(
+    elapsedMs >= 280,
+    `high pressure must honor the full bounded wait (took ${elapsedMs}ms)`
+  );
 });
 
 test("high pressure: budget freed mid-wait is claimed instead of shedding", async () => {
-  const controller = new ChatAdmissionController(Number.MAX_SAFE_INTEGER, undefined, 0, silentSink, {
-    maxInflightBytes: 4096,
-    checkPressureSeverity: () => "high",
-  });
+  const controller = new ChatAdmissionController(
+    Number.MAX_SAFE_INTEGER,
+    undefined,
+    0,
+    silentSink,
+    {
+      maxInflightBytes: 4096,
+      checkPressureSeverity: () => "high",
+    }
+  );
 
   // Occupy the entire budget first.
   const occupied = controller.tryAcquireBudget(4096);
@@ -111,10 +178,16 @@ test("high pressure: budget freed mid-wait is claimed instead of shedding", asyn
 });
 
 test("critical pressure: the whole request is shed before ingestion, with a distinct code", async () => {
-  const controller = new ChatAdmissionController(Number.MAX_SAFE_INTEGER, undefined, 0, silentSink, {
-    maxInflightBytes: 1024 * 1024 * 1024, // budget is not the limiting factor here
-    checkPressureSeverity: () => "critical",
-  });
+  const controller = new ChatAdmissionController(
+    Number.MAX_SAFE_INTEGER,
+    undefined,
+    0,
+    silentSink,
+    {
+      maxInflightBytes: 1024 * 1024 * 1024, // budget is not the limiting factor here
+      checkPressureSeverity: () => "critical",
+    }
+  );
 
   const result = await admitChatRequest(requestFor(bodyOf(64)), {
     controller,

@@ -22,7 +22,10 @@ export const INGEST_HEAP_FRACTION = 0.25;
  * request is charged its exact raw byte count, never a guessed multiple.
  */
 export const INGEST_AMPLIFICATION = 8;
-/** Always allow a handful of concurrent realistic agent bodies even on a tiny host. */
+/**
+ * Preserve liveness for ordinary agent requests on tiny hosts, accepting that
+ * the floor can reserve a large share of a sub-128 MiB container.
+ */
 export const MIN_INGEST_BUDGET_BYTES = 8 * 1024 * 1024;
 export const MAX_INGEST_BUDGET_BYTES = 2 * 1024 * 1024 * 1024;
 
@@ -52,14 +55,18 @@ export function computeIngestByteBudget(input: {
 }): IngestBudget {
   const override = parsePositiveFinite(input.override);
   if (override !== null) {
-    const bytes = Math.floor(override);
+    const bytes = Math.min(
+      MAX_INGEST_BUDGET_BYTES,
+      Math.max(MIN_INGEST_BUDGET_BYTES, Math.floor(override))
+    );
     return { bytes, source: "override", effectiveCeilingBytes: bytes };
   }
 
   const heapLimit = parsePositiveFinite(input.heapSizeLimitBytes) ?? MIN_INGEST_BUDGET_BYTES;
   const constrained = parsePositiveFinite(input.constrainedMemoryBytes ?? null);
   const ceiling = constrained !== null ? Math.min(heapLimit, constrained) : heapLimit;
-  const source: IngestBudgetSource = constrained !== null && constrained <= heapLimit ? "cgroup" : "v8_heap";
+  const source: IngestBudgetSource =
+    constrained !== null && constrained <= heapLimit ? "cgroup" : "v8_heap";
 
   const raw = Math.floor((ceiling * INGEST_HEAP_FRACTION) / INGEST_AMPLIFICATION);
   const bytes = Math.min(MAX_INGEST_BUDGET_BYTES, Math.max(MIN_INGEST_BUDGET_BYTES, raw));

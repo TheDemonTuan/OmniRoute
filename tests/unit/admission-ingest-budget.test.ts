@@ -16,7 +16,10 @@ const GiB = 1024 * 1024 * 1024;
 const MiB = 1024 * 1024;
 
 test("desktop host (no cgroup limit): budget derives from the V8 heap ceiling", () => {
-  const budget = computeIngestByteBudget({ heapSizeLimitBytes: 4 * GiB, constrainedMemoryBytes: null });
+  const budget = computeIngestByteBudget({
+    heapSizeLimitBytes: 4 * GiB,
+    constrainedMemoryBytes: null,
+  });
   assert.equal(budget.source, "v8_heap");
   assert.equal(budget.effectiveCeilingBytes, 4 * GiB);
   const expected = Math.floor((4 * GiB * INGEST_HEAP_FRACTION) / INGEST_AMPLIFICATION);
@@ -77,6 +80,26 @@ test("a string override (env var shape) parses the same as a number", () => {
   });
   assert.equal(budget.source, "override");
   assert.equal(budget.bytes, 128 * MiB);
+});
+
+test("an override below the safe range clamps to the minimum", () => {
+  const budget = computeIngestByteBudget({
+    heapSizeLimitBytes: 4 * GiB,
+    override: 1024,
+  });
+  assert.equal(budget.source, "override");
+  assert.equal(budget.bytes, MIN_INGEST_BUDGET_BYTES);
+  assert.equal(budget.effectiveCeilingBytes, MIN_INGEST_BUDGET_BYTES);
+});
+
+test("an override above the safe range clamps to the maximum", () => {
+  const budget = computeIngestByteBudget({
+    heapSizeLimitBytes: 4 * GiB,
+    override: 4 * GiB,
+  });
+  assert.equal(budget.source, "override");
+  assert.equal(budget.bytes, MAX_INGEST_BUDGET_BYTES);
+  assert.equal(budget.effectiveCeilingBytes, MAX_INGEST_BUDGET_BYTES);
 });
 
 test("invalid overrides (NaN, zero, negative, empty) fall through to auto-derivation", () => {
