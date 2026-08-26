@@ -1266,7 +1266,7 @@
     "agentBridge": "Agent Bridge",
     "agentBridgeSubtitle": "Прихващане на трафик от IDE агенти",
     "trafficInspector": "Инспектор на трафика",
-    "trafficInspectorSubtitle": "Мониторинг на LLM повиквания + дебъгване на всякакъв HTTPS трафик",
+    "trafficInspectorSubtitle": "__MISSING__:Inspect request and response traffic from your apps",
     "cliCode": "CLI код",
     "cliCodeSubtitle": "Инструменти за код, насочени към OmniRoute",
     "cliAgents": "CLI агенти",
@@ -12485,7 +12485,12 @@
     "typeApikey": "API ключ",
     "sortTypeFirst": "Най-лесните първо",
     "sortTypeFirstHelp": "Групиране по усилие за регистрация (Без регистрация → Вход с OAuth → API ключ), запазвайки подредбата по качество във всяка група",
-    "typeLegend": "Без регистрация = нулева настройка · Вход с OAuth = влизане със собствен акаунт · API ключ = използване на собствен ключ или безплатния план на доставчика"
+    "typeLegend": "Без регистрация = нулева настройка · Вход с OAuth = влизане със собствен акаунт · API ключ = използване на собствен ключ или безплатния план на доставчика",
+    "colReliability": "__MISSING__:Reliability",
+    "colReliabilityHelp": "__MISSING__:Share of calls this provider actually answered over the last 24 hours. A dash means it served too little traffic to state a rate.",
+    "reliabilitySample": "__MISSING__:{successes} of {requests} calls succeeded in the last {hours}h",
+    "reliabilityTooFew": "__MISSING__:Only {requests} calls in the last {hours}h — too few to state a rate",
+    "reliabilityNoTraffic": "__MISSING__:No calls recorded in the last 24h"
   },
   "discovery": {
     "title": "Откриване на доставчици",

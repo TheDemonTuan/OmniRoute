@@ -1266,7 +1266,7 @@
     "agentBridge": "এজেন্ট ব্রিজ",
     "agentBridgeSubtitle": "IDE এজেন্ট ট্র্যাফিক ইন্টারসেপ্ট করুন",
     "trafficInspector": "ট্র্যাফিক ইন্সপেক্টর",
-    "trafficInspectorSubtitle": "LLM কল মনিটর করুন + যেকোনো HTTPS ট্র্যাফিক ডিবাগ করুন",
+    "trafficInspectorSubtitle": "__MISSING__:Inspect request and response traffic from your apps",
     "cliCode": "CLI কোড",
     "cliCodeSubtitle": "OmniRoute-এর দিকে নির্দেশিত কোড টুল",
     "cliAgents": "CLI এজেন্ট",
@@ -12485,7 +12485,12 @@
     "typeApikey": "API কী",
     "sortTypeFirst": "সবচেয়ে সহজটি প্রথমে",
     "sortTypeFirstHelp": "সাইনআপের প্রয়াস অনুযায়ী গ্রুপ করুন (সাইনআপ ছাড়া → OAuth লগইন → API কী), প্রতিটি গ্রুপের মধ্যে গুণমানের ক্রম বজায় রেখে",
-    "typeLegend": "সাইনআপ ছাড়া = জিরো সেটআপ · OAuth লগইন = আপনার নিজস্ব অ্যাকাউন্ট দিয়ে সাইন ইন করুন · API কী = আপনার নিজস্ব কী ব্যবহার করুন অথবা ওই প্রোভাইডারের ফ্রি টিয়ার"
+    "typeLegend": "সাইনআপ ছাড়া = জিরো সেটআপ · OAuth লগইন = আপনার নিজস্ব অ্যাকাউন্ট দিয়ে সাইন ইন করুন · API কী = আপনার নিজস্ব কী ব্যবহার করুন অথবা ওই প্রোভাইডারের ফ্রি টিয়ার",
+    "colReliability": "__MISSING__:Reliability",
+    "colReliabilityHelp": "__MISSING__:Share of calls this provider actually answered over the last 24 hours. A dash means it served too little traffic to state a rate.",
+    "reliabilitySample": "__MISSING__:{successes} of {requests} calls succeeded in the last {hours}h",
+    "reliabilityTooFew": "__MISSING__:Only {requests} calls in the last {hours}h — too few to state a rate",
+    "reliabilityNoTraffic": "__MISSING__:No calls recorded in the last 24h"
   },
   "discovery": {
     "title": "প্রোভাইডার ডিসকভারি",

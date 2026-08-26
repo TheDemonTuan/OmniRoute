@@ -141,6 +141,18 @@ export const SEARCH_PROVIDERS = {
       "SuperGrok OAuth (xai-oauth) or xAI API key. This is Grok X Search, not the X Developer MCP.",
     serviceKinds: ["webSearch"],
   },
+  "xquik-search": {
+    id: "xquik-search",
+    alias: "xquik",
+    name: "Xquik X Search",
+    icon: "tag",
+    color: "#111827",
+    textIcon: "XQ",
+    website: "https://docs.xquik.com",
+    authHint:
+      "Xquik API key (xq_...). Search is metered per returned post; the catalog estimate uses 5 results.",
+    serviceKinds: ["webSearch"],
+  },
   "ollama-search": {
     id: "ollama-search",
     alias: "ollama-search",

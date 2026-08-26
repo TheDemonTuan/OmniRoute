@@ -27,7 +27,6 @@ COPY packages/ ./packages/
 # Root postinstall helpers needed during bun ci lifecycle execution
 COPY scripts/build/ ./scripts/build/
 COPY scripts/dev/sync-env.mjs ./scripts/dev/sync-env.mjs
-
 # Fast Bun native package install with trustedDependencies and bun ci (reproducible installs from bun.lock)
 RUN bun ci --include=optional --quiet
 
@@ -86,6 +85,9 @@ ENV DATA_DIR=/app/data
 RUN mkdir -p /app/data
 
 COPY --from=builder /app/.build/next/standalone ./
+
+ENV OMNIROUTE_MIGRATIONS_DIR=/app/migrations
+
 COPY --from=builder /app/scripts/dev/healthcheck.mjs ./healthcheck.mjs
 
 # Bun uses bun:sqlite. Remove every standalone/vendor copy of the Node-only

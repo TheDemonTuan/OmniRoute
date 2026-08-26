@@ -167,6 +167,13 @@ export const SEARCH_VALIDATOR_CONFIGS: Record<
       }),
     },
   }),
+  "xquik-search": (apiKey) => ({
+    url: "https://xquik.com/api/v1/x/tweets/search?q=test&limit=1",
+    init: {
+      method: "GET",
+      headers: { Accept: "application/json", "x-api-key": apiKey },
+    },
+  }),
   "zai-search": (apiKey, providerSpecificData = {}) => {
     const baseUrl =
       typeof providerSpecificData?.baseUrl === "string" && providerSpecificData.baseUrl.trim()

@@ -2,7 +2,7 @@
  * Integration tests for GET /api/search/providers — extended catalog (F4).
  *
  * Tests:
- * - Returns 20 items total (16 search + 4 fetch providers).
+ * - Returns 22 items total (18 search + 4 fetch providers).
  * - Each item carries the correct `kind` field.
  * - Status reflects actual DB credential state:
  *   - "configured"  when an active, non-rate-limited connection exists.
@@ -48,10 +48,10 @@ const route = await import("../../src/app/api/search/providers/route.ts");
 // Constants
 // ---------------------------------------------------------------------------
 
-// 17 search-kind providers: serper, brave, perplexity, exa, tavily, firecrawl,
+// 18 search-kind providers: serper, brave, perplexity, exa, tavily, firecrawl,
 // google-pse, linkup, searchapi, youcom, searxng, ollama, zai, jina-search,
-// context7 (#11140), duckduckgo-free, x-search (registry open-sse/config/searchRegistry.ts).
-const EXPECTED_SEARCH_COUNT = 17;
+// context7 (#11140), duckduckgo-free, x-search, xquik-search.
+const EXPECTED_SEARCH_COUNT = 18;
 const EXPECTED_FETCH_COUNT = 4;
 const EXPECTED_TOTAL = EXPECTED_SEARCH_COUNT + EXPECTED_FETCH_COUNT;
 
@@ -138,7 +138,7 @@ test("search-providers-catalog: returns 401 for unauthenticated requests when au
   assert.ok(!bodyStr.includes(" at /"), "error body must not contain stack trace");
 });
 
-test("search-providers-catalog: returns 21 providers (17 search + 4 fetch)", async () => {
+test("search-providers-catalog: returns 22 providers (18 search + 4 fetch)", async () => {
   const req = await buildAuthRequest();
   const res = await route.GET(req);
 
@@ -361,6 +361,11 @@ test("search-providers-catalog: search providers have correct fields", async () 
   assert.ok(xSearch, "x-search must be in search providers");
   assert.equal(xSearch.kind, "search");
   assert.deepEqual(xSearch.searchTypes, ["x"]);
+
+  const xquikSearch = searchProviders.find((p: { id: string }) => p.id === "xquik-search");
+  assert.ok(xquikSearch, "xquik-search must be in search providers");
+  assert.equal(xquikSearch.kind, "search");
+  assert.deepEqual(xquikSearch.searchTypes, ["x"]);
 });
 
 test("search-providers-catalog: response validates against SearchProviderCatalogResponseSchema", async () => {

@@ -531,12 +531,17 @@ export const xSearchInput = z.object({
     .max(20)
     .default(5)
     .describe("Maximum number of X results to return"),
+  provider: z
+    .enum(["x-search", "xquik-search"])
+    .optional()
+    .default("x-search")
+    .describe("X search backend: x-search uses xAI/SuperGrok; xquik-search uses Xquik"),
 });
 
 export const xSearchTool: McpToolDefinition<typeof xSearchInput, typeof webSearchOutput> = {
   name: "omniroute_x_search",
   description:
-    "Search X (Twitter) through OmniRoute using SuperGrok / xAI server-side x_search. Requires a connected xai-oauth (SuperGrok) or xAI API key. This is Grok X Search, not web search and not the X Developer Platform MCP.",
+    "Search X (Twitter) through OmniRoute. Uses SuperGrok / xAI server-side x_search by default, or Xquik when provider is xquik-search. Requires credentials for the selected backend. This is not web search.",
   inputSchema: xSearchInput,
   outputSchema: webSearchOutput,
   scopes: ["execute:search"],

@@ -926,6 +926,9 @@ async function handleComboChatInner({
   if (activeNativeTurnPin) {
     orderedTargets = applyNativeCodexTurnPin(orderedTargets, activeNativeTurnPin);
     if (orderedTargets.length === 0) {
+      // #11371: quota-share ordering already reserved a winner slot; release it on
+      // this early exit (idempotent).
+      targetResolution.quotaShareRelease?.();
       return errorResponse(
         409,
         "The pinned native Codex turn target is no longer available; the turn cannot be moved to another provider"
@@ -953,6 +956,8 @@ async function handleComboChatInner({
     // no-target failures (silent-stop fix). Threshold of 3 prevents a one-off account
     // wipe from destroying the prompt-cache pin benefit on the next request.
     recordComboFailure(effectiveSessionId, combo.name);
+    // #11371: same early-exit release as the pinned-turn path above.
+    targetResolution.quotaShareRelease?.();
     return errorResponseWithComboDiagnostics(
       404,
       "Combo has no executable targets",
@@ -2841,6 +2846,9 @@ async function handleComboChatInner({
     return await dispatchWithCooldownRetry();
   } finally {
     quotaShareConcurrencyRelease?.();
+    // #11371: release the in-flight slot quota-share ordering reserved for its
+    // winner — the counter must not leak monotonically upward across requests.
+    targetResolution.quotaShareRelease?.();
     // G2: Clean up candidate registry to prevent unbounded memory growth.
     _unregisterExecutionCandidates(_registeredExecutionKeys);
   }

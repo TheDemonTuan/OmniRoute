@@ -73,6 +73,8 @@
       "tests/unit/api-key-policy-noauth-allowed-connections.test.ts",
       "tests/unit/api-key-rotator-health.test.ts",
       "tests/unit/chat-routing-synced-inventory-11089.test.ts",
+      "tests/unit/repro-combo-persisted-cooldown-preskip.test.ts",
+      "tests/unit/repro-glm-iso-reset-24h-cap.test.ts",
       "tests/unit/security-route-guard-tiers.test.ts",
       "tests/unit/egress-ip-lock-10880.test.ts",
       "tests/unit/egress-lock-allowlist-10880.test.ts",

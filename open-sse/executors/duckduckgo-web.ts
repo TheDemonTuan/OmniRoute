@@ -815,33 +815,42 @@ export class DuckDuckGoWebExecutor extends BaseExecutor {
         });
       }
 
-      const transformStream = new TransformStream({
-        async transform(chunk, controller) {
-          const text = new TextDecoder().decode(chunk);
-          const lines = text.split("\n");
+      const decoder = new TextDecoder();
+      const encoder = new TextEncoder();
+      let pendingLine = "";
 
-          for (const line of lines) {
-            if (!line.trim()) continue;
-            if (line === "[DONE]") {
-              controller.enqueue(new TextEncoder().encode("data: [DONE]\n\n"));
-              continue;
-            }
+      const enqueueLine = (line: string, controller: TransformStreamDefaultController) => {
+        const normalizedLine = line.endsWith("\r") ? line.slice(0, -1) : line;
+        if (!normalizedLine.trim()) return;
+        if (normalizedLine === "[DONE]") {
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          return;
+        }
 
-            const data = parseDuckDuckGoDataLine(line);
-            const content = extractDuckDuckGoContent(data);
-            if (content) {
-              const openaiFormat = {
-                choices: [
-                  {
-                    delta: { content },
-                    index: 0,
-                  },
-                ],
-              };
-              const encoded = new TextEncoder().encode(`data: ${JSON.stringify(openaiFormat)}\n\n`);
-              controller.enqueue(encoded);
-            }
-          }
+        const data = parseDuckDuckGoDataLine(normalizedLine);
+        const content = extractDuckDuckGoContent(data);
+        if (content) {
+          const openaiFormat = {
+            choices: [
+              {
+                delta: { content },
+                index: 0,
+              },
+            ],
+          };
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(openaiFormat)}\n\n`));
+        }
+      };
+
+      const transformStream = new TransformStream<Uint8Array, Uint8Array>({
+        transform(chunk, controller) {
+          const lines = `${pendingLine}${decoder.decode(chunk, { stream: true })}`.split("\n");
+          pendingLine = lines.pop() ?? "";
+          for (const line of lines) enqueueLine(line, controller);
+        },
+        flush(controller) {
+          pendingLine += decoder.decode();
+          if (pendingLine) enqueueLine(pendingLine, controller);
         },
       });
 

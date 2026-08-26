@@ -87,6 +87,11 @@
       "status": 400,
       "throws": true
     },
+    "xquik-search": {
+      "message": "Provider \"xquik-search\" is a search provider and does not support chat completions; use the /v1/search endpoint instead.",
+      "status": 400,
+      "throws": true
+    },
     "youcom-search": {
       "message": "Provider \"youcom-search\" is a search provider and does not support chat completions; use the /v1/search endpoint instead.",
       "status": 400,

@@ -666,7 +666,11 @@ async function handleWebSearch(args: {
   }
 }
 
-async function handleXSearch(args: { query: string; max_results?: number }) {
+async function handleXSearch(args: {
+  query: string;
+  max_results?: number;
+  provider?: "x-search" | "xquik-search";
+}) {
   const start = Date.now();
   try {
     const result = await omniRouteFetch("/v1/search", {
@@ -675,7 +679,7 @@ async function handleXSearch(args: { query: string; max_results?: number }) {
         query: args.query,
         max_results: args.max_results ?? 5,
         search_type: "x",
-        provider: "x-search",
+        provider: args.provider ?? "x-search",
       }),
       signal: AbortSignal.timeout(120000),
     });
