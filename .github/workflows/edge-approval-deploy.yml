@@ -47,7 +47,7 @@ jobs:
           cache-dependency-path: package-lock.json
 
       - name: 0.3 Run Edge Worker Unit Tests
-        run: node --import tsx/esm --test tests/*.test.ts
+        run: node --experimental-strip-types --test tests/*.test.ts
         working-directory: infra/cloudflare/approval-gateway
 
   deploy:
