@@ -5,6 +5,12 @@ Python 3.9+ standard library only.
 
 from .commands import CommandDispatcher
 from .config import BotConfig, load_config_from_env
+from .edge_approval import (
+    EdgeControlAuthError,
+    EdgeControlClient,
+    EdgeControlError,
+    EdgeControlNetworkError,
+)
 from .main import TelegramOpsBot, main
 from .metrics import (
     BackupInfo,
@@ -66,6 +72,10 @@ __all__ = [
     "BackupInfo",
     "SecurityMetrics",
     "CommandDispatcher",
+    "EdgeControlClient",
+    "EdgeControlError",
+    "EdgeControlAuthError",
+    "EdgeControlNetworkError",
     "hash_pin",
     "verify_pin",
     "generate_nonce",

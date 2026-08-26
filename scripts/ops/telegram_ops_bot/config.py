@@ -66,6 +66,8 @@ class BotConfig:
     alert_sync_lag_critical_commits: int = 15
     alert_actions_delay_warning_seconds: float = 1800.0
     alert_actions_delay_critical_seconds: float = 3600.0
+    edge_public_url: Optional[str] = None
+    edge_control_secret: Optional[str] = None
 
     @property
     def webhook_path(self) -> str:
@@ -186,6 +188,9 @@ class BotConfig:
 
         if not (0.0 <= self.alert_disk_warning_pct <= self.alert_disk_critical_pct <= 100.0):
             errors.append("Disk thresholds must satisfy 0 <= warning <= critical <= 100")
+
+        if self.edge_public_url and not self.edge_control_secret:
+            errors.append("edge_control_secret is required when edge_public_url is configured")
 
         return errors
 
@@ -371,6 +376,9 @@ def load_config_from_env(env: Optional[Mapping[str, str]] = None) -> BotConfig:
         )
     )
 
+    edge_public_url = e.get("OPS_EDGE_PUBLIC_URL") or e.get("EDGE_PUBLIC_URL")
+    edge_control_secret = e.get("OPS_EDGE_CONTROL_SECRET") or e.get("EDGE_CONTROL_SECRET")
+
     return BotConfig(
         bot_token=bot_token,
         allowed_user_ids=allowed_user_ids,
@@ -419,4 +427,6 @@ def load_config_from_env(env: Optional[Mapping[str, str]] = None) -> BotConfig:
         alert_sync_lag_critical_commits=alert_sync_lag_critical_commits,
         alert_actions_delay_warning_seconds=alert_actions_delay_warning_seconds,
         alert_actions_delay_critical_seconds=alert_actions_delay_critical_seconds,
+        edge_public_url=edge_public_url,
+        edge_control_secret=edge_control_secret,
     )
