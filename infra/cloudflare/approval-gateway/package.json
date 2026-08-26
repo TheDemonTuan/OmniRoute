@@ -1,0 +1,18 @@
+{
+  "name": "omniroute-edge-approval-gateway",
+  "version": "1.0.0",
+  "description": "Cloudflare Worker & SQLite Durable Object Edge Approval Gateway for OmniRoute",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx/esm --test tests/*.test.ts"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250214.0",
+    "typescript": "^6.0.3"
+  }
+}

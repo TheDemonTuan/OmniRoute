@@ -14,6 +14,7 @@ from typing import Any, Dict, Optional
 from .alerts import AlertManager, StateManagerAlertPersistenceAdapter
 from .commands import CommandDispatcher
 from .config import BotConfig, load_config_from_env
+from .edge_approval import EdgeControlClient
 from .github import GitHubClient as GitHubRestClient
 from .github_actions import GitHubActionsManager
 from .metrics import GitHubClient, MetricsCollector
@@ -74,6 +75,13 @@ class TelegramOpsBot:
             )
         self.metrics = MetricsCollector(opsctl_path=config.opsctl_path, github_client=legacy_github)
         self.actions = actions
+        edge_client = None
+        if config.edge_public_url and config.edge_control_secret:
+            edge_client = EdgeControlClient(
+                edge_public_url=config.edge_public_url,
+                edge_control_secret=config.edge_control_secret,
+            )
+        self.edge_client = edge_client
         self.dispatcher = CommandDispatcher(
             config=self.config,
             state=self.state,
@@ -82,6 +90,7 @@ class TelegramOpsBot:
             github_client=github_rest,
             actions_manager=actions,
             upstream_manager=upstream,
+            edge_client=edge_client,
         )
         self.alerts = AlertManager(
             resource_thresholds=config.get_resource_thresholds(),
@@ -187,8 +196,31 @@ class TelegramOpsBot:
         except TelegramError as e:
             logger.warning("Could not reach Telegram during initial probe: %s. Continuing...", e)
 
+    def _register_bot_commands(self) -> None:
+        """Register the standard command list with Telegram for autocomplete."""
+        commands = [
+            {"command": "status", "description": "Operational dashboard & health overview"},
+            {"command": "access", "description": "Edge approval gateway & client management"},
+            {"command": "system", "description": "Host CPU, RAM, Disk, Load metrics"},
+            {"command": "containers", "description": "Docker container status"},
+            {"command": "omniroute", "description": "AI router engine & circuit breakers"},
+            {"command": "deploy", "description": "Current release version & git status"},
+            {"command": "logs", "description": "Tail recent sanitized service logs"},
+            {"command": "backups", "description": "SQLite database backup status"},
+            {"command": "security", "description": "Firewall, audit trails & security posture"},
+            {"command": "upstream", "description": "Upstream release commits & sync"},
+            {"command": "actions", "description": "Production workflow runs & actions"},
+            {"command": "prs", "description": "Open sync pull requests"},
+            {"command": "help", "description": "Show available commands list"},
+        ]
+        try:
+            self.telegram.set_my_commands(commands)
+        except Exception as err:
+            logger.debug("Failed registering bot commands: %s", err)
+
     def _run_webhook(self) -> None:
         """Register the webhook with Telegram and serve until stopped."""
+        self._register_bot_commands()
         self._webhook = WebhookServer(
             dispatch=self._dispatch_update,
             state=self.state,
@@ -218,6 +250,7 @@ class TelegramOpsBot:
 
     def _run_polling(self) -> None:
         """Fallback intake: long polling, needing only outbound connectivity."""
+        self._register_bot_commands()
         self.telegram.delete_webhook(drop_pending_updates=False)
 
         offset = self.state.get_offset()
