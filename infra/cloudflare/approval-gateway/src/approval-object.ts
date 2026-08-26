@@ -6,7 +6,7 @@ import type {
   EvaluationResult,
   RequestMetadata,
   Env,
-} from "./types";
+} from "./types.ts";
 
 export class ApprovalDurableObject extends DurableObject {
   private sql: SqlStorage;

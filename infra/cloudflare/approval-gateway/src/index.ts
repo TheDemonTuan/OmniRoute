@@ -1,9 +1,9 @@
-import { ApprovalDurableObject } from "./approval-object";
-import { handleControlDecisionRequest } from "./control";
-import { computeSha256Hex, verifyApiKeySignature } from "./key-verifier";
-import { classifyRequestPath, extractClientCredential, maskApiKey } from "./routes";
-import { sendTelegramPendingAlert } from "./telegram";
-import type { ApprovalRow, Env, EvaluationResult, RequestMetadata } from "./types";
+import { ApprovalDurableObject } from "./approval-object.ts";
+import { handleControlDecisionRequest } from "./control.ts";
+import { computeSha256Hex, verifyApiKeySignature } from "./key-verifier.ts";
+import { classifyRequestPath, extractClientCredential, isApiHostname, maskApiKey } from "./routes.ts";
+import { sendTelegramPendingAlert } from "./telegram.ts";
+import type { ApprovalRow, Env, EvaluationResult, RequestMetadata } from "./types.ts";
 
 export { ApprovalDurableObject };
 
@@ -43,7 +43,17 @@ export default {
       return handleControlDecisionRequest(request, env);
     }
 
-    // 2. Telegram Webhook, Public routes, Assets, or Dashboard pages -> pass through directly to origin
+    // 2. Split-Domain Hardening: Block Management UI / Admin routes when accessed via API Host
+    if (routeType === "DASHBOARD" && isApiHostname(url.hostname, env.API_HOST)) {
+      return jsonResponse(
+        404,
+        "invalid_request_error",
+        "not_found",
+        "Not Found: Management and dashboard routes are disabled on the API gateway hostname."
+      );
+    }
+
+    // 3. Telegram Webhook, Public routes, Assets, or Dashboard pages (on Management host) -> pass through to origin
     if (
       routeType === "TELEGRAM_WEBHOOK" ||
       routeType === "PUBLIC" ||

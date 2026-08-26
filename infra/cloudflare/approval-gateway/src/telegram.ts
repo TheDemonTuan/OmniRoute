@@ -1,4 +1,4 @@
-import type { ApprovalRow } from "./types";
+import type { ApprovalRow } from "./types.ts";
 
 function escapeHtml(text: string | null | undefined): string {
   if (!text) return "";

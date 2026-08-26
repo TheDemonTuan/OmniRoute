@@ -138,6 +138,9 @@ services:
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
+    environment:
+      - DASHBOARD_HOST=${DASHBOARD_HOST:-}
+      - API_HOST=${API_HOST:-}
 
     # The Telegram Ops Bot webhook listener is a systemd service on the host, not
     # a container, because it has to stay reachable while this stack restarts.

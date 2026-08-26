@@ -6,6 +6,12 @@
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,
   "preview_urls": false,
+  "routes": [
+    {
+      "pattern": "omniroute-api.tuannguyenviet.site/*",
+      "zone_name": "tuannguyenviet.site"
+    }
+  ],
   "durable_objects": {
     "bindings": [
       {
@@ -21,6 +27,8 @@
     }
   ],
   "vars": {
+    "API_HOST": "omniroute-api.tuannguyenviet.site",
+    "DASHBOARD_HOST": "omniroute-admin.tuannguyenviet.site",
     "ENFORCE_APPROVAL": "true",
     "ALLOW_LEGACY_V1": "true",
     "FAIL_CLOSED": "true",

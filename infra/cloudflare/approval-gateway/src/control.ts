@@ -1,4 +1,4 @@
-import type { DecisionInput, DecisionResult, Env } from "./types";
+import type { DecisionInput, DecisionResult, Env } from "./types.ts";
 
 function hexToBytes(hex: string): Uint8Array | null {
   if (hex.length % 2 !== 0) return null;
