@@ -2,11 +2,11 @@ name: Edge Approval Gateway Deploy
 
 on:
   push:
-    branches: [prod, main]
+    branches: [prod]
     paths:
       - "infra/cloudflare/approval-gateway/**"
   pull_request:
-    branches: [prod, main]
+    branches: [prod]
     paths:
       - "infra/cloudflare/approval-gateway/**"
   workflow_dispatch:
