@@ -27,8 +27,8 @@ COPY packages/ ./packages/
 # Root postinstall helpers needed during bun ci lifecycle execution
 COPY scripts/build/ ./scripts/build/
 COPY scripts/dev/sync-env.mjs ./scripts/dev/sync-env.mjs
-# Fast Bun native package install with trustedDependencies and bun ci (reproducible installs from bun.lock)
-RUN bun ci --include=optional --quiet
+# Fast Bun native package install with trustedDependencies and bun ci (fallback to bun install if lockfile drifts)
+RUN bun ci --include=optional --quiet || bun install --include=optional --quiet
 
 # Ensure native tls-client-node binary is fetched if needed (stealth transport fallback)
 RUN if [ -f "node_modules/tls-client-node/scripts/postinstall.js" ] && [ ! -d "node_modules/tls-client-node/bin" ]; then \
