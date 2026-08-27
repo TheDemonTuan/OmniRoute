@@ -1,0 +1,78 @@
+name: Sync Ops Bot to VPS
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: omniroute-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-sync:
+    name: Test & Sync Ops Bot
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+    steps:
+      - name: 0.1 Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: 0.2 Run ops bot unit suite
+        run: python3 -m unittest discover -s tests/unit/ops -t . -v
+
+      - name: 0.3 Configure SSH
+        env:
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          if [ -n "${KNOWN_HOSTS:-}" ]; then
+            printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          else
+            ssh-keyscan -p "${{ secrets.VPS_PORT || '22' }}" "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
+          fi
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+
+      - name: 0.4 Sync Ops Bot and restart
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
+        run: |
+          set -euo pipefail
+          SSH="ssh -i ~/.ssh/id_ed25519 -p $VPS_PORT -o BatchMode=yes -o ConnectTimeout=20"
+          $SSH "$VPS_USER@$VPS_HOST" 'rm -rf /opt/omniroute/.staging && mkdir -p /opt/omniroute/.staging'
+
+          tar -czf /tmp/omniroute-infra.tgz \
+              infra/compose.yml infra/deploy.sh infra/image-retention.sh infra/backup.sh \
+              infra/caddy/Caddyfile \
+              infra/systemd/omniroute-ops-bot.service infra/sudoers/omniroute-ops-bot \
+              scripts/ops/omniroute_opsctl.py scripts/ops/telegram_ops_bot
+          scp -i ~/.ssh/id_ed25519 -P "$VPS_PORT" -o BatchMode=yes \
+              /tmp/omniroute-infra.tgz \
+              "$VPS_USER@$VPS_HOST:/opt/omniroute/.staging/"
+          $SSH "$VPS_USER@$VPS_HOST" \
+              'tar -xzf /opt/omniroute/.staging/omniroute-infra.tgz -C /opt/omniroute/.staging'
+
+          $SSH "$VPS_USER@$VPS_HOST" "GITHUB_SHA=${GITHUB_SHA}"' bash -s' <<'REMOTE'
+            set -euo pipefail
+            cd /opt/omniroute
+            install -m 0755 .staging/scripts/ops/omniroute_opsctl.py /usr/local/sbin/omniroute-opsctl.new && mv -f /usr/local/sbin/omniroute-opsctl.new /usr/local/sbin/omniroute-opsctl
+            install -m 0440 .staging/infra/sudoers/omniroute-ops-bot /etc/sudoers.d/omniroute-ops-bot
+            install -m 0644 .staging/infra/systemd/omniroute-ops-bot.service /etc/systemd/system/omniroute-ops-bot.service
+
+            BOT_RELEASE="$GITHUB_SHA"
+            mkdir -p "ops-bot/$BOT_RELEASE"
+            sudo cp -a .staging/scripts/ops/telegram_ops_bot/. "ops-bot/$BOT_RELEASE/"
+            sudo ln -sfn "$BOT_RELEASE" ops-bot/current
+            sudo systemctl daemon-reload
+            sudo systemctl restart omniroute-ops-bot
+            echo "✅ Ops Bot deployed and restarted: $(systemctl is-active omniroute-ops-bot)"
+          REMOTE
