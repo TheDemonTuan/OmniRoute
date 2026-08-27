@@ -52,6 +52,11 @@
       "status": 400,
       "throws": true
     },
+    "nimble-search": {
+      "message": "Provider \"nimble-search\" is a search provider and does not support chat completions; use the /v1/search endpoint instead.",
+      "status": 400,
+      "throws": true
+    },
     "ollama-search": {
       "message": "Provider \"ollama-search\" is a search provider and does not support chat completions; use the /v1/search endpoint instead.",
       "status": 400,
@@ -89,6 +94,11 @@
     },
     "xquik-search": {
       "message": "Provider \"xquik-search\" is a search provider and does not support chat completions; use the /v1/search endpoint instead.",
+      "status": 400,
+      "throws": true
+    },
+    "anysearch-search": {
+      "message": "Provider \"anysearch-search\" is a search provider and does not support chat completions; use the /v1/search endpoint instead.",
       "status": 400,
       "throws": true
     },

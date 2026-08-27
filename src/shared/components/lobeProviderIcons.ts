@@ -447,6 +447,8 @@ const LOBE_PROVIDER_ALIASES = {
   suno: "Suno",
   tavily: "Tavily",
   "tavily-search": "Tavily",
+  anysearch: "AnySearch",
+  "anysearch-search": "AnySearch",
   tencent: "Tencent",
   "codebuddy-cn": "Tencent",
   together: "Together",

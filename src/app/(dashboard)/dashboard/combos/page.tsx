@@ -2177,6 +2177,9 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, combo
             builderConnectionId !== COMBO_BUILDER_AUTO_CONNECTION ? builderConnectionId : null,
           connectionLabel: selectedBuilderConnection?.label || null,
           allowedConnectionIds: builderEffectiveAllowedConnectionIds,
+          // #11433: use the already-corrected routing prefix (e.g. "oc" for
+          // OpenCode Free) instead of letting it default to the raw providerId.
+          modelPrefix: parseQualifiedModel(selectedBuilderModel.qualifiedModel)?.providerId,
         })
       : null;
   const builderHasDuplicate =
@@ -2501,6 +2504,9 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, combo
         builderConnectionId !== COMBO_BUILDER_AUTO_CONNECTION ? builderConnectionId : null,
       connectionLabel: selectedBuilderConnection?.label || null,
       allowedConnectionIds: builderEffectiveAllowedConnectionIds,
+      // #11433: use the already-corrected routing prefix (e.g. "oc" for
+      // OpenCode Free) instead of letting it default to the raw providerId.
+      modelPrefix: parseQualifiedModel(selectedBuilderModel.qualifiedModel)?.providerId,
     });
 
     if (hasExactModelStepDuplicate(models, nextStep)) {

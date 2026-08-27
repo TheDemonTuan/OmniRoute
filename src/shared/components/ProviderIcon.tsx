@@ -160,6 +160,7 @@ const KNOWN_SVGS = new Set([
   "moonshot",
   "morph",
   "nebius",
+  "nimble-search",
   "nlpcloud",
   "nomic",
   "novita",

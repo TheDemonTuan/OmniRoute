@@ -70,6 +70,7 @@ import { resolveProviderId } from "../../src/shared/constants/providers.ts";
 import * as semaphore from "./rateLimitSemaphore.ts";
 import { getCircuitBreaker } from "../../src/shared/utils/circuitBreaker";
 import { parseModel } from "./model.ts";
+import { rejectRetiredAutoComboCandidates } from "./modelLifecycle.ts";
 import { createComboContext } from "./combo/context.ts";
 import { phaseComboSetup } from "./combo/comboSetup.ts";
 import { checkCredentialGate, logCredentialSkip } from "./credentialGate.ts";
@@ -627,11 +628,14 @@ export async function buildAutoCandidates(
     })
   );
 
-  // Filter out candidates whose model is hidden by the user in the dashboard
-  return candidates.filter((c) => {
-    const hiddenModels = hiddenModelsMap.get(c.provider);
-    return !hiddenModels?.has(c.model);
-  });
+  // Filter out candidates whose model is hidden by the user in the dashboard,
+  // then drop vendor-retired ids so auto-combo cannot pick them (#11625).
+  return rejectRetiredAutoComboCandidates(
+    candidates.filter((c) => {
+      const hiddenModels = hiddenModelsMap.get(c.provider);
+      return !hiddenModels?.has(c.model);
+    })
+  );
 }
 
 // Context-cache pin health gate — moved to combo/dispatchPrelude.ts alongside the
@@ -3282,7 +3286,24 @@ async function handleRoundRobinCombo({
               "COMBO-RR",
               `Maximum combo attempts (${maxGlobalAttempts}) exceeded. Terminating loop to prevent runaway requests.`
             );
-            return errorResponse(503, "Maximum combo retry limit reached");
+            return errorResponseWithComboDiagnostics(
+              503,
+              "Maximum combo retry limit reached",
+              {
+                poolSize: modelCount,
+                attempted: globalAttempts,
+                excluded: [
+                  ...[...exhaustedProviders].map((p) => ({ provider: p, reason: "exhausted" })),
+                  ...[...exhaustedConnections].map((c) => formatExhaustedConnectionKey(String(c))),
+                ],
+                attemptOrder: rrOutcomes.map((o) => ({
+                  provider: o.model.split("/")[0] || "unknown",
+                  model: o.model,
+                })),
+                terminalReason: "max_attempts_exceeded",
+                recovery: buildRecoveryHint("max_attempts_exceeded"),
+              }
+            );
           }
           if (retry > 0) {
             log.info(

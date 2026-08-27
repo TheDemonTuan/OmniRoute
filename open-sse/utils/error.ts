@@ -15,6 +15,7 @@ interface ErrorResponseBody {
     message: string;
     type?: string;
     code?: string;
+    reason?: string;
   };
   upstream_details?: Record<string, unknown> | null; // sanitized upstream provider body
 }
@@ -108,6 +109,7 @@ export function sanitizeUpstreamDetails(value: unknown, depth = 0): unknown {
 export type ErrorBodyClassification = {
   type?: string;
   code?: string;
+  reason?: string;
 };
 
 /**
@@ -132,6 +134,7 @@ export function buildErrorBody(
       message: safeMessage,
       type: classification?.type ?? errorInfo.type,
       code: classification?.code ?? errorInfo.code,
+      reason: classification?.reason,
     },
   };
 

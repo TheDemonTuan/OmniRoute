@@ -66,8 +66,8 @@ export function structuralRejectionResponse(status: 413 | 503, maxMessages: numb
     {
       type: historyLimit ? "payload_too_large" : "server_error",
       code: historyLimit ? "chat_history_too_large" : "chat_admission_busy",
+      reason: historyLimit ? "message_limit" : "structure_limit",
     }
   );
-  body.error.reason = historyLimit ? "message_limit" : "structure_limit";
   return new Response(JSON.stringify(body), { status, headers });
 }

@@ -57,13 +57,19 @@ export function useApiKeySave({
 }: UseApiKeySaveParams) {
   const handleSaveApiKey = useCallback(
     async (formData: Record<string, unknown>) => {
+      // Issue #11324: callers that only want to add one manual model (rather than
+      // importing an upstream provider's entire catalog) can pass `skipModelSync: true`
+      // to opt out of the automatic post-save full /sync-models call. This flag is a
+      // client-side intent signal only — strip it before it reaches the connection
+      // creation payload.
+      const { skipModelSync, ...connectionFormData } = formData;
       try {
         const res = await fetch("/api/providers", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             provider: resolveApiKeySaveProviderId(providerId),
-            ...formData,
+            ...connectionFormData,
           }),
         });
         if (res.ok) {
@@ -75,7 +81,8 @@ export function useApiKeySave({
 
           // Most providers sync their live catalog after connection creation. Curated-only
           // providers intentionally use the registry list and must not show an import flow.
-          if (newConnection?.id && !providerUsesCuratedModelsOnly(providerId)) {
+          // Issue #11324: callers may also opt out explicitly via `skipModelSync`.
+          if (newConnection?.id && !providerUsesCuratedModelsOnly(providerId) && !skipModelSync) {
             setShowImportModal(true);
             setImportProgress({
               current: 0,

@@ -137,7 +137,8 @@ const EXPECTED: Record<InventoryKind, Record<string, number>> = {
     "src/lib/proxyEgress.ts": 1,
     "src/lib/quota/connectionRecovery.ts": 2,
     "src/lib/sync/bundle.ts": 1,
-    "src/lib/tokenHealthCheck.ts": 1,
+    // #11495: verify-only sweep queries oauth + cookie connections
+    "src/lib/tokenHealthCheck.ts": 2,
     "src/lib/tokenHealthCheckCopilot.ts": 1,
     "src/lib/usage/callLogs.ts": 1,
     "src/lib/usage/codexResetCredits.ts": 1,

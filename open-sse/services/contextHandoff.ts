@@ -692,6 +692,15 @@ async function generateUniversalHandoffAsync(options: {
 
   const summaryPrompt = HANDOFF_PROMPT_TEMPLATE.replace("{HISTORY}", historyText);
   const summaryModel = options.handoffModel || options.currModel;
+
+  if (options.providerAllowlist.length > 0) {
+    const slashIdx = summaryModel.indexOf("/");
+    const modelProvider = slashIdx > 0 ? summaryModel.slice(0, slashIdx) : "";
+    if (modelProvider && !options.providerAllowlist.includes(modelProvider)) {
+      return;
+    }
+  }
+
   const summaryBody: Record<string, unknown> = {
     model: summaryModel,
     messages: [{ role: "user", content: summaryPrompt }],

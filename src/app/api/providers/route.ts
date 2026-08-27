@@ -30,9 +30,14 @@ import { isValidationFailure, validateBody } from "@/shared/validation/helpers";
 import { normalizeQoderPatProviderData } from "@omniroute/open-sse/services/qoderCli";
 import { projectCodexAccountPool } from "@omniroute/open-sse/services/codexAccount/index.ts";
 import {
+  CODEX_SPARK_QUOTA_SESSION,
+  CODEX_SPARK_QUOTA_WEEKLY,
+} from "@omniroute/open-sse/config/codexQuotaScopes.ts";
+import {
   normalizeProviderSpecificData,
   sanitizeProviderSpecificDataForResponse,
 } from "@/lib/providers/requestDefaults";
+import { getQuotaWindowObservation } from "@/domain/quotaCache";
 import { requireManagementAuth } from "@/lib/api/requireManagementAuth";
 import { isManagedProviderConnectionId } from "@/lib/providers/catalog";
 import { isApiKeyRevealEnabled, maskStoredApiKey } from "@/lib/apiKeyExposure";
@@ -43,6 +48,49 @@ import {
   getModelSyncInternalBaseUrl,
 } from "@/shared/services/modelSyncScheduler";
 import { finalizeValidatedChatGptWebCodexSecrets } from "@omniroute/open-sse/services/chatgptWebCodexAdmin.ts";
+import { testSingleConnection } from "./[id]/test/route";
+
+function projectCodexAccountPoolWithRoutingQuota(
+  connection: Parameters<typeof projectCodexAccountPool>[0],
+  now: number
+) {
+  const projection = projectCodexAccountPool(connection, now);
+  const children = projection.children.map((child) => {
+    const fiveHourWindow = child.key.scope === "spark" ? CODEX_SPARK_QUOTA_SESSION : "session";
+    const weeklyWindow = child.key.scope === "spark" ? CODEX_SPARK_QUOTA_WEEKLY : "weekly";
+    const fiveHour = getQuotaWindowObservation(connection.id, fiveHourWindow);
+    const weekly = getQuotaWindowObservation(connection.id, weeklyWindow);
+    if (!fiveHour && !weekly) return child;
+
+    return {
+      ...child,
+      quota: {
+        ...child.quota,
+        observedAt: fiveHour?.observedAt ?? weekly?.observedAt ?? null,
+        windows: {
+          "5h": fiveHour
+            ? {
+                usage: null,
+                limit: null,
+                resetAt: fiveHour.resetAt,
+                usedPercentage: fiveHour.usedPercentage,
+              }
+            : child.quota.windows["5h"],
+          "7d": weekly
+            ? {
+                usage: null,
+                limit: null,
+                resetAt: weekly.resetAt,
+                usedPercentage: weekly.usedPercentage,
+              }
+            : child.quota.windows["7d"],
+        },
+      },
+    };
+  }) as typeof projection.children;
+
+  return { ...projection, children };
+}
 
 // GET /api/providers - List all connections
 export async function GET(request: Request) {
@@ -80,7 +128,7 @@ export async function GET(request: Request) {
         providerSpecificData,
         ...(c.provider === "codex"
           ? {
-              codexAccountPool: projectCodexAccountPool(
+              codexAccountPool: projectCodexAccountPoolWithRoutingQuota(
                 {
                   id: c.id,
                   provider: c.provider,
@@ -222,7 +270,15 @@ export async function POST(request: Request) {
       globalPriority: globalPriority || null,
       defaultModel: defaultModel || null,
       providerSpecificData,
-      isActive: true,
+      // Start inactive: a connection is only advertised via /v1/models (which
+      // filters on isActive) once a connection test has actually confirmed it
+      // works. The auto-test fired below flips this to true on success (or on
+      // an "unsupported" test, which cannot be verified either way and keeps
+      // the historical trust-it default) — see testSingleConnection in
+      // ./[id]/test/route.ts. A connection that fails its test, or is never
+      // tested because auto-test itself errors, simply stays hidden until the
+      // operator fixes the credential and re-tests it manually.
+      isActive: false,
       testStatus: testStatus || "unknown",
     });
 
@@ -271,6 +327,20 @@ export async function POST(request: Request) {
         syncSetupError?.message || syncSetupError
       );
     }
+
+    // Auto-test the newly created connection so `testStatus` reflects reality
+    // shortly after creation instead of sitting at "unknown" until the
+    // operator manually clicks "Test" in the dashboard. Fire-and-forget for
+    // the same reason as the auto-sync above: the probe can take a few
+    // seconds (OAuth refresh, upstream round-trip) and must not block the
+    // 201 response. testSingleConnection() persists testStatus/lastError/etc.
+    // itself, so nothing further is needed here beyond logging failures.
+    void testSingleConnection(newConnection.id).catch((testError: unknown) => {
+      console.log(
+        `[providers] Auto-test failed for ${newConnection.id}:`,
+        (testError as { message?: string })?.message || testError
+      );
+    });
 
     // Note: Gemini model sync is now triggered client-side with progress dialog
 
