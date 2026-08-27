@@ -60,7 +60,7 @@ describe("useApiKeySave.handleSaveApiKey — full-sync opt-out (#11324)", () => 
   });
 
   it("does not auto-trigger a full /sync-models catalog fetch when the caller asks to add just one manual model", async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
       const url = String(input);
       if (url === "/api/providers") return response(true, { connection: { id: "conn-1" } });
       if (url.includes("/sync-models")) {
@@ -93,7 +93,7 @@ describe("useApiKeySave.handleSaveApiKey — full-sync opt-out (#11324)", () => 
   });
 
   it("still auto-triggers the full /sync-models catalog fetch by default (legacy behavior preserved)", async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
       const url = String(input);
       if (url === "/api/providers") return response(true, { connection: { id: "conn-1" } });
       if (url.includes("/sync-models")) {

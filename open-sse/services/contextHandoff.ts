@@ -697,7 +697,7 @@ async function generateUniversalHandoffAsync(options: {
     const slashIdx = summaryModel.indexOf("/");
     const modelProvider = slashIdx > 0 ? summaryModel.slice(0, slashIdx) : "";
     if (modelProvider && !options.providerAllowlist.includes(modelProvider)) {
-      return;
+      return "unavailable";
     }
   }
 
