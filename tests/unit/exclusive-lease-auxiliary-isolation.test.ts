@@ -24,12 +24,14 @@ const translator = await import("../../src/app/api/translator/send/route.ts");
 const translatorPreview = await import("../../src/app/api/translator/translate/route.ts");
 const modelTests = await import("../../src/lib/api/modelTestRunner.ts");
 const vnc = await import("../../src/lib/vncSession/service.ts");
+const usageRoute = await import("../../src/app/api/usage/[connectionId]/route.ts");
+const providerLimits = await import("../../src/lib/usage/providerLimits.ts");
 
 const OWNER = "vlo_UUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUU";
 
-async function seedConnection(name: string): Promise<{ id: string }> {
+async function seedConnection(name: string, provider = "openai"): Promise<{ id: string }> {
   return (await providers.createProviderConnection({
-    provider: "openai",
+    provider,
     authType: "apikey",
     name,
     apiKey: `sk-${name}`,
@@ -52,6 +54,10 @@ async function resetStorage(): Promise<void> {
   fs.rmSync(TEST_DATA_DIR, { recursive: true, force: true });
   fs.mkdirSync(TEST_DATA_DIR, { recursive: true });
   externalCalls = 0;
+  globalThis.fetch = async () => {
+    externalCalls += 1;
+    throw new Error("unexpected external provider/model call");
+  };
 }
 
 test.beforeEach(resetStorage);
@@ -189,4 +195,117 @@ test("browser-login harvest rejects ACTIVE leased connections before credential 
     /unavailable for managed lease connections/
   );
   assert.equal(externalCalls, 0);
+});
+
+test("usage refresh allows FREE lease-reserved connection and queries provider quota", async () => {
+  const connection = await seedConnection("deepseek-free-lease", "deepseek");
+  await markLeaseOnly(connection.id);
+
+  globalThis.fetch = async (input: RequestInfo | URL) => {
+    externalCalls += 1;
+    const url =
+      typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+    if (url === "https://api.deepseek.com/user/balance") {
+      return new Response(
+        JSON.stringify({
+          is_available: true,
+          balance_infos: [
+            {
+              currency: "USD",
+              total_balance: "10.00",
+              granted_balance: "0.00",
+              topped_up_balance: "10.00",
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+    throw new Error(`unexpected fetch call: ${url}`);
+  };
+
+  const response = await usageRoute.GET(
+    new Request(`http://omniroute.local/api/usage/${connection.id}`),
+    { params: Promise.resolve({ connectionId: connection.id }) }
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(externalCalls, 1);
+  const data = (await response.json()) as { quotas?: { credits_usd?: { remaining?: number } } };
+  assert.equal(data?.quotas?.credits_usd?.remaining, 10);
+});
+
+test("usage refresh rejects ACTIVE leased connection with 409 before provider fetch", async () => {
+  const connection = await seedConnection("deepseek-active-lease", "deepseek");
+  await markLeaseOnly(connection.id);
+  const acquired = leases.acquireExclusiveConnectionLease({
+    leaseOwnerId: OWNER,
+    apiKeyId: "managed-key",
+    provider: "deepseek",
+    connectionId: connection.id,
+  });
+  assert.equal(acquired.kind, "ACQUIRED");
+
+  const response = await usageRoute.GET(
+    new Request(`http://omniroute.local/api/usage/${connection.id}`),
+    { params: Promise.resolve({ connectionId: connection.id }) }
+  );
+
+  assert.equal(response.status, 409);
+  const body = await response.json();
+  assert.deepEqual(body, { error: "Usage refresh deferred while an exclusive lease is active" });
+  assert.equal(externalCalls, 0);
+});
+
+test("syncAllProviderLimits refreshes FREE lease-reserved connections and skips ACTIVE leased connections", async () => {
+  const freeConn = await seedConnection("deepseek-bulk-free", "deepseek");
+  const activeConn = await seedConnection("deepseek-bulk-active", "deepseek");
+  await markLeaseOnly(freeConn.id);
+  await markLeaseOnly(activeConn.id);
+
+  const acquired = leases.acquireExclusiveConnectionLease({
+    leaseOwnerId: OWNER,
+    apiKeyId: "managed-key",
+    provider: "deepseek",
+    connectionId: activeConn.id,
+  });
+  assert.equal(acquired.kind, "ACQUIRED");
+
+  globalThis.fetch = async (input: RequestInfo | URL) => {
+    externalCalls += 1;
+    const url =
+      typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+    if (url === "https://api.deepseek.com/user/balance") {
+      return new Response(
+        JSON.stringify({
+          is_available: true,
+          balance_infos: [
+            {
+              currency: "USD",
+              total_balance: "10.00",
+              granted_balance: "0.00",
+              topped_up_balance: "10.00",
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+    throw new Error(`unexpected fetch call: ${url}`);
+  };
+
+  const result = await providerLimits.syncAllProviderLimits({
+    source: "manual",
+    concurrency: 1,
+  });
+
+  assert.ok(result.caches[freeConn.id]);
+  assert.equal(result.caches[activeConn.id], undefined);
+  assert.equal(externalCalls, 1);
 });
