@@ -1,7 +1,13 @@
 import { ApprovalDurableObject } from "./approval-object.ts";
 import { handleControlDecisionRequest } from "./control.ts";
 import { computeSha256Hex, verifyApiKeySignature } from "./key-verifier.ts";
-import { classifyRequestPath, extractClientCredential, isApiHostname, maskApiKey } from "./routes.ts";
+import {
+  classifyRequestPath,
+  extractClientCredential,
+  isApiHostname,
+  maskApiKey,
+  shouldBypassApprovalForPreflight,
+} from "./routes.ts";
 import { sendTelegramPendingAlert } from "./telegram.ts";
 import type { ApprovalRow, Env, EvaluationResult, RequestMetadata } from "./types.ts";
 
@@ -54,11 +60,14 @@ export default {
     }
 
     // 3. Telegram Webhook, Public routes, Assets, or Dashboard pages (on Management host) -> pass through to origin
-    if (
-      routeType === "TELEGRAM_WEBHOOK" ||
-      routeType === "PUBLIC" ||
-      routeType === "DASHBOARD"
-    ) {
+    if (routeType === "TELEGRAM_WEBHOOK" || routeType === "PUBLIC" || routeType === "DASHBOARD") {
+      return fetch(request);
+    }
+
+    // Browser CORS preflight carries no API credential by design. The origin
+    // remains authoritative for allowed origins/headers; only actual model
+    // requests enter the API-key approval gate below.
+    if (shouldBypassApprovalForPreflight(routeType, request.method)) {
       return fetch(request);
     }
 
