@@ -1,0 +1,146 @@
+name: 🧹 One-Time Cleanup: Cloudflare Worker & VPS Edge Config
+
+on:
+  workflow_dispatch:
+    inputs:
+      delete_cloudflare_worker:
+        description: "Delete Cloudflare Worker (omniroute-edge-approval-gateway)"
+        type: boolean
+        required: true
+        default: true
+      clean_vps_config:
+        description: "Clean VPS /etc/omniroute/ops-bot.env and restart ops bot"
+        type: boolean
+        required: true
+        default: true
+
+concurrency:
+  group: omniroute-cleanup-edge
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  cleanup-cloudflare:
+    name: 1 · Delete Cloudflare Worker & Routes
+    if: inputs.delete_cloudflare_worker
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+    steps:
+      - name: 1.1 Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      - name: 1.2 Delete Cloudflare Worker & Custom Domains via API & Wrangler
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
+            echo "⚠️ CLOUDFLARE_API_TOKEN or CLOUDFLARE_ACCOUNT_ID is missing. Skipping Cloudflare cleanup."
+            exit 0
+          fi
+
+          WORKER_NAME="omniroute-edge-approval-gateway"
+          AUTH_HEADER="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
+          CONTENT_HEADER="Content-Type: application/json"
+
+          echo "🔍 Checking for Worker Custom Domains attached to $WORKER_NAME..."
+          DOMAINS_RESP=$(curl -s -X GET "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/domains" \
+            -H "$AUTH_HEADER" -H "$CONTENT_HEADER")
+
+          if echo "$DOMAINS_RESP" | grep -q '"success":true'; then
+            DOMAIN_IDS=$(echo "$DOMAINS_RESP" | jq -r ".result[] | select(.service == \"$WORKER_NAME\") | .id" 2>/dev/null || true)
+            for DOM_ID in $DOMAIN_IDS; do
+              if [ -n "$DOM_ID" ] && [ "$DOM_ID" != "null" ]; then
+                echo "🗑️ Deleting custom domain binding ID: $DOM_ID..."
+                curl -s -X DELETE "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/domains/${DOM_ID}" \
+                  -H "$AUTH_HEADER" -H "$CONTENT_HEADER" || true
+              fi
+            done
+          fi
+
+          echo "🗑️ Deleting Cloudflare Worker script $WORKER_NAME..."
+          DEL_RESP=$(curl -s -X DELETE "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${WORKER_NAME}?force=true" \
+            -H "$AUTH_HEADER" -H "$CONTENT_HEADER")
+
+          echo "Cloudflare API response: $DEL_RESP"
+
+          echo "🗑️ Running fallback wrangler delete if installed..."
+          npx --yes wrangler delete "$WORKER_NAME" --force || true
+
+          echo "✅ Cloudflare Worker cleanup finished successfully."
+
+  cleanup-vps:
+    name: 2 · Clean VPS Ops-Bot Config
+    if: inputs.clean_vps_config
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+    steps:
+      - name: 2.1 Configure SSH from secrets
+        env:
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SSH_KEY:-}" ]; then
+            echo "⚠️ VPS_SSH_KEY is not set. Skipping VPS cleanup."
+            exit 0
+          fi
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          if [ -n "${KNOWN_HOSTS:-}" ]; then
+            printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          else
+            ssh-keyscan -p "${{ secrets.VPS_PORT || '22' }}" "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
+          fi
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+
+      - name: 2.2 Clean /etc/omniroute/ops-bot.env & restart bot
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
+        run: |
+          set -euo pipefail
+          if [ -z "${VPS_HOST:-}" ] || [ -z "${VPS_USER:-}" ]; then
+            echo "⚠️ VPS_HOST or VPS_USER is not set. Skipping VPS cleanup."
+            exit 0
+          fi
+
+          SSH="ssh -i ~/.ssh/id_ed25519 -p $VPS_PORT -o BatchMode=yes -o ConnectTimeout=20"
+
+          echo "🧹 Cleaning edge variables from /etc/omniroute/ops-bot.env on VPS..."
+          $SSH "$VPS_USER@$VPS_HOST" 'bash -s' << 'EOF'
+            set -euo pipefail
+
+            ENV_FILE="/etc/omniroute/ops-bot.env"
+            if [ -f "$ENV_FILE" ]; then
+              echo "Backing up $ENV_FILE..."
+              sudo cp -a "$ENV_FILE" "${ENV_FILE}.bak.$(date +%s)"
+
+              echo "Removing OPS_EDGE_* and EDGE_* entries..."
+              sudo sed -i -E '/^(OPS_EDGE_|EDGE_CONTROL_|EDGE_PUBLIC_)/d' "$ENV_FILE"
+              echo "✅ $ENV_FILE cleaned."
+            else
+              echo "ℹ️ $ENV_FILE does not exist, nothing to modify."
+            fi
+
+            if systemctl list-unit-files | grep -q "omniroute-ops-bot.service"; then
+              if systemctl is-active --quiet omniroute-ops-bot; then
+                echo "🔄 Restarting omniroute-ops-bot service..."
+                sudo systemctl restart omniroute-ops-bot
+                echo "Status: $(systemctl is-active omniroute-ops-bot)"
+              else
+                echo "ℹ️ omniroute-ops-bot service is not currently active."
+              fi
+            fi
+          EOF
+
+          echo "✅ VPS cleanup completed successfully."

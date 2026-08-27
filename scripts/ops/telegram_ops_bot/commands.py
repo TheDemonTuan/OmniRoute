@@ -12,7 +12,6 @@ from typing import Any, Dict, List, Optional, Tuple
 from .github import GitHubClient as GitHubRestClient
 from .github_actions import GitHubActionsManager
 from .upstream import UpstreamManager
-from .edge_approval import EdgeControlClient, EdgeControlError
 
 from .config import BotConfig
 from .metrics import MetricsCollector
@@ -42,7 +41,6 @@ class CommandDispatcher:
         github_client: Optional[GitHubRestClient] = None,
         actions_manager: Optional[GitHubActionsManager] = None,
         upstream_manager: Optional[UpstreamManager] = None,
-        edge_client: Optional[EdgeControlClient] = None,
     ) -> None:
         self.config = config
         self.state = state
@@ -51,7 +49,6 @@ class CommandDispatcher:
         self.github_client = github_client
         self.actions = actions_manager
         self.upstream = upstream_manager
-        self.edge_client = edge_client
 
     def _format_uptime(self, seconds: float) -> str:
         """Format seconds into readable days, hours, minutes."""
@@ -278,7 +275,6 @@ class CommandDispatcher:
             "• <code>/upstream</code> - New upstream release commits and sync action\n"
             "• <code>/actions</code> - Production workflow runs and actions\n"
             "• <code>/prs</code> - Open sync pull requests\n"
-            "• <code>/access [action]</code> - Cloudflare Edge approval state & operations\n"
             "• <code>/help</code> - Show this command list\n\n"
             "<i>Every command is owner-only and audited. Risky actions require confirmation.</i>"
         )
@@ -364,107 +360,6 @@ class CommandDispatcher:
         if not sync_prs:
             lines.append("No open sync pull request.")
         buttons.append([("🔁 Refresh", "refresh:prs"), ("🏠 Status", "view:status")])
-        return "\n".join(lines), make_inline_keyboard(buttons)
-
-    def handle_access(self, args: str = "") -> Tuple[str, Dict[str, Any]]:
-        """Show edge approval status or execute access operations."""
-        if not self.edge_client:
-            msg = (
-                "<b>🔐 Cloudflare Edge Approval Gateway</b>\n\n"
-                "<i>Edge approval client is not configured (OPS_EDGE_PUBLIC_URL / OPS_EDGE_CONTROL_SECRET not set).</i>\n\n"
-                "To enable edge approval, set the edge configuration in <code>/etc/omniroute/ops-bot.env</code>."
-            )
-            return msg, make_inline_keyboard([[("🏠 Status", "view:status")]])
-
-        parts = args.split()
-        subcmd = parts[0].lower() if parts else ""
-
-        if subcmd == "reset" and len(parts) > 1:
-            client_id = parts[1]
-            try:
-                res = self.edge_client.reset_access(client_id)
-                msg = (
-                    "<b>♻️ Edge Access Reset</b>\n\n"
-                    f"<b>Client:</b> <code>{escape_html(client_id)}</code>\n"
-                    f"<b>Status:</b> <code>{escape_html(str(res.get('status', 'UNKNOWN')))}</code>\n\n"
-                    "<i>Client record deleted from Durable Object. Next request will prompt for approval.</i>"
-                )
-                return msg, make_inline_keyboard([[("🏠 Status", "view:status")]])
-            except Exception as e:
-                return (
-                    f"❌ <b>Failed to reset access:</b> <code>{escape_html(str(e))}</code>",
-                    make_inline_keyboard([[("🏠 Status", "view:status")]]),
-                )
-
-        if subcmd == "allow" and len(parts) > 1:
-            client_id = parts[1]
-            try:
-                res = self.edge_client.send_decision(client_id, "allow")
-                msg = (
-                    "<b>✅ Edge Access Approved</b>\n\n"
-                    f"<b>Client:</b> <code>{escape_html(client_id)}</code>\n"
-                    f"<b>Status:</b> <code>{escape_html(str(res.get('status', 'APPROVED')))}</code>\n"
-                    "<b>Duration:</b> 24 Hours"
-                )
-                return msg, make_inline_keyboard([[("🏠 Status", "view:status")]])
-            except Exception as e:
-                return (
-                    f"❌ <b>Failed to approve access:</b> <code>{escape_html(str(e))}</code>",
-                    make_inline_keyboard([[("🏠 Status", "view:status")]]),
-                )
-
-        if subcmd == "deny" and len(parts) > 1:
-            client_id = parts[1]
-            try:
-                res = self.edge_client.send_decision(client_id, "deny")
-                msg = (
-                    "<b>❌ Edge Access Denied</b>\n\n"
-                    f"<b>Client:</b> <code>{escape_html(client_id)}</code>\n"
-                    f"<b>Status:</b> <code>{escape_html(str(res.get('status', 'DENIED')))}</code>\n"
-                )
-                return msg, make_inline_keyboard([[("🏠 Status", "view:status")]])
-            except Exception as e:
-                return (
-                    f"❌ <b>Failed to deny access:</b> <code>{escape_html(str(e))}</code>",
-                    make_inline_keyboard([[("🏠 Status", "view:status")]]),
-                )
-
-        # Overview with recent access audit history
-        recent_audits = self.state.get_recent_audit_logs(50)
-        access_events = [
-            a for a in recent_audits
-            if str(a.get("command", "")).startswith("access")
-        ][:5]
-
-        lines = [
-            "<b>🔐 Cloudflare Edge Approval Gateway</b>",
-            "",
-            f"<b>Edge URL:</b> <code>{escape_html(self.edge_client.edge_public_url)}</code>",
-            "<b>Status:</b> 🟢 Active",
-        ]
-
-        buttons: List[List[Tuple[str, str]]] = []
-        if access_events:
-            lines.append("")
-            lines.append("<b>📋 Lịch sử duyệt gần đây:</b>")
-            for ev in access_events:
-                ts = time.strftime("%d/%m %H:%M", time.gmtime(float(ev.get("timestamp", 0))))
-                cmd = str(ev.get("command", "")).replace("access:", "")
-                target = str(ev.get("args", ""))[:16]
-                icon = "✅" if "allow" in cmd else ("❌" if "deny" in cmd else "♻️")
-                lines.append(f"• {icon} <code>{escape_html(target)}...</code> ({escape_html(cmd)}) - <i>{ts} UTC</i>")
-                if target and len(target) >= 8:
-                    buttons.append([(f"♻️ Reset {target[:8]}", f"access:reset:{target}")])
-
-        lines.extend([
-            "",
-            "<b>Lệnh quản trị:</b>",
-            "• <code>/access allow &lt;client_hash&gt;</code> - Duyệt thủ công 24h",
-            "• <code>/access deny &lt;client_hash&gt;</code> - Chặn truy cập",
-            "• <code>/access reset &lt;client_hash&gt;</code> - Xóa trạng thái để xin duyệt lại",
-        ])
-
-        buttons.append([("🔄 Refresh", "refresh:access"), ("🏠 Status", "view:status")])
         return "\n".join(lines), make_inline_keyboard(buttons)
 
     def _execute_action(self, action_type: str, payload: Dict[str, Any]) -> str:
@@ -619,8 +514,6 @@ class CommandDispatcher:
             response_text, reply_markup = self.handle_actions()
         elif cmd == "/prs":
             response_text, reply_markup = self.handle_prs()
-        elif cmd == "/access":
-            response_text, reply_markup = self.handle_access(args)
         elif cmd == "/help":
             response_text, reply_markup = self.handle_help()
         else:
@@ -672,124 +565,6 @@ class CommandDispatcher:
             self.telegram.answer_callback_query(cb_id, text=f"Unauthorized: {reason}", show_alert=True)
             return
 
-        if data.startswith("access:"):
-            parts = data.split(":")
-            if len(parts) < 3:
-                self.telegram.answer_callback_query(cb_id, text="Invalid access callback", show_alert=True)
-                return
-
-            if not self.edge_client:
-                self.telegram.answer_callback_query(cb_id, text="Edge Gateway not configured", show_alert=True)
-                return
-
-            action_type = parts[1]
-            client_id = parts[2]
-            epoch_str = parts[3] if len(parts) > 3 else "1"
-
-            if action_type == "info":
-                self.telegram.answer_callback_query(
-                    cb_id,
-                    text=f"Client: {client_id}\nEpoch: {epoch_str}",
-                    show_alert=True,
-                )
-                return
-
-            try:
-                if action_type == "allow":
-                    self.edge_client.send_decision(
-                        client_id,
-                        action="allow",
-                        duration_seconds=86400,
-                        telegram_message_id=message_id,
-                        actor=str(user_id),
-                    )
-                    self.telegram.answer_callback_query(cb_id, text="✅ Approved for 24h")
-                    new_text = (
-                        "<b>🔐 OmniRoute API Access</b>\n\n"
-                        f"<b>Client:</b> <code>{escape_html(client_id)}...</code>\n\n"
-                        "✅ <b>APPROVED (24 Hours)</b>\n"
-                        f"<i>Approved by operator at {time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())}</i>"
-                    )
-                    new_markup = make_inline_keyboard([
-                        [("❌ Revoke Access", f"access:deny:{client_id}:{epoch_str}"), ("♻️ Reset", f"access:reset:{client_id}")],
-                        [("🏠 Status", "view:status")],
-                    ])
-                    self.state.log_audit(
-                        user_id=user_id or 0,
-                        chat_id=chat_id,
-                        command="access:allow",
-                        args=client_id,
-                        status="SUCCESS",
-                        details="Approved for 24h",
-                    )
-                elif action_type == "deny":
-                    self.edge_client.send_decision(
-                        client_id,
-                        action="deny",
-                        telegram_message_id=message_id,
-                        actor=str(user_id),
-                    )
-                    self.telegram.answer_callback_query(cb_id, text="❌ Access Denied")
-                    new_text = (
-                        "<b>🔐 OmniRoute API Access</b>\n\n"
-                        f"<b>Client:</b> <code>{escape_html(client_id)}...</code>\n\n"
-                        "❌ <b>DENIED</b>\n"
-                        f"<i>Access denied by operator at {time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())}</i>"
-                    )
-                    new_markup = make_inline_keyboard([
-                        [("✅ Allow 24h", f"access:allow:{client_id}:{epoch_str}"), ("♻️ Reset", f"access:reset:{client_id}")],
-                        [("🏠 Status", "view:status")],
-                    ])
-                    self.state.log_audit(
-                        user_id=user_id or 0,
-                        chat_id=chat_id,
-                        command="access:deny",
-                        args=client_id,
-                        status="SUCCESS",
-                        details="Access denied",
-                    )
-                elif action_type == "reset":
-                    self.edge_client.reset_access(client_id, actor=str(user_id))
-                    self.telegram.answer_callback_query(cb_id, text="♻️ Access Reset")
-                    new_text = (
-                        "<b>🔐 OmniRoute API Access</b>\n\n"
-                        f"<b>Client:</b> <code>{escape_html(client_id)}...</code>\n\n"
-                        "♻️ <b>ACCESS STATE RESET</b>\n"
-                        "<i>Next client request will re-prompt for approval.</i>"
-                    )
-                    new_markup = make_inline_keyboard([
-                        [("✅ Allow 24h", f"access:allow:{client_id}:1"), ("❌ Deny", f"access:deny:{client_id}:1")],
-                        [("🏠 Status", "view:status")],
-                    ])
-                    self.state.log_audit(
-                        user_id=user_id or 0,
-                        chat_id=chat_id,
-                        command="access:reset",
-                        args=client_id,
-                        status="SUCCESS",
-                        details="Access reset",
-                    )
-                else:
-                    self.telegram.answer_callback_query(cb_id, text=f"Unknown access action: {action_type}", show_alert=True)
-                    return
-            except Exception as err:
-                self.telegram.answer_callback_query(cb_id, text=f"Edge Error: {err}", show_alert=True)
-                return
-
-            if message_id and chat_id:
-                try:
-                    redacted = redact_sensitive(new_text)
-                    self.telegram.edit_message_text(
-                        chat_id=chat_id,
-                        message_id=message_id,
-                        text=redacted,
-                        parse_mode="HTML",
-                        reply_markup=new_markup,
-                    )
-                except Exception as edit_err:
-                    logger.debug("Failed editing message text for access callback: %s", edit_err)
-            return
-
         self.telegram.answer_callback_query(cb_id, text="Updated")
 
         new_text = ""
@@ -816,8 +591,6 @@ class CommandDispatcher:
             new_text, new_markup = self.handle_upstream()
         elif data in ("refresh:actions", "view:actions"):
             new_text, new_markup = self.handle_actions()
-        elif data in ("refresh:access", "view:access"):
-            new_text, new_markup = self.handle_access()
         elif data in ("refresh:prs", "view:prs"):
             new_text, new_markup = self.handle_prs()
         elif data.startswith("prepare:"):

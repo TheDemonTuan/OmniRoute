@@ -66,8 +66,6 @@ class BotConfig:
     alert_sync_lag_critical_commits: int = 15
     alert_actions_delay_warning_seconds: float = 1800.0
     alert_actions_delay_critical_seconds: float = 3600.0
-    edge_public_url: Optional[str] = None
-    edge_control_secret: Optional[str] = None
 
     @property
     def webhook_path(self) -> str:
@@ -188,9 +186,6 @@ class BotConfig:
 
         if not (0.0 <= self.alert_disk_warning_pct <= self.alert_disk_critical_pct <= 100.0):
             errors.append("Disk thresholds must satisfy 0 <= warning <= critical <= 100")
-
-        if self.edge_public_url and not self.edge_control_secret:
-            errors.append("edge_control_secret is required when edge_public_url is configured")
 
         return errors
 
@@ -376,57 +371,8 @@ def load_config_from_env(env: Optional[Mapping[str, str]] = None) -> BotConfig:
         )
     )
 
-    edge_public_url = e.get("OPS_EDGE_PUBLIC_URL") or e.get("EDGE_PUBLIC_URL")
-    edge_control_secret = e.get("OPS_EDGE_CONTROL_SECRET") or e.get("EDGE_CONTROL_SECRET")
-
-    return BotConfig(
-        bot_token=bot_token,
-        allowed_user_ids=allowed_user_ids,
-        allowed_chat_ids=allowed_chat_ids,
-        pin_hash=pin_hash,
-        pin_salt=pin_salt,
-        db_path=db_path,
-        opsctl_path=opsctl_path,
-        poll_timeout=poll_timeout,
-        poll_interval=poll_interval,
-        max_retries=max_retries,
-        retry_backoff=retry_backoff,
-        rate_limit_per_minute=rate_limit_per_minute,
-        nonce_ttl_seconds=nonce_ttl_seconds,
-        max_pin_attempts=max_pin_attempts,
-        lockout_duration_seconds=lockout_duration_seconds,
-        require_private_chat=require_private_chat,
-        telegram_mode=telegram_mode,
-        webhook_host=webhook_host,
-        webhook_port=webhook_port,
-        webhook_public_url=webhook_public_url,
-        webhook_secret_token=webhook_secret_token,
-        webhook_path_secret=webhook_path_secret,
-        webhook_max_body_bytes=webhook_max_body_bytes,
-        github_token=github_token,
-        github_repo=github_repo,
-        github_upstream_repo=github_upstream_repo,
-        github_app_id=github_app_id,
-        github_installation_id=github_installation_id,
-        github_private_key_file=github_private_key_file,
-        log_level=log_level,
-        owner_chat_id=owner_chat_id,
-        alert_eval_interval_seconds=alert_eval_interval_seconds,
-        alert_cooldown_seconds=alert_cooldown_seconds,
-        alert_debounce_consecutive=alert_debounce_consecutive,
-        alert_cpu_warning_pct=alert_cpu_warning_pct,
-        alert_cpu_critical_pct=alert_cpu_critical_pct,
-        alert_memory_warning_pct=alert_memory_warning_pct,
-        alert_memory_critical_pct=alert_memory_critical_pct,
-        alert_disk_warning_pct=alert_disk_warning_pct,
-        alert_disk_critical_pct=alert_disk_critical_pct,
-        alert_workflow_failure_threshold=alert_workflow_failure_threshold,
-        alert_rate_limit_warning_pct=alert_rate_limit_warning_pct,
-        alert_rate_limit_critical_pct=alert_rate_limit_critical_pct,
         alert_sync_lag_warning_commits=alert_sync_lag_warning_commits,
         alert_sync_lag_critical_commits=alert_sync_lag_critical_commits,
         alert_actions_delay_warning_seconds=alert_actions_delay_warning_seconds,
         alert_actions_delay_critical_seconds=alert_actions_delay_critical_seconds,
-        edge_public_url=edge_public_url,
-        edge_control_secret=edge_control_secret,
     )

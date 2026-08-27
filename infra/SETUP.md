@@ -323,7 +323,7 @@ Không cần mở port 80/443 trên VPS. Tunnel là đường vào duy nhất.
    - Rule: `Include` → `Emails` (hoặc `Emails ending in`) → Nhập email của bạn (hoặc kết nối Google / GitHub SSO IdP).
 4. **LƯU Ý QUAN TRỌNG**: **KHÔNG** gán Cloudflare Access Application lên `<API_HOST>`.
    - `<API_HOST>` là endpoint để các client AI (Cline, Cursor, Roo Code, LibreChat, scripts) gửi request mang `Authorization: Bearer sk-...`.
-   - Caddy và Edge Approval Gateway trên `<API_HOST>` sẽ tự động chặn mọi request truy cập `/dashboard`, `/login`, `/api/settings` và chỉ cho phép các API route hợp lệ.
+   - Caddy trên `<API_HOST>` sẽ tự động chặn mọi request truy cập `/dashboard`, `/login`, `/api/settings` và chỉ cho phép các API route hợp lệ.
 
 ### 5.3 Cloudflare WAF và Rate Limiting ⬜
 

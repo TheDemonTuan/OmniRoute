@@ -14,7 +14,6 @@ from typing import Any, Dict, Optional
 from .alerts import AlertManager, StateManagerAlertPersistenceAdapter
 from .commands import CommandDispatcher
 from .config import BotConfig, load_config_from_env
-from .edge_approval import EdgeControlClient
 from .github import GitHubClient as GitHubRestClient
 from .github_actions import GitHubActionsManager
 from .metrics import GitHubClient, MetricsCollector
@@ -75,13 +74,6 @@ class TelegramOpsBot:
             )
         self.metrics = MetricsCollector(opsctl_path=config.opsctl_path, github_client=legacy_github)
         self.actions = actions
-        edge_client = None
-        if config.edge_public_url and config.edge_control_secret:
-            edge_client = EdgeControlClient(
-                edge_public_url=config.edge_public_url,
-                edge_control_secret=config.edge_control_secret,
-            )
-        self.edge_client = edge_client
         self.dispatcher = CommandDispatcher(
             config=self.config,
             state=self.state,
@@ -90,7 +82,6 @@ class TelegramOpsBot:
             github_client=github_rest,
             actions_manager=actions,
             upstream_manager=upstream,
-            edge_client=edge_client,
         )
         self.alerts = AlertManager(
             resource_thresholds=config.get_resource_thresholds(),
@@ -200,7 +191,6 @@ class TelegramOpsBot:
         """Register the standard command list with Telegram for autocomplete."""
         commands = [
             {"command": "status", "description": "Operational dashboard & health overview"},
-            {"command": "access", "description": "Edge approval gateway & client management"},
             {"command": "system", "description": "Host CPU, RAM, Disk, Load metrics"},
             {"command": "containers", "description": "Docker container status"},
             {"command": "omniroute", "description": "AI router engine & circuit breakers"},
