@@ -334,21 +334,21 @@ Limiting rule; tạo đúng rule sau:
 - Expression:
 
 ```text
-(starts_with(http.request.uri.path, "/v1") or starts_with(http.request.uri.path, "/api/v1") or starts_with(http.request.uri.path, "/v1beta") or starts_with(http.request.uri.path, "/api/v1beta") or starts_with(http.request.uri.path, "/chat/completions") or starts_with(http.request.uri.path, "/responses") or starts_with(http.request.uri.path, "/models") or starts_with(http.request.uri.path, "/codex") or starts_with(http.request.uri.path, "/api/cursor-cli"))
+(http.host eq "omniroute-api.tuannguyenviet.site" and ((http.request.uri.path eq "/v1" or starts_with(http.request.uri.path, "/v1/")) or (http.request.uri.path eq "/api/v1" or starts_with(http.request.uri.path, "/api/v1/")) or (http.request.uri.path eq "/v1beta" or starts_with(http.request.uri.path, "/v1beta/")) or (http.request.uri.path eq "/api/v1beta" or starts_with(http.request.uri.path, "/api/v1beta/")) or (http.request.uri.path eq "/chat/completions" or starts_with(http.request.uri.path, "/chat/completions/")) or (http.request.uri.path eq "/responses" or starts_with(http.request.uri.path, "/responses/")) or (http.request.uri.path eq "/models" or starts_with(http.request.uri.path, "/models/")) or (http.request.uri.path eq "/codex" or starts_with(http.request.uri.path, "/codex/")) or (http.request.uri.path eq "/api/cursor-cli" or starts_with(http.request.uri.path, "/api/cursor-cli/"))))
 ```
 
 - Characteristics: `IP`; Requests: `60`; Period: `10 seconds`
 - Action: `Block`; Mitigation duration: `10 seconds`
 
-Rate limit Free áp dụng theo path toàn zone. Dashboard nằm sau Cloudflare Access
-và không dùng các model API path này.
+Rate limit Free áp dụng theo IP + datacenter Cloudflare và chỉ match đúng API
+host cùng ranh giới path (`/v1` hoặc `/v1/...`, không match `/v1evil`).
 
-Tạo bốn **Custom WAF rules** theo đúng thứ tự sau:
+Tạo năm **Custom WAF rules** theo đúng thứ tự sau (dùng hết quota 5 rules của gói Free):
 
 1. Name: `OmniRoute API require Authorization`; Action: `Block`
 
 ```text
-(http.host eq "omniroute-api.tuannguyenviet.site" and http.request.method ne "OPTIONS" and (starts_with(http.request.uri.path, "/v1") or starts_with(http.request.uri.path, "/api/v1") or starts_with(http.request.uri.path, "/v1beta") or starts_with(http.request.uri.path, "/api/v1beta") or starts_with(http.request.uri.path, "/chat/completions") or starts_with(http.request.uri.path, "/responses") or starts_with(http.request.uri.path, "/models") or starts_with(http.request.uri.path, "/codex") or starts_with(http.request.uri.path, "/api/cursor-cli")) and not any(lower(http.request.headers.names[*])[*] in {"authorization" "x-api-key" "x-goog-api-key"}) and not starts_with(http.request.uri.path, "/api/v1/vscode/") and not starts_with(http.request.uri.path, "/vscode/"))
+(http.host eq "omniroute-api.tuannguyenviet.site" and http.request.method ne "OPTIONS" and ((http.request.uri.path eq "/v1" or starts_with(http.request.uri.path, "/v1/")) or (http.request.uri.path eq "/api/v1" or starts_with(http.request.uri.path, "/api/v1/")) or (http.request.uri.path eq "/v1beta" or starts_with(http.request.uri.path, "/v1beta/")) or (http.request.uri.path eq "/api/v1beta" or starts_with(http.request.uri.path, "/api/v1beta/")) or (http.request.uri.path eq "/chat/completions" or starts_with(http.request.uri.path, "/chat/completions/")) or (http.request.uri.path eq "/responses" or starts_with(http.request.uri.path, "/responses/")) or (http.request.uri.path eq "/models" or starts_with(http.request.uri.path, "/models/")) or (http.request.uri.path eq "/codex" or starts_with(http.request.uri.path, "/codex/")) or (http.request.uri.path eq "/api/cursor-cli" or starts_with(http.request.uri.path, "/api/cursor-cli/"))) and not any(lower(http.request.headers.names[*])[*] in {"authorization" "x-api-key" "x-goog-api-key"}) and not starts_with(http.request.uri.path, "/api/v1/vscode/") and not starts_with(http.request.uri.path, "/vscode/"))
 ```
 
 Rule chấp nhận Bearer key, Anthropic/OpenAI-style `x-api-key`, Gemini
@@ -357,7 +357,7 @@ Rule chấp nhận Bearer key, Anthropic/OpenAI-style `x-api-key`, Gemini
 2. Name: `Block common scanners`; Action: `Block`
 
 ```text
-((http.host eq "omniroute-api.tuannguyenviet.site" or http.host eq "omniroute-admin.tuannguyenviet.site") and (http.request.uri.path eq "/.env" or starts_with(http.request.uri.path, "/.git/") or starts_with(http.request.uri.path, "/.svn/") or starts_with(http.request.uri.path, "/wp-admin") or http.request.uri.path eq "/wp-login.php" or http.request.uri.path eq "/xmlrpc.php" or starts_with(http.request.uri.path, "/phpmyadmin") or starts_with(http.request.uri.path, "/cgi-bin/") or http.request.uri.path eq "/server-status" or http.request.uri.path eq "/.DS_Store"))
+((http.host eq "omniroute-api.tuannguyenviet.site" or http.host eq "omniroute-admin.tuannguyenviet.site") and (lower(http.request.uri.path) eq "/.env" or lower(http.request.uri.path) eq "/.git" or starts_with(lower(http.request.uri.path), "/.git/") or lower(http.request.uri.path) eq "/.svn" or starts_with(lower(http.request.uri.path), "/.svn/") or starts_with(lower(http.request.uri.path), "/wp-admin") or lower(http.request.uri.path) eq "/wp-login.php" or lower(http.request.uri.path) eq "/xmlrpc.php" or starts_with(lower(http.request.uri.path), "/phpmyadmin") or starts_with(lower(http.request.uri.path), "/cgi-bin/") or lower(http.request.uri.path) eq "/server-status" or lower(http.request.uri.path) eq "/.ds_store"))
 ```
 
 3. Name: `OmniRoute API restrict methods`; Action: `Block`
@@ -366,15 +366,27 @@ Rule chấp nhận Bearer key, Anthropic/OpenAI-style `x-api-key`, Gemini
 (http.host eq "omniroute-api.tuannguyenviet.site" and not http.request.method in {"GET" "POST" "OPTIONS" "HEAD"})
 ```
 
-4. Name: `Skip Managed Rules for LLM payloads`; Action: `Skip`
+4. Name: `OmniRoute API block unknown routes`; Action: `Block`
+
+Chặn mọi path khác trên API hostname ngay tại WAF, ngoại trừ model routes,
+`/api/monitoring/health`, `/tg-ops/*` và `/__edge-control/*`. Caddy và Worker vẫn
+giữ cùng policy ở lớp sau để defense-in-depth. Đây là custom rule thứ 4/5 của
+gói Free.
+
+5. Name: `Skip Managed Rules for LLM payloads`; Action: `Skip`
 
 ```text
-(http.host eq "omniroute-api.tuannguyenviet.site" and (starts_with(http.request.uri.path, "/v1") or starts_with(http.request.uri.path, "/api/v1") or starts_with(http.request.uri.path, "/v1beta") or starts_with(http.request.uri.path, "/api/v1beta") or starts_with(http.request.uri.path, "/chat/completions") or starts_with(http.request.uri.path, "/responses") or starts_with(http.request.uri.path, "/models") or starts_with(http.request.uri.path, "/codex") or starts_with(http.request.uri.path, "/api/cursor-cli")))
+(http.host eq "omniroute-api.tuannguyenviet.site" and ((http.request.uri.path eq "/v1" or starts_with(http.request.uri.path, "/v1/")) or (http.request.uri.path eq "/api/v1" or starts_with(http.request.uri.path, "/api/v1/")) or (http.request.uri.path eq "/v1beta" or starts_with(http.request.uri.path, "/v1beta/")) or (http.request.uri.path eq "/api/v1beta" or starts_with(http.request.uri.path, "/api/v1beta/")) or (http.request.uri.path eq "/chat/completions" or starts_with(http.request.uri.path, "/chat/completions/")) or (http.request.uri.path eq "/responses" or starts_with(http.request.uri.path, "/responses/")) or (http.request.uri.path eq "/models" or starts_with(http.request.uri.path, "/models/")) or (http.request.uri.path eq "/codex" or starts_with(http.request.uri.path, "/codex/")) or (http.request.uri.path eq "/api/cursor-cli" or starts_with(http.request.uri.path, "/api/cursor-cli/"))))
 ```
 
 Chỉ chọn **All managed rules** trong Skip Components; không chọn **All rate
-limiting rules**. Việc này tránh false positive khi prompt chứa SQL, shell hoặc
-đoạn code mà vẫn giữ rate limit và ba custom block rules phía trên.
+limiting rules** hoặc **All remaining custom rules**. Bật Cloudflare Managed Free
+Ruleset cho hai OmniRoute host; skip này chỉ miễn model payload để tránh false
+positive SQL/XSS, còn dashboard và path không phải model vẫn được managed WAF quét.
+
+Giữ `Always Use HTTPS = On`, `Minimum TLS Version = TLS 1.2`, `TLS 1.3 = On`.
+Bot Fight Mode của gói Free không thể skip theo hostname/path và Cloudflare cảnh
+báo có thể challenge API/mobile traffic; tắt nó nếu client AI gặp challenge 403.
 ---
 
 ## 6. GitHub ⬜
