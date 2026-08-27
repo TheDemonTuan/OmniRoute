@@ -190,6 +190,7 @@ test("browser-login start rejects ACTIVE leased connections before Docker or pro
 });
 
 test("forced model tests accept FREE lease-capable connections and attempt model dispatch", async () => {
+  await apiKeys.createApiKey("internal test key", "test");
   const connection = await seedConnection("model-test-free-lease");
   await markLeaseOnly(connection.id);
 
