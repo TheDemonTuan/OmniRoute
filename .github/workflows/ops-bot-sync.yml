@@ -64,15 +64,27 @@ jobs:
           $SSH "$VPS_USER@$VPS_HOST" "GITHUB_SHA=${GITHUB_SHA}"' bash -s' <<'REMOTE'
             set -euo pipefail
             cd /opt/omniroute
-            install -m 0755 .staging/scripts/ops/omniroute_opsctl.py /usr/local/sbin/omniroute-opsctl.new && mv -f /usr/local/sbin/omniroute-opsctl.new /usr/local/sbin/omniroute-opsctl
-            install -m 0440 .staging/infra/sudoers/omniroute-ops-bot /etc/sudoers.d/omniroute-ops-bot
-            install -m 0644 .staging/infra/systemd/omniroute-ops-bot.service /etc/systemd/system/omniroute-ops-bot.service
 
-            BOT_RELEASE="$GITHUB_SHA"
-            mkdir -p "ops-bot/$BOT_RELEASE"
+            BOT_RELEASE="releases/${GITHUB_SHA:?missing GITHUB_SHA}"
+            sudo mkdir -p "ops-bot/$BOT_RELEASE"
             sudo cp -a .staging/scripts/ops/telegram_ops_bot/. "ops-bot/$BOT_RELEASE/"
+            sudo chown -R root:root "ops-bot/$BOT_RELEASE"
+            sudo find "ops-bot/$BOT_RELEASE" -type d -exec chmod 0755 {} +
+            sudo find "ops-bot/$BOT_RELEASE" -type f -exec chmod 0644 {} +
+            install -m 0755 .staging/scripts/ops/omniroute_opsctl.py opsctl.new
+            sudo install -o root -g root -m 0755 opsctl.new /usr/local/sbin/omniroute-opsctl
+            rm -f opsctl.new
+            sudo install -o root -g root -m 0644 \
+              .staging/infra/systemd/omniroute-ops-bot.service \
+              /etc/systemd/system/omniroute-ops-bot.service
+            sudo install -o root -g root -m 0440 \
+              .staging/infra/sudoers/omniroute-ops-bot \
+              /etc/sudoers.d/omniroute-ops-bot
+            sudo visudo -cf /etc/sudoers.d/omniroute-ops-bot
             sudo ln -sfn "$BOT_RELEASE" ops-bot/current
             sudo systemctl daemon-reload
-            sudo systemctl restart omniroute-ops-bot
-            echo "✅ Ops Bot deployed and restarted: $(systemctl is-active omniroute-ops-bot)"
+            if sudo test -s /etc/omniroute/ops-bot.env; then
+              sudo systemctl restart omniroute-ops-bot.service
+              echo "✅ Ops Bot deployed and restarted: $(systemctl is-active omniroute-ops-bot)"
+            fi
           REMOTE
