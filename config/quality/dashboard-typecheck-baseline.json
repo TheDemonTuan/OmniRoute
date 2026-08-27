@@ -18,22 +18,15 @@
     "TS2503": 2
   },
   "src/app/(dashboard)/dashboard/cache/__tests__/CachePage.test.tsx": {
-    "TS2305": 3,
     "TS1117": 1
   },
   "src/app/(dashboard)/dashboard/cache/__tests__/CachePerformance.test.tsx": {
-    "TS2305": 1,
     "TS2322": 2
   },
   "src/app/(dashboard)/dashboard/cache/__tests__/CacheTrends.test.tsx": {
-    "TS2305": 1,
     "TS2322": 6
   },
-  "src/app/(dashboard)/dashboard/cache/__tests__/IdempotencyLayer.test.tsx": {
-    "TS2305": 1
-  },
   "src/app/(dashboard)/dashboard/cache/__tests__/MemoryCards.test.tsx": {
-    "TS2305": 1,
     "TS2322": 1
   },
   "src/app/(dashboard)/dashboard/cache/components/CachePerformance.tsx": {
@@ -71,9 +64,6 @@
   },
   "src/app/(dashboard)/dashboard/costs/quota-share/components/UsageLogCard.tsx": {
     "TS2869": 2
-  },
-  "src/app/(dashboard)/dashboard/discovery/__tests__/DiscoveryPageClient.test.tsx": {
-    "TS2305": 2
   },
   "src/app/(dashboard)/dashboard/endpoint/EndpointPageClient.tsx": {
     "TS2322": 18

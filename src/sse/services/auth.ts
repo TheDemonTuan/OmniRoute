@@ -25,6 +25,10 @@ import {
   type ExclusiveConnectionLease,
 } from "@/lib/db/exclusiveConnectionLeases";
 import { getSettings } from "@/lib/db/settings";
+import {
+  describePeakHourWindow,
+  evaluatePeakHourProtection,
+} from "@/lib/providers/peakHourProtection";
 import { buildJinaEnvCredentials } from "@/lib/providers/jina";
 import { buildGeminiEnvCredentials } from "@/lib/providers/gemini";
 import { toNumber } from "@/shared/utils/numeric";
@@ -207,11 +211,6 @@ function asRecord(value: unknown): JsonRecord {
 }
 function toStringOrNull(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value : null;
-}
-function toNullableNumber(value: unknown): number | null {
-  if (value === null || value === undefined) return null;
-  const parsed = toNumber(value, Number.NaN);
-  return Number.isFinite(parsed) ? parsed : null;
 }
 function toBooleanOrDefault(value: unknown, fallback: boolean): boolean {
   return typeof value === "boolean" ? value : fallback;
@@ -886,6 +885,32 @@ function formatConnectionPrefixesForLog(ids: Iterable<string>, max = 6): string 
     .map((id) => `${id.slice(0, 8)}...`);
   return prefixes.length > 0 ? prefixes.join(",") : "none";
 }
+function buildPeakHourProtectionRateLimitedResult(
+  provider: string,
+  blockedByPeakHour: Array<{
+    id: string;
+    retryAfter: string;
+    windowSummary: string;
+  }>
+) {
+  const retryAfter =
+    getEarliestFutureDate(blockedByPeakHour.map((entry) => entry.retryAfter)) ||
+    new Date(Date.now() + 5 * 60 * 1000).toISOString();
+  const blockedSummary = blockedByPeakHour
+    .map((entry) => `${entry.id.slice(0, 8)}(${entry.windowSummary})`)
+    .join("; ");
+
+  log.info("AUTH", `${provider} | peak-hour protection filtered account(s): ${blockedSummary}`);
+
+  return {
+    allRateLimited: true,
+    retryAfter,
+    retryAfterHuman: formatRetryAfter(retryAfter),
+    lastError: `All ${provider} accounts blocked by peak-hour protection`,
+    lastErrorCode: 429,
+  };
+}
+
 function buildQuotaPreflightRateLimitedResult(
   provider: string,
   blockedByPreflight: Array<{
@@ -1128,13 +1153,40 @@ function planLastUsedCommit(
   };
 }
 
-function materializeConnection(
+/**
+ * Resolve Proxy Pool references on a real connection row at the same boundary
+ * where credentials become request-ready. The synthetic no-auth fallback above
+ * already performs this hydration, but a persisted connection (for example the
+ * OpenCode card's `opencode` row selected through the `opencode-zen` alias)
+ * bypasses that fallback. Keep inline/legacy entries untouched and only incur a
+ * registry lookup when at least one by-id reference is present.
+ */
+async function hydrateAccountProxyReferences(
+  providerSpecificData: JsonRecord
+): Promise<JsonRecord> {
+  const entries = providerSpecificData.accountProxies;
+  if (!Array.isArray(entries)) return providerSpecificData;
+
+  const containsProxyReference = entries.some((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return false;
+    const proxyId = (entry as Record<string, unknown>).proxyId;
+    return typeof proxyId === "string" && proxyId.trim().length > 0;
+  });
+  if (!containsProxyReference) return providerSpecificData;
+
+  return {
+    ...providerSpecificData,
+    accountProxies: await resolveAccountProxiesFromRegistry(entries),
+  };
+}
+
+async function materializeConnection(
   connection: ProviderConnectionView,
   options: CredentialSelectionOptions,
   extra: DeferredLeaseSelection & { exclusiveLease?: ExclusiveConnectionLease } = {}
 ) {
-  const apiKeyHealth = connection.providerSpecificData?.apiKeyHealth as
-    Record<string, KeyHealth> | undefined;
+  const providerSpecificData = await hydrateAccountProxyReferences(connection.providerSpecificData);
+  const apiKeyHealth = providerSpecificData.apiKeyHealth as Record<string, KeyHealth> | undefined;
   if (apiKeyHealth) syncHealthFromDB(connection.id, apiKeyHealth);
   const releaseOAuthSession =
     options.reserveOAuthSession === true && connection.authType === "oauth" && options.sessionKey
@@ -1148,10 +1200,10 @@ function materializeConnection(
     projectId: connection.projectId,
     defaultModel: connection.defaultModel || null,
     copilotToken:
-      typeof connection.providerSpecificData.copilotToken === "string"
-        ? connection.providerSpecificData.copilotToken
+      typeof providerSpecificData.copilotToken === "string"
+        ? providerSpecificData.copilotToken
         : null,
-    providerSpecificData: connection.providerSpecificData,
+    providerSpecificData,
     id: connection.id,
     provider: connection.provider,
     authType: connection.authType,
@@ -1716,7 +1768,38 @@ export async function getProviderCredentials(
       return null;
     }
 
-    let policyEligibleConnections = availableConnections;
+    let peakHourEligibleConnections = availableConnections;
+    const blockedByPeakHour: Array<{ id: string; retryAfter: string; windowSummary: string }> = [];
+
+    if (!allowSuppressedConnections) {
+      peakHourEligibleConnections = availableConnections.filter((connection) => {
+        const peakHour = evaluatePeakHourProtection(connection.providerSpecificData);
+        if (!peakHour.active) return true;
+        blockedByPeakHour.push({
+          id: connection.id,
+          retryAfter: peakHour.retryAfter,
+          windowSummary: describePeakHourWindow(peakHour.window),
+        });
+        connectionFilterStatus.set(connection.id, "peakHourProtected");
+        return false;
+      });
+    }
+
+    if (blockedByPeakHour.length > 0) {
+      log.info(
+        "AUTH",
+        `${provider} | peak-hour protection filtered ${blockedByPeakHour.length} account(s): ${blockedByPeakHour
+          .map((entry) => `${entry.id.slice(0, 8)}(${entry.windowSummary})`)
+          .join("; ")}`
+      );
+    }
+
+    if (peakHourEligibleConnections.length === 0 && availableConnections.length > 0) {
+      invalidateManagedLease(options, "QUOTA_UNAVAILABLE");
+      return buildPeakHourProtectionRateLimitedResult(provider, blockedByPeakHour);
+    }
+
+    let policyEligibleConnections = peakHourEligibleConnections;
     const blockedByPolicy: Array<{
       id: string;
       reasons: string[];
@@ -1725,13 +1808,13 @@ export async function getProviderCredentials(
     const quotaResults = new Map<string, { blocked: boolean; exhausted: boolean }>();
 
     if (provider === "codex") {
-      for (const connection of availableConnections) {
+      for (const connection of peakHourEligibleConnections) {
         hydrateCodexQuotaCacheForRequest(connection, requestedModel);
       }
     }
 
     if (!bypassQuotaPolicy) {
-      policyEligibleConnections = availableConnections.filter((connection) => {
+      policyEligibleConnections = peakHourEligibleConnections.filter((connection) => {
         const evaluation = evaluateQuotaLimitPolicy(provider, connection, requestedModel);
         quotaResults.set(connection.id, { blocked: evaluation.blocked, exhausted: false });
         if (!evaluation.blocked) return true;

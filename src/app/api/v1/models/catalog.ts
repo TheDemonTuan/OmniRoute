@@ -171,11 +171,16 @@ function yieldCatalogBuildTurn(): Promise<void> {
 /**
  * Build unified OpenAI-compatible model catalog response.
  * Reused by `/api/v1/models` and `/api/v1` to avoid semantic drift (T09).
+ *
+ * `options.scheduleBackgroundRefresh` is the App Router's injection point for the
+ * stale-while-revalidate rebuild (#8728): the route passes Next's `after()` so the
+ * rebuild starts only once the stale body has been flushed. Omitted by non-route
+ * callers, which fall back to the cache module's own default.
  */
 export async function getUnifiedModelsResponse(
   request: Request,
   corsHeaders: Record<string, string> = {},
-  options: CatalogResponseOptions = {}
+  options: { scheduleBackgroundRefresh?: BackgroundRefreshScheduler } = {}
 ) {
   const diagnosticHeaders = getCatalogDiagnosticsHeaders({ request });
 
@@ -217,9 +222,7 @@ export async function getUnifiedModelsResponse(
         hideAutoCombos:
           settingsForAuth?.hideAutoCombos === true || settingsForAuth?.autoRoutingEnabled === false,
         hideNoThinkVariants: settingsForAuth?.hideNoThinkVariants === true,
-        // #11551: the route injects Next's `after()` here so the SWR background
-        // rebuild starts only once the stale response has been flushed. Without a
-        // scheduler the cache falls back to defaultBackgroundRefreshScheduler.
+
         scheduleBackgroundRefresh: options.scheduleBackgroundRefresh,
       }
     );
@@ -1082,10 +1085,19 @@ async function buildUnifiedModelsResponseCore(
       const alias = providerIdToAlias.codex || "cx";
       const aliasId = `${alias}/${modelId}`;
       const providerIdModel = `codex/${modelId}`;
-      const entries = [
-        { id: aliasId, parent: null },
-        { id: providerIdModel, parent: aliasId },
-        { id: modelId, parent: providerIdModel },
+      // #11632: honour the prefix-mode gates resolved at :303-307, like every
+      // other emission loop (static :1022/:1036, synced :1203/:1236, custom
+      // :1628/:1654, alias-backed :1746/:1758). Re-root the canonical row when
+      // the alias row is suppressed, using the same `includeAlias ? aliasId :
+      // null` idiom (:1052, :1246, :1667, :1776), so no surviving row points at
+      // a suppressed predecessor. The bare id is the tail of the alias ->
+      // canonical -> bare chain and only exists when both halves are emitted.
+      const entries: Array<{ id: string; parent: string | null }> = [
+        ...(includeAlias ? [{ id: aliasId, parent: null }] : []),
+        ...(includeCanonical
+          ? [{ id: providerIdModel, parent: includeAlias ? aliasId : null }]
+          : []),
+        ...(includeAlias && includeCanonical ? [{ id: modelId, parent: providerIdModel }] : []),
       ];
 
       for (const entry of entries) {

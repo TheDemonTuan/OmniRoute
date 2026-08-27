@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 // R0.3 GOLDEN LOCK (characterization BEFORE the ExecutorRegistry refactor):
 // freeze the full provider-id → executor mapping of open-sse/executors/index.ts —
@@ -34,7 +35,7 @@ test.after(() => {
 // to (or removed from) the hard-coded map cannot hide from the snapshot.
 function readSpecializedKeys(): string[] {
   const src = fs.readFileSync(
-    path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../open-sse/executors/index.ts"),
+    path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../open-sse/executors/index.ts"),
     "utf8"
   );
   const mapMatch = src.match(/const lazyExecutors[^\n]*= \{([\s\S]*?)\n\};/);

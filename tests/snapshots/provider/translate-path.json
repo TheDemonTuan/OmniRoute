@@ -1950,8 +1950,8 @@
       }
     },
     "url": {
-      "nonStream": "https://duckduckgo.com/duckchat/v1/chat",
-      "stream": "https://duckduckgo.com/duckchat/v1/chat"
+      "nonStream": "https://duck.ai/duckchat/v1/chat",
+      "stream": "https://duck.ai/duckchat/v1/chat"
     }
   },
   "dxnt": {
@@ -4396,6 +4396,29 @@
       "stream": "https://ollama.com/v1/chat/completions"
     }
   },
+  "oneminai": {
+    "format": "openai",
+    "headers": {
+      "apiKey": {
+        "Accept": "text/event-stream",
+        "Authorization": "Bearer <TOK>",
+        "Content-Type": "application/json"
+      },
+      "nonStream": {
+        "Authorization": "Bearer <TOK>",
+        "Content-Type": "application/json"
+      },
+      "oauth": {
+        "Accept": "text/event-stream",
+        "Authorization": "Bearer <TOK>",
+        "Content-Type": "application/json"
+      }
+    },
+    "url": {
+      "nonStream": "https://api.1min.ai/api/chat-with-ai",
+      "stream": "https://api.1min.ai/api/chat-with-ai"
+    }
+  },
   "openadapter": {
     "format": "openai",
     "headers": {
@@ -4607,6 +4630,29 @@
     "url": {
       "nonStream": "https://api.openvecta.com/v1/chat/completions",
       "stream": "https://api.openvecta.com/v1/chat/completions"
+    }
+  },
+  "opper": {
+    "format": "openai",
+    "headers": {
+      "apiKey": {
+        "Accept": "text/event-stream",
+        "Authorization": "Bearer <TOK>",
+        "Content-Type": "application/json"
+      },
+      "nonStream": {
+        "Authorization": "Bearer <TOK>",
+        "Content-Type": "application/json"
+      },
+      "oauth": {
+        "Accept": "text/event-stream",
+        "Authorization": "Bearer <TOK>",
+        "Content-Type": "application/json"
+      }
+    },
+    "url": {
+      "nonStream": "https://api.opper.ai/v3/compat/chat/completions",
+      "stream": "https://api.opper.ai/v3/compat/chat/completions"
     }
   },
   "orcarouter": {

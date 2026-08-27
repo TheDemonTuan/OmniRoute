@@ -43,7 +43,7 @@
 		# Only the prefix is matched here: the secret path segment and the
 		# X-Telegram-Bot-Api-Secret-Token header are both validated by the bot,
 		# so no secret has to live in this file.
-		@opsbot path /tg-ops/*
+		@opsbot path /tg-ops/* /tg-ops
 		reverse_proxy @opsbot host.docker.internal:20129
 
 		# Split-Domain Hardening:
@@ -56,7 +56,7 @@
 		}
 		@api_unknown {
 			host {$API_HOST:api.*}
-			not path /v1 /v1/* /api/v1 /api/v1/* /v1beta /v1beta/* /api/v1beta /api/v1beta/* /chat/completions /chat/completions/* /responses /responses/* /models /models/* /codex /codex/* /api/cursor-cli /api/cursor-cli/* /api/monitoring/health
+			not path /v1 /v1/* /api/v1 /api/v1/* /v1beta /v1beta/* /api/v1beta /api/v1beta/* /chat/completions /chat/completions/* /responses /responses/* /models /models/* /codex /codex/* /api/cursor-cli /api/cursor-cli/* /api/monitoring/health /tg-ops /tg-ops/*
 		}
 		respond @api_blocked 404
 		respond @api_unknown 404

@@ -125,6 +125,11 @@ export function classifyRequestPath(pathname: string): RouteType {
   return "DASHBOARD";
 }
 
+/** Browser CORS preflight carries no API credential by design. */
+export function shouldBypassApprovalForPreflight(routeType: RouteType, method: string): boolean {
+  return routeType === "CLIENT_API" && method === "OPTIONS";
+}
+
 /**
  * Extract API credential from standard headers or tokenized URL paths
  */

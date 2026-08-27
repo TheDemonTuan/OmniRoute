@@ -2790,11 +2790,6 @@
       "count": 3
     }
   },
-  "src/mitm/dns/dnsConfig.ts": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
-    }
-  },
   "src/mitm/dns/provision.ts": {
     "@typescript-eslint/no-unused-vars": {
       "count": 1
@@ -2922,11 +2917,6 @@
     }
   },
   "src/shared/hooks/useTheme.ts": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
-    }
-  },
-  "src/shared/middleware/chatBodyAdmission.ts": {
     "@typescript-eslint/no-unused-vars": {
       "count": 1
     }
@@ -3090,11 +3080,6 @@
       "count": 3
     },
     "no-restricted-imports": {
-      "count": 1
-    }
-  },
-  "src/sse/services/auth.ts": {
-    "@typescript-eslint/no-unused-vars": {
       "count": 1
     }
   },
@@ -3445,10 +3430,10 @@
   },
   "tests/integration/skills-pipeline.test.ts": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 14
+      "count": 15
     },
     "@typescript-eslint/no-unused-vars": {
-      "count": 2
+      "count": 1
     }
   },
   "tests/integration/traffic-inspector-error-sanitization.test.ts": {
@@ -3693,11 +3678,6 @@
   "tests/unit/auth-terminal-status.test.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 15
-    }
-  },
-  "tests/unit/authz/probe-9033-repro.test.ts": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
     }
   },
   "tests/unit/autoCombo/tieredRotation.test.ts": {

@@ -92,19 +92,65 @@ interface KieImageOptions {
 }
 
 // KIE Market catalog ids are namespaced for OmniRoute's catalog
-// (`google-imagen/<model>`), but the KIE Market createTask API expects
+// (`<vendor>/<model>`), but the KIE Market createTask API expects
 // vendor-specific upstream ids that do not follow a single consistent
-// pattern (confirmed against docs.kie.ai/market/google/* — see #11225,
-// #11296): nano-banana-2 and nano-banana-pro drop the vendor namespace
-// entirely, while nano-banana and nano-banana-edit use a `google/` prefix
-// instead of `google-imagen/`. Every other KIE Market namespace (seedream,
-// flux, ideogram, qwen, wan, grok-imagine, gpt) already matches its real
-// upstream id byte-for-byte, so this map stays scoped to google-imagen.
+// pattern. Every entry below was confirmed individually against the literal
+// example request JSON published on docs.kie.ai (never inferred by pattern —
+// see #11326's false "everything else already matches" claim and #11296's
+// follow-up correction):
+//   - google-imagen: nano-banana-2 and nano-banana-pro drop the vendor
+//     namespace entirely; nano-banana and nano-banana-edit use a `google/`
+//     prefix instead of `google-imagen/` (docs.kie.ai/market/google/*).
+//   - gpt: gpt-image-2-* drops the `gpt/` namespace entirely
+//     (docs.kie.ai/market/gpt/gpt-image-2-*); gpt-image-1.5-* uses a
+//     `gpt-image/` namespace instead of `gpt/gpt-image-1.5-`, and keeps the
+//     dot in "1.5" (docs.kie.ai/market/gpt-image/1-5-*).
+//   - seedream: 5.0-lite-* drops the ".0" — real id is `5-lite-*`
+//     (docs.kie.ai/market/seedream/5-lite-text-to-image); seedream 4.5 (T2I
+//     and edit) already matches byte-for-byte.
+//   - flux: `flux/2-*` uses a `flux-2/` namespace (dash, not slash); the
+//     generic (non-"pro") variant is named `flex` upstream, not `2`
+//     (docs.kie.ai/market/flux2/pro-*, .../flex-*).
+//   - wan: `wan/2.7-*` keeps the dot in our catalog, but KIE's documented
+//     enum uses a dash — real id is `wan/2-7-*`
+//     (docs.kie.ai/market/wan/2-7-image[-pro]).
+//   - ideogram (v3-text-to-image, v3-edit, v3-remix), qwen, qwen2, and
+//     grok-imagine already match byte-for-byte
+//     (docs.kie.ai/market/{ideogram,qwen,qwen2,grok-imagine}/*).
+//     ideogram/v3-reframe has no dedicated docs.kie.ai page as of this sweep
+//     (its 3 siblings above are all direct id matches, so it is assumed
+//     correct by pattern, not independently confirmed).
+// Two catalog entries remain UNRESOLVED after this sweep and are
+// deliberately left untouched pending a follow-up (see #11296 discussion):
+//   - z-image/4.0-text-to-image and z-image/4.5-text-to-image: the only
+//     documented Z-Image Market page (docs.kie.ai/market/z-image/z-image)
+//     shows a single fixed `model` enum value `"z-image"` with no
+//     version-specific id or "version" input field found — unclear whether
+//     both catalog ids should collapse to the same upstream call.
+//   - flux/kontext: no `docs.kie.ai/market/flux2/kontext` (or similar)
+//     Market page exists; Flux Kontext is documented under the separate
+//     `/flux-kontext-api/*` docs tree with its own endpoint
+//     (`POST /api/v1/flux/kontext/generate`, models `flux-kontext-pro`/
+//     `flux-kontext-max`), not the Market `createTask` flow this map feeds.
+//     This entry may be miscatalogued as `isMarket: true` and need a
+//     dedicated reroute rather than an id rewrite.
 export const KIE_MARKET_UPSTREAM_MODEL_IDS: ReadonlyMap<string, string> = new Map([
   ["google-imagen/nano-banana", "google/nano-banana"],
   ["google-imagen/nano-banana-2", "nano-banana-2"],
   ["google-imagen/nano-banana-pro", "nano-banana-pro"],
   ["google-imagen/nano-banana-edit", "google/nano-banana-edit"],
+  ["gpt/gpt-image-2-text-to-image", "gpt-image-2-text-to-image"],
+  ["gpt/gpt-image-2-image-to-image", "gpt-image-2-image-to-image"],
+  ["gpt/gpt-image-1.5-text-to-image", "gpt-image/1.5-text-to-image"],
+  ["gpt/gpt-image-1.5-image-to-image", "gpt-image/1.5-image-to-image"],
+  ["seedream/5.0-lite-text-to-image", "seedream/5-lite-text-to-image"],
+  ["seedream/5.0-lite-image-to-image", "seedream/5-lite-image-to-image"],
+  ["flux/2-pro-text-to-image", "flux-2/pro-text-to-image"],
+  ["flux/2-pro-image-to-image", "flux-2/pro-image-to-image"],
+  ["flux/2-text-to-image", "flux-2/flex-text-to-image"],
+  ["flux/2-image-to-image", "flux-2/flex-image-to-image"],
+  ["wan/2.7-image", "wan/2-7-image"],
+  ["wan/2.7-image-pro", "wan/2-7-image-pro"],
 ]);
 
 export function resolveKieMarketUpstreamModelId(publicModelId: string): string {

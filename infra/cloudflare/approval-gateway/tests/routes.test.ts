@@ -6,6 +6,7 @@ import {
   extractClientCredential,
   isApiHostname,
   maskApiKey,
+  shouldBypassApprovalForPreflight,
 } from "../src/routes.ts";
 
 test("routes: classifyRequestPath correctly identifies route categories", () => {
@@ -41,7 +42,17 @@ test("routes: classifyRequestPath correctly identifies route categories", () => 
   assert.equal(classifyRequestPath("/v1/responses"), "CLIENT_API");
   assert.equal(classifyRequestPath("/api/v1/models"), "CLIENT_API");
   assert.equal(classifyRequestPath("/api/v1/vscode/sk-test/models"), "CLIENT_API");
-  assert.equal(classifyRequestPath("/api/cursor-cli/aiserver.v1.BidiService/BidiAppend"), "CLIENT_API");
+  assert.equal(
+    classifyRequestPath("/api/cursor-cli/aiserver.v1.BidiService/BidiAppend"),
+    "CLIENT_API"
+  );
+});
+
+test("routes: only client API OPTIONS bypasses approval for CORS preflight", () => {
+  assert.equal(shouldBypassApprovalForPreflight("CLIENT_API", "OPTIONS"), true);
+  assert.equal(shouldBypassApprovalForPreflight("CLIENT_API", "GET"), false);
+  assert.equal(shouldBypassApprovalForPreflight("DASHBOARD", "OPTIONS"), false);
+  assert.equal(shouldBypassApprovalForPreflight("EDGE_CONTROL", "OPTIONS"), false);
 });
 
 test("routes: extractClientCredential extracts from all supported transports", () => {
@@ -93,10 +104,7 @@ test("routes: isApiHostname identifies API hostnames and distinguishes from dash
   assert.equal(isApiHostname("omniroute.example.com", "omniroute-api.example.com"), false);
 
   // Multiple comma-separated configured hosts
-  assert.equal(
-    isApiHostname("api.custom.com", "omniroute-api.example.com, api.custom.com"),
-    true
-  );
+  assert.equal(isApiHostname("api.custom.com", "omniroute-api.example.com, api.custom.com"), true);
   assert.equal(
     isApiHostname("dashboard.custom.com", "omniroute-api.example.com, api.custom.com"),
     false

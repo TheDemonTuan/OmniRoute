@@ -63,6 +63,7 @@ import { nubeProvider } from "./registry/nube/index.ts";
 import { clinepassProvider } from "./registry/clinepass/index.ts";
 import { sparkdeskProvider } from "./registry/sparkdesk/index.ts";
 import { nlpcloudProvider } from "./registry/nlpcloud/index.ts";
+import { oneminaiProvider } from "./registry/oneminai/index.ts";
 import { nvidiaProvider } from "./registry/nvidia/index.ts";
 import { api_airforceProvider } from "./registry/api-airforce/index.ts";
 import { mistralProvider } from "./registry/mistral/index.ts";
@@ -229,6 +230,7 @@ import { x5labProvider } from "./registry/x5lab/index.ts";
 import { kenariProvider } from "./registry/kenari/index.ts";
 import { navyProvider } from "./registry/navy/index.ts";
 import { naraProvider } from "./registry/nara/index.ts";
+import { opperProvider } from "./registry/opper/index.ts";
 import { requestyProvider } from "./registry/requesty/index.ts";
 import { sealionProvider } from "./registry/sealion/index.ts";
 import { routewayProvider } from "./registry/routeway/index.ts";
@@ -331,6 +333,7 @@ export const REGISTRY: Record<string, RegistryEntry> = {
   clinepass: clinepassProvider,
   sparkdesk: sparkdeskProvider,
   nlpcloud: nlpcloudProvider,
+  oneminai: oneminaiProvider,
   nvidia: nvidiaProvider,
   "api-airforce": api_airforceProvider,
   mistral: mistralProvider,
@@ -500,6 +503,7 @@ export const REGISTRY: Record<string, RegistryEntry> = {
   kenari: kenariProvider,
   navy: navyProvider,
   nara: naraProvider,
+  opper: opperProvider,
   requesty: requestyProvider,
   sealion: sealionProvider,
   routeway: routewayProvider,

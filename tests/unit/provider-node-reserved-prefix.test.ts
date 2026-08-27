@@ -106,13 +106,13 @@ test("shared set excludes manual aliases that never intercept nodes at runtime",
   assert.equal(RESERVED_PROVIDER_PREFIXES.has("aq"), false);
 });
 
-test("shared set size matches full REGISTRY scan (395 unique prefixes)", () => {
-  // Count measured against release/v3.8.50 tip after this merge-batch boarded
-  // #11333 (volcengine-coding-plan + volcengine-agent-plan, +4 ids/aliases) on
-  // top of the 391 pinned post-upstream-65e81158a (was 329 at c68cda7df) —
+test("shared set size matches full REGISTRY scan (398 unique prefixes)", () => {
+  // Count measured against release/v3.8.51 tip after #11629 (opper) and
+  // #11631 (1min.ai) boarded — 398 unique ids/aliases walked from the
+  // provider REGISTRY on top of the 395 pinned post-#11333.
   // the assertion pins that the set is a full REGISTRY walk, not a
   // hand-maintained list.
-  assert.equal(RESERVED_PREFIX_COUNT, 395);
+  assert.equal(RESERVED_PREFIX_COUNT, 398);
 });
 
 test("isReservedProviderPrefix rejects non-string input", () => {

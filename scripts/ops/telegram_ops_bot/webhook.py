@@ -76,7 +76,9 @@ class _WebhookRequestHandler(BaseHTTPRequestHandler):
 
         # Compare the whole path, secret segment included, so a probe of
         # /tg-ops/ or a guessed prefix is indistinguishable from any other 404.
-        if self.path.rstrip("/") != owner.path.rstrip("/"):
+        req_path = self.path.split("?")[0].rstrip("/")
+        owner_path = owner.path.split("?")[0].rstrip("/")
+        if req_path != owner_path:
             self._respond(404)
             return
 
