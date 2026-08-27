@@ -14,6 +14,8 @@ upstream bị sửa, nên việc merge code mới từ upstream gần như khôn
 > File này là phần giải thích kiến trúc và tra cứu khi vận hành.
 >
 > Quản trị riêng qua Telegram: xem [`docs/ops/TELEGRAM_OPS_BOT.md`](../docs/ops/TELEGRAM_OPS_BOT.md).
+> Cloudflare WAF, rate limit và split-domain hardening: xem
+> [`SETUP.md` mục 5](./SETUP.md#5-cloudflare-tunnel--split-domain-setup-).
 
 ---
 
@@ -186,6 +188,7 @@ Service  : http://caddy:8080
 
 **Không** dùng `http://localhost:8080` — `cloudflared` chạy trong container riêng,
 `localhost` với nó là chính nó. Docker DNS lo phần `caddy:8080`.
+
 ### 4.3 GitHub
 
 Trong `TheDemonTuan/OmniRoute` → Settings → Environments → tạo `production`, thêm

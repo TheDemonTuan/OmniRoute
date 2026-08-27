@@ -147,20 +147,44 @@ if command -v ufw >/dev/null 2>&1; then
     ufw --force enable
     ufw status verbose
 elif command -v firewall-cmd >/dev/null 2>&1 && firewall-cmd --state >/dev/null 2>&1; then
-    # Only ensure SSH survives; deliberately open nothing else. firewalld's
-    # default zone already drops unsolicited inbound traffic.
-    firewall-cmd --permanent --add-service=ssh >/dev/null
-    # Same reason as the ufw rule above: in webhook mode the containerised Caddy
-    # reaches the host-side ops bot over the docker bridge, and firewalld's
-    # default zone would otherwise drop it. Scoped to the RFC1918 range docker
-    # allocates bridges from, so this opens nothing to the internet.
-    firewall-cmd --permanent --add-rich-rule \
+    # Make the public zone explicit and idempotent: only SSH is publicly
+    # reachable. Cloudflare Tunnel dials out, so web and application ports must
+    # remain closed even if a previous installation opened them.
+    firewall-cmd --permanent --zone=public --add-service=ssh >/dev/null
+    firewall-cmd --permanent --zone=public --remove-service=http >/dev/null
+    firewall-cmd --permanent --zone=public --remove-service=https >/dev/null
+    for port in 8080/tcp 20128/tcp 20129/tcp; do
+        firewall-cmd --permanent --zone=public --remove-port="$port" >/dev/null
+    done
+    # In webhook mode containerised Caddy reaches the host-side ops bot over
+    # the docker bridge. Scope this exception to Docker's RFC1918 range.
+    firewall-cmd --permanent --zone=public --add-rich-rule \
         "rule family=\"ipv4\" source address=\"172.16.0.0/12\" port port=\"${OPS_WEBHOOK_PORT:-20129}\" protocol=\"tcp\" accept" >/dev/null
     firewall-cmd --reload >/dev/null
-    firewall-cmd --list-all
+    firewall-cmd --zone=public --list-all
 else
     echo "    no ufw/firewalld — skipping. Ensure 80/443/8080/20128 stay closed."
 fi
+
+echo "==> Hardening SSH authentication"
+install -d -o root -g root -m 0755 /etc/ssh/sshd_config.d
+cat > /etc/ssh/sshd_config.d/99-hardening.conf <<'EOF'
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PubkeyAuthentication yes
+PermitRootLogin no
+MaxAuthTries 3
+LoginGraceTime 30
+EOF
+chmod 0644 /etc/ssh/sshd_config.d/99-hardening.conf
+
+# Never reload an invalid SSH configuration: losing the active SSH path would
+# make a remote VPS unrecoverable without console access.
+if ! sshd -t; then
+    echo "ERROR: SSH hardening configuration failed validation" >&2
+    exit 1
+fi
+systemctl reload sshd
 
 # On RHEL-family hosts SELinux is Enforcing by default and would deny the
 # container every write to the bind-mounted data dir. compose.yml carries `:z`

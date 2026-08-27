@@ -187,16 +187,16 @@ nano /opt/omniroute/.app.env
 
 Bắt buộc điền và cấu hình:
 
-| Biến                   | Ghi chú                                                                                                                          |
-| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `JWT_SECRET`           | đổi = mọi phiên đăng nhập dashboard bị vô hiệu                                                                                   |
-| `API_KEY_SECRET`       | **đặt một lần, đừng bao giờ đổi** — nó mã hoá API key của provider trong SQLite; đổi sau khi đã có dữ liệu = mất sạch key đã lưu |
-| `INITIAL_PASSWORD`     | mật khẩu dashboard lần đầu, đổi trong Settings → Security sau khi vào được                                                       |
-| `DASHBOARD_HOST`       | Hostname quản trị dashboard (vd: `omniroute-admin.<domain-của-bạn>` hoặc `omniroute.<domain-của-bạn>`)                           |
-| `API_HOST`             | Hostname phục vụ model API cho client (vd: `omniroute-api.<domain-của-bạn>` hoặc `ai-api.<domain-của-bạn>`)                     |
-| `NEXT_PUBLIC_BASE_URL` | `https://${DASHBOARD_HOST}` (vd: `https://omniroute-admin.<domain-của-bạn>`)                                                     |
-| `CORS_ORIGIN`          | `https://${DASHBOARD_HOST}`                                                                                                       |
-| `LIVE_WS_ALLOWED_ORIGINS` | `https://${DASHBOARD_HOST}`                                                                                                    |
+| Biến                      | Ghi chú                                                                                                                          |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `JWT_SECRET`              | đổi = mọi phiên đăng nhập dashboard bị vô hiệu                                                                                   |
+| `API_KEY_SECRET`          | **đặt một lần, đừng bao giờ đổi** — nó mã hoá API key của provider trong SQLite; đổi sau khi đã có dữ liệu = mất sạch key đã lưu |
+| `INITIAL_PASSWORD`        | mật khẩu dashboard lần đầu, đổi trong Settings → Security sau khi vào được                                                       |
+| `DASHBOARD_HOST`          | Hostname quản trị dashboard (vd: `omniroute-admin.<domain-của-bạn>` hoặc `omniroute.<domain-của-bạn>`)                           |
+| `API_HOST`                | Hostname phục vụ model API cho client (vd: `omniroute-api.<domain-của-bạn>` hoặc `ai-api.<domain-của-bạn>`)                      |
+| `NEXT_PUBLIC_BASE_URL`    | `https://${DASHBOARD_HOST}` (vd: `https://omniroute-admin.<domain-của-bạn>`)                                                     |
+| `CORS_ORIGIN`             | `https://${DASHBOARD_HOST}`                                                                                                      |
+| `LIVE_WS_ALLOWED_ORIGINS` | `https://${DASHBOARD_HOST}`                                                                                                      |
 
 Các giá trị bảo mật đã set sẵn hợp lý trong template, đừng sửa nếu không có lý do:
 `AUTH_COOKIE_SECURE=true`, `REQUIRE_API_KEY=true`, `ALLOW_API_KEY_REVEAL=false`,
@@ -208,6 +208,7 @@ Các giá trị bảo mật đã set sẵn hợp lý trong template, đừng s�
 > `DISABLE_SQLITE_AUTO_BACKUP=true` **không phải tuỳ chọn**. Trong cửa sổ
 > blue/green có lúc 2 container cùng sống; nếu bật, cả hai sẽ cùng chạy
 > auto-backup trên một file SQLite. Backup do `backup.sh` + cron lo.
+
 ### 3.5 Quyền pull image — không cần làm gì
 
 Package `ghcr.io/thedemontuan/omniroute` hiện **public**: nó được publish từ một
@@ -268,15 +269,18 @@ Phải in ra `(not deployed yet — ...)`. Nếu lỗi ở đây thì CI cũng s
 ## 5. Cloudflare Tunnel & Split-Domain Setup ⬜
 
 Kiến trúc **Split-Domain Hardening** phân tách rõ rệt 2 hostname vào cùng Caddy reverse proxy:
+
 1. **Dashboard Host** (`DASHBOARD_HOST`): UI quản trị, cài đặt, tạo API key — **bảo vệ sau Cloudflare Access + MFA**.
 2. **API Host** (`API_HOST`): Model Gateway cho client AI/IDE — **chỉ mở các route model (`/v1/*`, `/chat/completions`, ...) và chặn toàn bộ route dashboard/admin**.
 
 ### 5.1 Cấu hình Cloudflare Tunnel
+
 1. Cloudflare Dashboard → **Zero Trust** → Networks → **Tunnels** → Create a tunnel
 2. Chọn **Cloudflared**, đặt tên (vd: `omniroute-prod`), **copy token** (chuỗi `eyJ...`)
 3. Tab **Public Hostname** → Thêm **cả 2 hostname** sau:
 
    **Hostname 1 (Dashboard Admin):**
+
    | Trường             | Giá trị                                                 |
    | ------------------ | ------------------------------------------------------- |
    | Subdomain / Domain | `<DASHBOARD_HOST>` (vd: `omniroute-admin.<domain-bạn>`) |
@@ -284,11 +288,12 @@ Kiến trúc **Split-Domain Hardening** phân tách rõ rệt 2 hostname vào c�
    | URL                | `caddy:8080`                                            |
 
    **Hostname 2 (Model Serving API):**
-   | Trường             | Giá trị                                                 |
-   | ------------------ | ------------------------------------------------------- |
-   | Subdomain / Domain | `<API_HOST>` (vd: `omniroute-api.<domain-bạn>`)         |
-   | Type               | `HTTP`                                                  |
-   | URL                | `caddy:8080`                                            |
+
+   | Trường             | Giá trị                                         |
+   | ------------------ | ----------------------------------------------- |
+   | Subdomain / Domain | `<API_HOST>` (vd: `omniroute-api.<domain-bạn>`) |
+   | Type               | `HTTP`                                          |
+   | URL                | `caddy:8080`                                    |
 
    ⚠️ **Không** điền `localhost:8080`. `cloudflared` chạy trong container riêng,
    `localhost` với nó là chính nó. Docker DNS phân giải `caddy` được vì hai
@@ -304,7 +309,9 @@ chmod 600 /opt/omniroute/.tunnel.env
 Không cần mở port 80/443 trên VPS. Tunnel là đường vào duy nhất.
 
 ### 5.2 Khóa Dashboard bằng Cloudflare Zero Trust Access ⬜
+
 Để bảo vệ bề mặt quản trị không bị quét hoặc tấn công brute-force:
+
 1. Cloudflare Dashboard → **Zero Trust** → **Access** → **Applications** → **Add an application** → Chọn **Self-hosted**.
 2. Cấu hình Application:
    - **Application name**: `OmniRoute Admin Dashboard`
@@ -317,6 +324,57 @@ Không cần mở port 80/443 trên VPS. Tunnel là đường vào duy nhất.
 4. **LƯU Ý QUAN TRỌNG**: **KHÔNG** gán Cloudflare Access Application lên `<API_HOST>`.
    - `<API_HOST>` là endpoint để các client AI (Cline, Cursor, Roo Code, LibreChat, scripts) gửi request mang `Authorization: Bearer sk-...`.
    - Caddy và Edge Approval Gateway trên `<API_HOST>` sẽ tự động chặn mọi request truy cập `/dashboard`, `/login`, `/api/settings` và chỉ cho phép các API route hợp lệ.
+
+### 5.3 Cloudflare WAF và Rate Limiting ⬜
+
+Trong zone `tuannguyenviet.site`, mở **Security → WAF**. Gói Free có một Rate
+Limiting rule; tạo đúng rule sau:
+
+- Name: `OmniRoute API burst protection`
+- Expression:
+
+```text
+(starts_with(http.request.uri.path, "/v1") or starts_with(http.request.uri.path, "/api/v1") or starts_with(http.request.uri.path, "/v1beta") or starts_with(http.request.uri.path, "/api/v1beta") or starts_with(http.request.uri.path, "/chat/completions") or starts_with(http.request.uri.path, "/responses") or starts_with(http.request.uri.path, "/models") or starts_with(http.request.uri.path, "/codex") or starts_with(http.request.uri.path, "/api/cursor-cli"))
+```
+
+- Characteristics: `IP`; Requests: `60`; Period: `10 seconds`
+- Action: `Block`; Mitigation duration: `10 seconds`
+
+Rate limit Free áp dụng theo path toàn zone. Dashboard nằm sau Cloudflare Access
+và không dùng các model API path này.
+
+Tạo bốn **Custom WAF rules** theo đúng thứ tự sau:
+
+1. Name: `OmniRoute API require Authorization`; Action: `Block`
+
+```text
+(http.host eq "omniroute-api.tuannguyenviet.site" and http.request.method ne "OPTIONS" and (starts_with(http.request.uri.path, "/v1") or starts_with(http.request.uri.path, "/api/v1") or starts_with(http.request.uri.path, "/v1beta") or starts_with(http.request.uri.path, "/api/v1beta") or starts_with(http.request.uri.path, "/chat/completions") or starts_with(http.request.uri.path, "/responses") or starts_with(http.request.uri.path, "/models") or starts_with(http.request.uri.path, "/codex") or starts_with(http.request.uri.path, "/api/cursor-cli")) and not any(lower(http.request.headers.names[*])[*] in {"authorization" "x-api-key" "x-goog-api-key"}) and not starts_with(http.request.uri.path, "/api/v1/vscode/") and not starts_with(http.request.uri.path, "/vscode/"))
+```
+
+Rule chấp nhận Bearer key, Anthropic/OpenAI-style `x-api-key`, Gemini
+`x-goog-api-key`, và VS Code path token; request rác bị chặn trước Worker/VPS.
+
+2. Name: `Block common scanners`; Action: `Block`
+
+```text
+((http.host eq "omniroute-api.tuannguyenviet.site" or http.host eq "omniroute-admin.tuannguyenviet.site") and (http.request.uri.path eq "/.env" or starts_with(http.request.uri.path, "/.git/") or starts_with(http.request.uri.path, "/.svn/") or starts_with(http.request.uri.path, "/wp-admin") or http.request.uri.path eq "/wp-login.php" or http.request.uri.path eq "/xmlrpc.php" or starts_with(http.request.uri.path, "/phpmyadmin") or starts_with(http.request.uri.path, "/cgi-bin/") or http.request.uri.path eq "/server-status" or http.request.uri.path eq "/.DS_Store"))
+```
+
+3. Name: `OmniRoute API restrict methods`; Action: `Block`
+
+```text
+(http.host eq "omniroute-api.tuannguyenviet.site" and not http.request.method in {"GET" "POST" "OPTIONS" "HEAD"})
+```
+
+4. Name: `Skip Managed Rules for LLM payloads`; Action: `Skip`
+
+```text
+(http.host eq "omniroute-api.tuannguyenviet.site" and (starts_with(http.request.uri.path, "/v1") or starts_with(http.request.uri.path, "/api/v1") or starts_with(http.request.uri.path, "/v1beta") or starts_with(http.request.uri.path, "/api/v1beta") or starts_with(http.request.uri.path, "/chat/completions") or starts_with(http.request.uri.path, "/responses") or starts_with(http.request.uri.path, "/models") or starts_with(http.request.uri.path, "/codex") or starts_with(http.request.uri.path, "/api/cursor-cli")))
+```
+
+Chỉ chọn **All managed rules** trong Skip Components; không chọn **All rate
+limiting rules**. Việc này tránh false positive khi prompt chứa SQL, shell hoặc
+đoạn code mà vẫn giữ rate limit và ba custom block rules phía trên.
 ---
 
 ## 6. GitHub ⬜
