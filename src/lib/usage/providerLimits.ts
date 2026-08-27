@@ -14,7 +14,6 @@ import {
 import { syncToCloud } from "@/lib/cloudSync";
 import { setQuotaCache } from "@/domain/quotaCache";
 import { buildClaudeExtraUsageConnectionUpdate } from "@/lib/providers/claudeExtraUsage";
-import { isExclusiveConnectionActivelyLeased } from "@/lib/db/exclusiveConnectionLeases";
 import { clearRecoveredProviderState } from "@/sse/services/auth";
 import { getMachineId } from "@/shared/utils/machine";
 import { USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
@@ -825,9 +824,6 @@ async function fetchLiveProviderLimitsWithOptions(
   connection: ProviderConnectionLike;
   usage: JsonRecord;
 }> {
-  if (isExclusiveConnectionActivelyLeased(connectionId)) {
-    throw withStatus(new Error("Usage refresh deferred while an exclusive lease is active"), 409);
-  }
   let connection = (await getProviderConnectionById(
     connectionId
   )) as unknown as ProviderConnectionLike | null;
@@ -1038,10 +1034,7 @@ export async function syncAllProviderLimits(
   const connectionRows = (await getProviderConnections({
     isActive: true,
   })) as unknown as ProviderConnectionLike[];
-  const connections = connectionRows.filter(
-    (connection) =>
-      isSupportedUsageConnection(connection) && !isExclusiveConnectionActivelyLeased(connection.id)
-  );
+  const connections = connectionRows.filter(isSupportedUsageConnection);
   const cacheEntries: Array<{ connectionId: string; entry: ProviderLimitsCacheEntry }> = [];
   const caches: Record<string, ProviderLimitsCacheEntry> = {};
   const errors: Record<string, string> = {};
