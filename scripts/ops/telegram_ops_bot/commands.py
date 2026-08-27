@@ -569,6 +569,8 @@ class CommandDispatcher:
         raw_cmd = parts[0].lower()
         # Handle bot username mentions, e.g. /status@MyBot
         cmd = raw_cmd.split("@")[0]
+        if not cmd.startswith("/"):
+            cmd = "/" + cmd
         args = " ".join(parts[1:])
         audit_args = args
         if cmd == "/confirm":
