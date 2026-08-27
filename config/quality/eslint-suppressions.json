@@ -3433,7 +3433,7 @@
       "count": 15
     },
     "@typescript-eslint/no-unused-vars": {
-      "count": 2
+      "count": 1
     }
   },
   "tests/integration/traffic-inspector-error-sanitization.test.ts": {
@@ -3678,11 +3678,6 @@
   "tests/unit/auth-terminal-status.test.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 15
-    }
-  },
-  "tests/unit/authz/probe-9033-repro.test.ts": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
     }
   },
   "tests/unit/autoCombo/tieredRotation.test.ts": {
