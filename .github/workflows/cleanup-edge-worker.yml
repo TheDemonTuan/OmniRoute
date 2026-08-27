@@ -1,4 +1,4 @@
-name: 🧹 One-Time Cleanup: Cloudflare Worker & VPS Edge Config
+name: Cleanup Edge Worker and VPS Config
 
 on:
   workflow_dispatch:
@@ -24,7 +24,7 @@ permissions:
 jobs:
   cleanup-cloudflare:
     name: 1 · Delete Cloudflare Worker & Routes
-    if: inputs.delete_cloudflare_worker
+    if: ${{ github.event.inputs.delete_cloudflare_worker != 'false' }}
     runs-on: ubuntu-latest
     environment:
       name: production
@@ -78,7 +78,7 @@ jobs:
 
   cleanup-vps:
     name: 2 · Clean VPS Ops-Bot Config
-    if: inputs.clean_vps_config
+    if: ${{ github.event.inputs.clean_vps_config != 'false' }}
     runs-on: ubuntu-latest
     environment:
       name: production
