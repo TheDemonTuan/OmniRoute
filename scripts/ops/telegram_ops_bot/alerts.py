@@ -549,17 +549,72 @@ class AlertManager:
         run_id: int,
     ) -> Optional[AlertEvent]:
         """Evaluate workflow completion status and trigger alert on consecutive failures."""
+        alert_key = f"workflow:{workflow_id}"
+        state = self.persistence.get_state(alert_key) or {
+            "alert_key": alert_key,
+            "active_severity": None,
+            "consecutive_triggers": 0,
+            "last_fired_at": 0.0,
+            "last_run_id": None,
+        }
+
+        # If this exact run has already been evaluated, do not re-alert or re-count
+        if state.get("last_run_id") == run_id:
+            return None
+
         is_failed = conclusion in ("failure", "timed_out")
-        return self.evaluate_condition(
-            alert_key=f"workflow:{workflow_id}",
-            is_failing=is_failed,
-            failure_severity=AlertSeverity.CRITICAL if conclusion == "failure" else AlertSeverity.WARNING,
+        failure_severity = AlertSeverity.CRITICAL if conclusion == "failure" else AlertSeverity.WARNING
+        debounce_target = self.action_thresholds.consecutive_workflow_failures
+        now = time.time()
+
+        prev_severity_str = state.get("active_severity")
+        prev_severity = AlertSeverity(prev_severity_str) if prev_severity_str else None
+        consecutive = int(state.get("consecutive_triggers", 0))
+
+        state["last_run_id"] = run_id
+
+        if not is_failed:
+            if prev_severity is not None:
+                # Recovery
+                rec_event = AlertEvent(
+                    alert_key=alert_key,
+                    severity=AlertSeverity.RECOVERY,
+                    title=f"RESOLVED: Workflow Run Failure: {workflow_id}",
+                    message=f"Workflow {workflow_id} run #{run_id} succeeded.",
+                    context={"workflow_id": workflow_id, "run_id": run_id, "conclusion": conclusion},
+                    timestamp=now,
+                )
+                state["active_severity"] = None
+                state["consecutive_triggers"] = 0
+                state["last_fired_at"] = now
+                self.persistence.set_state(alert_key, state)
+                return rec_event
+            else:
+                state["consecutive_triggers"] = 0
+                self.persistence.set_state(alert_key, state)
+                return None
+
+        # Condition is failing on a new run
+        consecutive += 1
+        state["consecutive_triggers"] = consecutive
+
+        if consecutive < debounce_target:
+            self.persistence.set_state(alert_key, state)
+            return None
+
+        event = AlertEvent(
+            alert_key=alert_key,
+            severity=failure_severity,
             title=f"Workflow Run Failure: {workflow_id}",
-            failure_message=f"Workflow {workflow_id} run #{run_id} finished with conclusion '{conclusion}'.",
-            recovery_message=f"Workflow {workflow_id} run #{run_id} succeeded.",
-            debounce_consecutive=self.action_thresholds.consecutive_workflow_failures,
+            message=f"Workflow {workflow_id} run #{run_id} finished with conclusion '{conclusion}'.",
             context={"workflow_id": workflow_id, "run_id": run_id, "conclusion": conclusion},
+            timestamp=now,
         )
+
+        state["active_severity"] = failure_severity.value
+        state["last_fired_at"] = now
+        self.persistence.set_state(alert_key, state)
+        return event
 
     def evaluate_workflow_delay(
         self,

@@ -23,7 +23,7 @@ from .github import (
 # Mandatory workflow allowlist
 DEFAULT_ALLOWED_WORKFLOWS: Set[str] = {
     "prod-deploy.yml",
-    "prod-sync-upstream.yml",
+    "ops-bot-sync.yml",
 }
 
 _ERROR_LOG_PATTERNS = [

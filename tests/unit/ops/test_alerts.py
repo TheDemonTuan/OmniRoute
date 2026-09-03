@@ -199,6 +199,35 @@ class TestAlertsSubsystem(unittest.TestCase):
         self.assertIsNotNone(evt_rec)
         self.assertEqual(evt_rec.severity, AlertSeverity.RECOVERY)
 
+    def test_evaluate_workflow_run_deduplication(self):
+        mgr = AlertManager(
+            action_thresholds=ActionThresholds(consecutive_workflow_failures=1),
+        )
+
+        # 1st failure fires
+        evt1 = mgr.evaluate_workflow_run("prod-deploy.yml", conclusion="failure", run_id=201)
+        self.assertIsNotNone(evt1)
+        self.assertEqual(evt1.severity, AlertSeverity.CRITICAL)
+
+        # Repeated polling of the exact same run_id returns None (no duplicate spam)
+        self.assertIsNone(mgr.evaluate_workflow_run("prod-deploy.yml", conclusion="failure", run_id=201))
+        self.assertIsNone(mgr.evaluate_workflow_run("prod-deploy.yml", conclusion="failure", run_id=201))
+
+        # Distinct new failure fires
+        evt2 = mgr.evaluate_workflow_run("prod-deploy.yml", conclusion="failure", run_id=202)
+        self.assertIsNotNone(evt2)
+
+        # Repeated polling of run_id 202 returns None
+        self.assertIsNone(mgr.evaluate_workflow_run("prod-deploy.yml", conclusion="failure", run_id=202))
+
+        # Recovery on new run_id 203 fires once
+        evt_rec = mgr.evaluate_workflow_run("prod-deploy.yml", conclusion="success", run_id=203)
+        self.assertIsNotNone(evt_rec)
+        self.assertEqual(evt_rec.severity, AlertSeverity.RECOVERY)
+
+        # Repeated polling of recovery run_id 203 returns None
+        self.assertIsNone(mgr.evaluate_workflow_run("prod-deploy.yml", conclusion="success", run_id=203))
+
     def test_format_telegram_alert(self):
         evt = AlertEvent(
             alert_key="resource:cpu:server1",

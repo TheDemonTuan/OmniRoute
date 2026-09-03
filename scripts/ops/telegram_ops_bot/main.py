@@ -108,7 +108,7 @@ class TelegramOpsBot:
                 self.alerts.evaluate_disk(host.disk_pct, "/", host.hostname),
             ]
             if self.actions:
-                for workflow in ("prod-deploy.yml", "prod-sync-upstream.yml"):
+                for workflow in ("prod-deploy.yml", "ops-bot-sync.yml"):
                     payload = self.actions.list_runs(workflow, branch="prod", per_page=1)
                     runs = payload.get("workflow_runs", []) if isinstance(payload, dict) else []
                     if not runs:

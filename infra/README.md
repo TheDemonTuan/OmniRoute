@@ -113,7 +113,7 @@ infra/
 
 .github/workflows/
 ├── prod-deploy.yml        # push prod → build → GHCR → SSH deploy
-└── prod-sync-upstream.yml # cron thứ 2 hàng tuần → mở PR sync
+└── ops-bot-sync.yml       # manual sync ops-bot to VPS
 ```
 
 Trên VPS:
@@ -225,7 +225,7 @@ vô ích. Tắt hết, chỉ để lại hai workflow của fork:
 
 ```bash
 gh workflow list --repo TheDemonTuan/OmniRoute --all
-# tắt từng cái không phải prod-deploy.yml / prod-sync-upstream.yml
+# tắt từng cái không phải prod-deploy.yml / ops-bot-sync.yml
 gh workflow disable build.yml --repo TheDemonTuan/OmniRoute
 gh workflow disable ci.yml    --repo TheDemonTuan/OmniRoute
 # ...
@@ -294,21 +294,9 @@ READY_TIMEOUT=600 STABILIZE_SECONDS=60 /opt/omniroute/deploy.sh '<image>'
 
 Đây là phần trả lời câu "làm sao update khi version mới chưa release".
 
-### Tự động (khuyến nghị)
+### Kéo code mới từ upstream
 
-`prod-sync-upstream.yml` chạy 04:00 UTC thứ Hai hàng tuần: tìm nhánh
-`release/v*` cao nhất của upstream, merge vào một nhánh `sync/upstream-*`, và mở
-PR về `prod`. Merge PR đó → push `prod` → deploy.
-
-Chạy ngay không cần đợi cron:
-
-```bash
-gh workflow run prod-sync-upstream.yml --repo TheDemonTuan/OmniRoute
-# hoặc chỉ định ref
-gh workflow run prod-sync-upstream.yml --repo TheDemonTuan/OmniRoute -f ref=main
-```
-
-### Thủ công
+Sử dụng script `infra/sync-upstream.sh` trên máy dev để kiểm tra và merge code từ upstream an toàn (tránh conflict tự động trên CI):
 
 ```bash
 infra/sync-upstream.sh --dry-run        # xem sẽ merge những gì, không đổi gì

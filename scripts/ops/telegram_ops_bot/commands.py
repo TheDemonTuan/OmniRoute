@@ -317,11 +317,11 @@ class CommandDispatcher:
         return "\n".join(lines), keyboard
 
     def handle_actions(self) -> Tuple[str, Dict[str, Any]]:
-        """Show recent runs for the two production workflows."""
+        """Show recent runs for the production workflows."""
         if not self.actions:
             return "<b>⚙️ GitHub Actions</b>\n\n<i>GitHub App is not configured.</i>", {}
         lines = ["<b>⚙️ GitHub Actions</b>", ""]
-        for workflow in ("prod-deploy.yml", "prod-sync-upstream.yml"):
+        for workflow in ("prod-deploy.yml", "ops-bot-sync.yml"):
             payload = self.actions.list_runs(workflow, branch="prod", per_page=5)
             runs = payload.get("workflow_runs", []) if isinstance(payload, dict) else []
             lines.append(f"<b>{escape_html(workflow)}</b>")
@@ -365,9 +365,11 @@ class CommandDispatcher:
     def _execute_action(self, action_type: str, payload: Dict[str, Any]) -> str:
         """Execute one fixed allow-listed operation and return a redacted result."""
         try:
-            if action_type == "sync" and self.actions:
-                result = self.actions.dispatch_workflow("prod-sync-upstream.yml", "prod")
-                return f"✅ Sync dispatched: <code>{escape_html(result['correlation_id'])}</code>"
+            if action_type == "sync_bot" and self.actions:
+                result = self.actions.dispatch_workflow("ops-bot-sync.yml", "prod")
+                return f"✅ Ops Bot Sync dispatched: <code>{escape_html(result['correlation_id'])}</code>"
+            if action_type == "sync":
+                return "ℹ️ Upstream sync workflow is disabled. Run <code>infra/sync-upstream.sh</code> locally."
             if action_type in {"build", "deploy"} and self.actions:
                 result = self.actions.dispatch_workflow(
                     "prod-deploy.yml",

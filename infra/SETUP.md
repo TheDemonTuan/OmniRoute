@@ -489,24 +489,13 @@ khẩu ngay** trong Settings → Security.
 
 ### 8.1 Kéo code mới từ upstream
 
-**Cách A — không đụng máy dev.** Cron chạy 04:00 UTC thứ Hai, tự tìm nhánh
-`release/v*` cao nhất của upstream, merge, mở PR về `prod`. Bạn xem diff + version
-bump trên web, bấm **Merge** → deploy tự chạy.
-
-Muốn chạy ngay không đợi cron:
-
-```bash
-gh workflow run prod-sync-upstream.yml --repo TheDemonTuan/OmniRoute
-gh workflow run prod-sync-upstream.yml --repo TheDemonTuan/OmniRoute -f ref=main
-```
-
-**Cách B — từ máy dev.**
+Sử dụng script `infra/sync-upstream.sh` từ máy dev:
 
 ```bash
 cd /media/tuannv/Projects/OmniRoute
 bash infra/sync-upstream.sh --dry-run    # xem sẽ merge gì, version trước/sau
 bash infra/sync-upstream.sh              # merge, chưa push
-git push origin prod                      # -> deploy
+git push origin prod                     # -> deploy
 ```
 
 Đổi nguồn theo dõi bất cứ lúc nào:

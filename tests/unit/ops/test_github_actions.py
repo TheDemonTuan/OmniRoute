@@ -25,7 +25,7 @@ class TestGitHubActionsManager(unittest.TestCase):
     def test_workflow_allowlist_validation(self):
         # Allowed workflows
         self.assertEqual(self.manager.validate_workflow("prod-deploy.yml"), "prod-deploy.yml")
-        self.assertEqual(self.manager.validate_workflow(".github/workflows/prod-sync-upstream.yml"), "prod-sync-upstream.yml")
+        self.assertEqual(self.manager.validate_workflow(".github/workflows/ops-bot-sync.yml"), "ops-bot-sync.yml")
 
         # Disallowed workflows
         with self.assertRaises(WorkflowNotAllowedError):
@@ -110,7 +110,7 @@ class TestGitHubActionsManager(unittest.TestCase):
         self.mock_client.post.return_value = {}
 
         result = self.manager.dispatch_workflow(
-            workflow_id="prod-sync-upstream.yml",
+            workflow_id="ops-bot-sync.yml",
             ref="prod",
             inputs={"target_branch": "release/v3.8.40"},
             correlation_id="test-cid-1234",
@@ -122,7 +122,7 @@ class TestGitHubActionsManager(unittest.TestCase):
         self.assertEqual(result["inputs"]["target_branch"], "release/v3.8.40")
 
         self.mock_client.post.assert_called_once_with(
-            "/repos/my-fork/OmniRoute/actions/workflows/prod-sync-upstream.yml/dispatches",
+            "/repos/my-fork/OmniRoute/actions/workflows/ops-bot-sync.yml/dispatches",
             json_data={
                 "ref": "prod",
                 "inputs": {

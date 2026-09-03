@@ -10,12 +10,12 @@ Liên quan: [SETUP.md](./SETUP.md) (dựng hạ tầng lần đầu) · [README.
 
 Ít hơn bạn tưởng. **Build chạy trên GitHub Actions, không chạy trên máy bạn.**
 
-| Công cụ | Bắt buộc? | Để làm gì |
-|---|---|---|
-| **Git** | ✅ bắt buộc | clone, sync upstream, push |
-| **GitHub CLI (`gh`)** | khuyến nghị | chạy workflow, xem log build, không phải mở web |
-| Node.js 24 | ❌ chỉ khi muốn chạy OmniRoute local | xem §4 |
-| Docker | ❌ không cần | build ảnh diễn ra trên runner |
+| Công cụ               | Bắt buộc?                            | Để làm gì                                       |
+| --------------------- | ------------------------------------ | ----------------------------------------------- |
+| **Git**               | ✅ bắt buộc                          | clone, sync upstream, push                      |
+| **GitHub CLI (`gh`)** | khuyến nghị                          | chạy workflow, xem log build, không phải mở web |
+| Node.js 24            | ❌ chỉ khi muốn chạy OmniRoute local | xem §4                                          |
+| Docker                | ❌ không cần                         | build ảnh diễn ra trên runner                   |
 
 Nếu bạn chỉ định **kéo code mới từ upstream rồi deploy**, chỉ cần Git. Xong §1–§3 là làm việc được.
 
@@ -179,11 +179,11 @@ cài đầu khá lâu và `node_modules` rất nặng.
 
 Có native module (`better-sqlite3`) nên cần toolchain biên dịch:
 
-| OS | Cần |
-|---|---|
+| OS      | Cần                                                 |
+| ------- | --------------------------------------------------- |
 | Windows | Visual Studio Build Tools (C++ workload) + Python 3 |
-| macOS | `xcode-select --install` |
-| Ubuntu | `sudo apt install -y python3 make g++` |
+| macOS   | `xcode-select --install`                            |
+| Ubuntu  | `sudo apt install -y python3 make g++`              |
 
 Kiểm tra native module đã dựng được:
 
@@ -256,18 +256,18 @@ nên chạy được ngay.
 
 ## 6. Bảng tra nhanh
 
-| Tình huống | Lệnh |
-|---|---|
-| Máy mới, chỉ để deploy | `git clone --filter=blob:none <fork-url>` → xong |
-| Thiếu remote upstream | tự thêm khi chạy `sync-upstream.sh` |
-| Xem upstream có gì mới | `bash infra/sync-upstream.sh --dry-run` |
-| Lấy code mới + deploy | `bash infra/sync-upstream.sh --push` |
-| Đổi nguồn theo dõi | `--ref main` \| `--ref v3.8.50` |
-| Sync mà không cần máy dev | `gh workflow run prod-sync-upstream.yml --repo TheDemonTuan/OmniRoute` |
+| Tình huống              | Lệnh                                                                                |
+| ----------------------- | ----------------------------------------------------------------------------------- |
+| Máy mới, chỉ để deploy  | `git clone --filter=blob:none <fork-url>` → xong                                    |
+| Thiếu remote upstream   | tự thêm khi chạy `sync-upstream.sh`                                                 |
+| Xem upstream có gì mới  | `bash infra/sync-upstream.sh --dry-run`                                             |
+| Lấy code mới + deploy   | `bash infra/sync-upstream.sh --push`                                                |
+| Đổi nguồn theo dõi      | `--ref main` \| `--ref v3.8.50`                                                     |
+| Sync upstream an toàn   | `bash infra/sync-upstream.sh` (xem trước: `--dry-run`)                              |
 | Build thử, không deploy | `gh workflow run prod-deploy.yml --repo TheDemonTuan/OmniRoute -f skip_deploy=true` |
-| Xem build hỏng ở đâu | `gh run view --log-failed --repo TheDemonTuan/OmniRoute` |
-| Rollback production | `ssh <user>@<vps> '/opt/omniroute/deploy.sh --rollback'` |
-| Xem đang chạy slot nào | `ssh <user>@<vps> '/opt/omniroute/deploy.sh --status'` |
+| Xem build hỏng ở đâu    | `gh run view --log-failed --repo TheDemonTuan/OmniRoute`                            |
+| Rollback production     | `ssh <user>@<vps> '/opt/omniroute/deploy.sh --rollback'`                            |
+| Xem đang chạy slot nào  | `ssh <user>@<vps> '/opt/omniroute/deploy.sh --status'`                              |
 
 ---
 
