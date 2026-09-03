@@ -3,9 +3,9 @@ import { createHash, randomUUID } from "node:crypto";
 import { getStainlessTimeoutSeconds } from "@/shared/utils/runtimeTimeouts";
 import { ANTHROPIC_VERSION_HEADER } from "../config/anthropicHeaders.ts";
 import {
-  getClaudeCodeCompatibleStainlessPackageVersion,
-  getClaudeCodeCompatibleStainlessRuntimeVersion,
-  getClaudeCodeCompatibleUserAgent,
+  CLAUDE_CODE_COMPATIBLE_STAINLESS_PACKAGE_VERSION,
+  CLAUDE_CODE_COMPATIBLE_STAINLESS_RUNTIME_VERSION,
+  CLAUDE_CODE_COMPATIBLE_USER_AGENT,
 } from "../config/claudeCodeCompatibleIdentity.ts";
 import { supportsClaudeMaxEffort, supportsXHighEffort } from "../config/providerModels.ts";
 import { prepareClaudeRequest } from "../translator/helpers/claudeHelper.ts";
@@ -183,15 +183,15 @@ export function buildClaudeCodeCompatibleHeaders(
     }),
     "anthropic-dangerous-direct-browser-access": "true",
     "x-app": "cli",
-    "User-Agent": getClaudeCodeCompatibleUserAgent(),
+    "User-Agent": CLAUDE_CODE_COMPATIBLE_USER_AGENT,
     "X-Stainless-Retry-Count": "0",
     "X-Stainless-Timeout": String(CLAUDE_CODE_COMPATIBLE_STAINLESS_TIMEOUT_SECONDS),
     "X-Stainless-Lang": "js",
-    "X-Stainless-Package-Version": getClaudeCodeCompatibleStainlessPackageVersion(),
+    "X-Stainless-Package-Version": CLAUDE_CODE_COMPATIBLE_STAINLESS_PACKAGE_VERSION,
     "X-Stainless-OS": "MacOS",
     "X-Stainless-Arch": "arm64",
     "X-Stainless-Runtime": "node",
-    "X-Stainless-Runtime-Version": getClaudeCodeCompatibleStainlessRuntimeVersion(),
+    "X-Stainless-Runtime-Version": CLAUDE_CODE_COMPATIBLE_STAINLESS_RUNTIME_VERSION,
     "accept-encoding": "gzip, deflate, br, zstd",
     ...(sessionId ? { "X-Claude-Code-Session-Id": sessionId } : {}),
   };
