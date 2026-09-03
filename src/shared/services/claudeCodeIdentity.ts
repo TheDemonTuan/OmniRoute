@@ -4,8 +4,8 @@
  * Resolves the Claude Code CLI wire-identity (version, buildRevision,
  * sdkVersion, runtimeVersion, billingVersion, user-agents) using:
  *   1. Environment override (CLAUDE_CODE_CLIENT_VERSION / mode='fixed')
- *   2. Installed local binary (`claude --version` if mode='installed' or 'auto')
- *   3. NPM registry dist-tags (@anthropic-ai/claude-code: stable | latest)
+ *   2. NPM registry dist-tags (@anthropic-ai/claude-code: latest | stable)
+ *   3. Installed local binary (`claude --version` if mode='installed' or 'auto')
  *   4. Bundled fallback identity
  *
  * Employs an in-memory SWR (stale-while-revalidate) cache so hot-path calls
@@ -30,13 +30,13 @@ export interface ClaudeCodeResolverOptions {
 }
 
 export const FALLBACK_CLAUDE_CODE_IDENTITY: ClaudeCodeIdentity = Object.freeze({
-  version: "2.1.236",
+  version: "2.1.258",
   buildRevision: "1f2",
   sdkVersion: "0.94.0",
   runtimeVersion: typeof process !== "undefined" && process.version ? process.version : "v22.14.0",
-  billingVersion: "2.1.236.1f2",
-  userAgentCli: "claude-cli/2.1.236 (external, cli)",
-  userAgentSdkCli: "claude-cli/2.1.236 (external, sdk-cli)",
+  billingVersion: "2.1.258.1f2",
+  userAgentCli: "claude-cli/2.1.258 (external, cli)",
+  userAgentSdkCli: "claude-cli/2.1.258 (external, sdk-cli)",
 });
 
 const DEFAULT_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
@@ -98,7 +98,7 @@ export async function tryGetInstalledVersion(): Promise<string | null> {
  * 2. Fetch version from NPM registry dist-tags
  */
 export async function tryGetNpmVersion(
-  channel: "stable" | "latest" = "stable"
+  channel: "stable" | "latest" = "latest"
 ): Promise<string | null> {
   if (typeof fetch !== "function") return null;
   try {
@@ -111,7 +111,7 @@ export async function tryGetNpmVersion(
     const data = (await res.json()) as { "dist-tags"?: Record<string, string> };
     const distTags = data["dist-tags"] || {};
 
-    const resolved = distTags[channel] || distTags.stable || distTags.latest || null;
+    const resolved = distTags[channel] || distTags.latest || distTags.stable || null;
 
     if (typeof resolved === "string" && resolved.trim()) {
       return resolved.trim();
@@ -138,7 +138,7 @@ export async function resolveClaudeCodeIdentity(
     typeof process !== "undefined" && process.env
       ? (process.env.CLAUDE_CODE_VERSION_CHANNEL || "").trim().toLowerCase()
       : "";
-  const channel = options.channel || (envChannel === "latest" ? "latest" : "stable");
+  const channel = options.channel || (envChannel === "stable" ? "stable" : "latest");
 
   const fixedVersion =
     options.fixedVersion ||
@@ -151,23 +151,30 @@ export async function resolveClaudeCodeIdentity(
     if (fixedVersion) {
       return buildIdentity(fixedVersion);
     }
+    return FALLBACK_CLAUDE_CODE_IDENTITY;
   }
 
-  // Mode: Installed
-  if (mode === "installed" || mode === "auto") {
+  // Mode: Installed (user explicitly requested local binary)
+  if (mode === "installed") {
     const installed = await tryGetInstalledVersion();
     if (installed) {
       return buildIdentity(installed);
     }
-    if (mode === "installed") {
-      return FALLBACK_CLAUDE_CODE_IDENTITY;
-    }
+    return FALLBACK_CLAUDE_CODE_IDENTITY;
   }
 
-  // Mode: Auto -> NPM registry
+  // Mode: Auto (Default)
+  // 1. NPM registry (channel: latest by default)
+  // 2. Locally installed CLI binary
+  // 3. Fallback bundled version
   const npmVersion = await tryGetNpmVersion(channel);
   if (npmVersion) {
     return buildIdentity(npmVersion);
+  }
+
+  const installed = await tryGetInstalledVersion();
+  if (installed) {
+    return buildIdentity(installed);
   }
 
   return FALLBACK_CLAUDE_CODE_IDENTITY;

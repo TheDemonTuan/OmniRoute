@@ -44,8 +44,10 @@ describe("claudeCodeIdentity - Dynamic Identity Resolver", () => {
     assert.equal(id.billingVersion, "2.1.258.1f2");
   });
 
-  it("returns fallback identity by default", () => {
+  it("returns fallback baseline 2.1.258 by default", () => {
     const current = getClaudeCodeIdentity();
+    assert.equal(current.version, "2.1.258");
+    assert.equal(current.billingVersion, "2.1.258.1f2");
     assert.equal(current.version, FALLBACK_CLAUDE_CODE_IDENTITY.version);
     assert.equal(current.billingVersion, FALLBACK_CLAUDE_CODE_IDENTITY.billingVersion);
   });
@@ -65,6 +67,13 @@ describe("claudeCodeIdentity - Dynamic Identity Resolver", () => {
     const resolved = await resolveClaudeCodeIdentity();
     assert.equal(resolved.version, "2.1.300");
     assert.equal(resolved.billingVersion, "2.1.300.1f2");
+  });
+
+  it("resolves fallback when fixed mode has no version specified", async () => {
+    const resolved = await resolveClaudeCodeIdentity({
+      mode: "fixed",
+    });
+    assert.equal(resolved.version, "2.1.258");
   });
 
   it("setClaudeCodeIdentityForTesting updates dynamic getters", () => {
