@@ -313,6 +313,27 @@ test("OpenRouter credits render as a USD credit count, not a percentage row", ()
   assert.equal(freeDaily.total, 50);
 });
 
+test("Antigravity live quota models retain upstream order instead of static catalog rank", () => {
+  const quotas = providerLimitUtils.parseQuotaData("antigravity", {
+    quotas: {
+      "gemini-3.9-flash-high": { used: 2, total: 100, remainingPercentage: 98 },
+      "gemini-3.8-flash-high": { used: 2, total: 100, remainingPercentage: 98 },
+      gemini_session: {
+        used: 2,
+        total: 100,
+        remainingPercentage: 98,
+        quotaAggregate: true,
+        quotaWindow: "session",
+      },
+    },
+  });
+
+  assert.deepEqual(
+    quotas.map((quota) => quota.modelKey || quota.name),
+    ["gemini-3.9-flash-high", "gemini-3.8-flash-high", "gemini_session"]
+  );
+});
+
 test("hidden provider models are filtered from per-model quota rows", () => {
   const quotas = providerLimitUtils.parseQuotaData("antigravity", {
     quotas: {
