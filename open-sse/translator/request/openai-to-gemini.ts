@@ -32,6 +32,7 @@ import {
   buildChangedToolNameMap,
   extractClientThoughtSignature,
   deepCleanUndefined,
+  getGeminiThinkingLevel,
   applyAntigravityGenerationDefaults,
   stringifyHistoricalToolArguments,
   buildInertHistoricalToolCallText,
@@ -214,14 +215,20 @@ function openaiToGeminiBase(
   if (model.startsWith("gemma-4")) {
     // gemma-4 models returns - 400: Thinking budget is not supported for this model
   } else {
-    // 1. OpenAI format: reasoning_effort (none/low/medium/high/auto/max/xhigh)
-    // "auto", "max", and "xhigh" are clamped to the high-tier budget because Gemini
-    // does not accept these strings directly. "auto" signals "use max reasonable effort"
-    // which maps to high. "max"/"xhigh" exceed Gemini's accepted range and are clamped.
-    // "none" maps to budget 0 — an explicit, documented off-switch (#6813 defect 2),
-    // distinct from the no-knob-at-all default-injection case below (#4170).
-    // Port of decolua/9router#2043 by @nguyenxvotanminh3.
-    if (body.reasoning_effort) {
+    const thinkingLevel = getGeminiThinkingLevel(model, body.reasoning_effort);
+    if (thinkingLevel) {
+      result.generationConfig.thinkingConfig = {
+        thinkingLevel,
+        includeThoughts: body.reasoning_effort !== "none",
+      };
+    } else if (body.reasoning_effort) {
+      // 1. OpenAI format: reasoning_effort (none/low/medium/high/auto/max/xhigh)
+      // "auto", "max", and "xhigh" are clamped to the high-tier budget because Gemini
+      // does not accept these strings directly. "auto" signals "use max reasonable effort"
+      // which maps to high. "max"/"xhigh" exceed Gemini's accepted range and are clamped.
+      // "none" maps to budget 0 — an explicit, documented off-switch (#6813 defect 2),
+      // distinct from the no-knob-at-all default-injection case below (#4170).
+      // Port of decolua/9router#2043 by @nguyenxvotanminh3.
       const highBudget = capThinkingBudget(model, 32768);
       const budgetMap: Record<string, number> = {
         none: 0,
@@ -245,29 +252,30 @@ function openaiToGeminiBase(
         thinkingBudget: budget,
         includeThoughts: budget !== 0,
       };
-    }
-    // 2. Claude format: thinking (type: enabled, budget_tokens)
-    // Use an explicit numeric check (not truthy) so an explicit `budget_tokens: 0` — the
-    // natural way to disable thinking — is honored as thinkingBudget 0 instead of being
-    // dropped and falling through to the default injection below (#6813). A zero budget
-    // yields no thoughts, so includeThoughts is only set for a non-zero budget.
-    const thinking = body.thinking as { type?: string; budget_tokens?: number } | undefined;
-    if (thinking?.type === "enabled" && typeof thinking.budget_tokens === "number") {
-      // typeof check ensures only numeric budget_tokens triggers thinking path;
-      // non-numeric values (e.g. string "auto") fall through to the effort-based path.
-      const cappedBudget = capThinkingBudget(model, thinking.budget_tokens);
-      // Only send thinkingConfig if the model supports thinking via budget.
-      // Models with thinkingBudgetCap:0 (e.g. gemini-3-flash) reject
-      // thinkingConfig even when capped to 0. The supportsThinking flag
-      // tracks thinkingLevel support, not thinkingBudget; use thinkingBudgetCap
-      // as the reliable indicator (gemini-2.5-flash has supportsThinking:false
-      // but thinkingBudgetCap:24576, meaning it supports thinking via budget).
-      // Models not in MODEL_SPECS (thinkingBudgetCap=undefined) default to allowed.
-      if (cappedBudget > 0 || getModelSpec(model)?.thinkingBudgetCap !== 0) {
-        result.generationConfig.thinkingConfig = {
-          thinkingBudget: cappedBudget,
-          includeThoughts: cappedBudget !== 0,
-        };
+    } else {
+      // 2. Claude format: thinking (type: enabled, budget_tokens)
+      // Use an explicit numeric check (not truthy) so an explicit `budget_tokens: 0` — the
+      // natural way to disable thinking — is honored as thinkingBudget 0 instead of being
+      // dropped and falling through to the default injection below (#6813). A zero budget
+      // yields no thoughts, so includeThoughts is only set for a non-zero budget.
+      const thinking = body.thinking as { type?: string; budget_tokens?: number } | undefined;
+      if (thinking?.type === "enabled" && typeof thinking.budget_tokens === "number") {
+        // typeof check ensures only numeric budget_tokens triggers thinking path;
+        // non-numeric values (e.g. string "auto") fall through to the effort-based path.
+        const cappedBudget = capThinkingBudget(model, thinking.budget_tokens);
+        // Only send thinkingConfig if the model supports thinking via budget.
+        // Models with thinkingBudgetCap:0 (e.g. gemini-3-flash) reject
+        // thinkingConfig even when capped to 0. The supportsThinking flag
+        // tracks thinkingLevel support, not thinkingBudget; use thinkingBudgetCap
+        // as the reliable indicator (gemini-2.5-flash has supportsThinking:false
+        // but thinkingBudgetCap:24576, meaning it supports thinking via budget).
+        // Models not in MODEL_SPECS (thinkingBudgetCap=undefined) default to allowed.
+        if (cappedBudget > 0 || getModelSpec(model)?.thinkingBudgetCap !== 0) {
+          result.generationConfig.thinkingConfig = {
+            thinkingBudget: cappedBudget,
+            includeThoughts: cappedBudget !== 0,
+          };
+        }
       }
     }
   }
@@ -281,23 +289,32 @@ function openaiToGeminiBase(
   // unconditional (no-knob-at-all still gets includeThoughts:true); the explicit
   // "reasoning_effort: none" off-switch above (#6813) is the supported opt-out.
   if (!result.generationConfig.thinkingConfig) {
-    const modelLower = model.toLowerCase();
-    if (
-      modelLower.includes("gemini") &&
-      !modelLower.includes("gemini-1") &&
-      (!modelLower.includes("gemini-2.0") || modelLower.includes("thinking")) &&
-      // Skip thinkingConfig for models that don't support thinking via budget.
-      // Models with thinkingBudgetCap:0 (e.g. gemini-3-flash) reject
-      // thinkingConfig. Use thinkingBudgetCap (not supportsThinking) as the
-      // reliable indicator; gemini-2.5-flash has supportsThinking:false but
-      // thinkingBudgetCap:24576, meaning it supports thinking via budget.
-      // Models not in MODEL_SPECS (thinkingBudgetCap=undefined) default to allowed.
-      getModelSpec(model)?.thinkingBudgetCap !== 0
-    ) {
+    const thinkingLevel = getGeminiThinkingLevel(model);
+    if (thinkingLevel) {
       result.generationConfig.thinkingConfig = {
-        thinkingBudget: getDefaultThinkingBudget(model) || capThinkingBudget(model, 24576),
+        thinkingLevel,
         includeThoughts: true,
       };
+    } else {
+      const modelLower = model.toLowerCase();
+      if (
+        modelLower.includes("gemini") &&
+        !modelLower.includes("gemini-1") &&
+        (!modelLower.includes("gemini-2.0") || modelLower.includes("thinking")) &&
+        // Skip thinkingConfig for models that don't support thinking via budget.
+        // Models with thinkingBudgetCap:0 (e.g. gemini-3-flash) reject
+        // thinkingConfig. Use thinkingBudgetCap (not supportsThinking) as the
+        // reliable indicator; gemini-2.5-flash has supportsThinking:false but
+        // thinkingBudgetCap:24576, meaning it supports thinking via budget.
+        // Models with thinkingLevel (like 3.8) are handled above and omit thinkingBudget.
+        getModelSpec(model)?.thinkingBudgetCap !== 0 &&
+        getModelSpec(model)?.thinkingBudgetCap !== undefined
+      ) {
+        result.generationConfig.thinkingConfig = {
+          thinkingBudget: getDefaultThinkingBudget(model) || capThinkingBudget(model, 24576),
+          includeThoughts: true,
+        };
+      }
     }
   }
 
@@ -698,7 +715,10 @@ function wrapInCloudCodeEnvelope(model, cloudCodeRequest, credentials = null) {
       sessionId: getAntigravitySessionId(credentials),
       contents: cloudCodeRequest.contents,
       systemInstruction: cloudCodeRequest.systemInstruction,
-      generationConfig: applyAntigravityGenerationDefaults(cloudCodeRequest.generationConfig),
+      generationConfig: applyAntigravityGenerationDefaults(
+        cloudCodeRequest.generationConfig,
+        cleanModel
+      ),
       tools: cloudCodeRequest.tools,
       safetySettings: cloudCodeRequest.safetySettings,
     },

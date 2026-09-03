@@ -1,9 +1,6 @@
 import { register } from "../registry.ts";
 import { FORMATS } from "../formats.ts";
-import {
-  DEFAULT_SAFETY_SETTINGS,
-  cleanJSONSchemaForAntigravity,
-} from "../helpers/geminiHelper.ts";
+import { DEFAULT_SAFETY_SETTINGS, cleanJSONSchemaForAntigravity } from "../helpers/geminiHelper.ts";
 import { buildGeminiTools, sanitizeGeminiToolName } from "../helpers/geminiToolsSanitizer.ts";
 import {
   buildGeminiThoughtSignatureKey,
@@ -14,6 +11,7 @@ import { getModelSpec } from "../../../src/shared/constants/modelSpecs.ts";
 import {
   buildChangedToolNameMap,
   buildHistoricalToolResultContext,
+  getGeminiThinkingLevel,
   mergeConsecutiveSameRoleContents,
   type GeminiContent,
 } from "./openai-to-gemini/helpers.ts";
@@ -241,9 +239,15 @@ export function claudeToGeminiRequest(model, body, stream, credentials = null) {
   }
 
   // ── Thinking config ────────────────────────────────────────────
-  // Priority: thinking.budget_tokens (Claude native) > output_config.effort (Claude Code).
+  // Priority: thinkingLevel (Gemini 3.8) > thinking.budget_tokens (Claude native) > output_config.effort (Claude Code).
+  const thinkingLevel = getGeminiThinkingLevel(model, body.output_config?.effort);
   if (model.startsWith("gemma-4")) {
     // gemma-4 models returns - 400: Thinking budget is not supported for this model
+  } else if (thinkingLevel) {
+    result.generationConfig.thinkingConfig = {
+      thinkingLevel,
+      includeThoughts: body.output_config?.effort !== "none",
+    };
   } else if (body.thinking?.type === "enabled" && typeof body.thinking.budget_tokens === "number") {
     // typeof check ensures only numeric budget_tokens triggers the thinking path;
     // non-numeric values (e.g. string "auto") fall through to the effort-based path.

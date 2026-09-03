@@ -313,11 +313,20 @@ function applyAntigravityGenerationDefaults(
       ? (request.generationConfig as Record<string, unknown>)
       : {};
 
-  if (generationConfig.topK === undefined) {
-    generationConfig.topK = 40;
-  }
-  if (generationConfig.topP === undefined) {
-    generationConfig.topP = 1.0;
+  const isGemini38 =
+    typeof modelId === "string" && modelId.toLowerCase().includes("gemini-3.8-flash");
+
+  if (isGemini38) {
+    delete generationConfig.topK;
+    delete generationConfig.topP;
+    delete generationConfig.temperature;
+  } else {
+    if (generationConfig.topK === undefined) {
+      generationConfig.topK = 40;
+    }
+    if (generationConfig.topP === undefined) {
+      generationConfig.topP = 1.0;
+    }
   }
 
   const thinkingConfig =
@@ -327,6 +336,7 @@ function applyAntigravityGenerationDefaults(
   const thinkingBudget = Number(thinkingConfig?.thinkingBudget);
   const maxOutputTokens = Number(generationConfig.maxOutputTokens);
   if (
+    !isGemini38 &&
     Number.isFinite(thinkingBudget) &&
     thinkingBudget > 0 &&
     (!Number.isFinite(maxOutputTokens) || maxOutputTokens <= thinkingBudget)
