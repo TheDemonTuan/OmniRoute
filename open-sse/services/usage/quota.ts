@@ -23,7 +23,8 @@ export type UsageQuota = {
    * NOT a confirmed-exhausted state. Antigravity-specific.
    */
   fractionReported?: boolean;
-  quotaSource?: "retrieveUserQuota" | "fetchAvailableModels" | "localUsageHistory";
+  quotaSource?:
+    "retrieveUserQuota" | "retrieveUserQuotaSummary" | "fetchAvailableModels" | "localUsageHistory";
   displayName?: string;
   details?: Array<{
     name: string;

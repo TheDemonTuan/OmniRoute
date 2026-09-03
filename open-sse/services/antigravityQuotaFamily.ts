@@ -113,9 +113,9 @@ export function selectAntigravityQuotaWindowNames(
 
   const familyAggregates =
     requestedFamily === "gemini"
-      ? ["gemini_weekly"]
+      ? ["gemini_session", "gemini_weekly"]
       : requestedFamily === "claude"
-        ? ["claude_gpt_weekly"]
+        ? ["claude_gpt_session", "claude_gpt_weekly"]
         : [];
 
   const exactWindows = quotaNames.filter((windowName) => {
