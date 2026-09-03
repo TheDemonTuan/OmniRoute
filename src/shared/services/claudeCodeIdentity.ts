@@ -12,11 +12,6 @@
  * to `getClaudeCodeIdentity()` have zero latency and never block requests.
  */
 
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-
-const execFileAsync = promisify(execFile);
-
 export interface ClaudeCodeIdentity {
   readonly version: string;
   readonly buildRevision: string;
@@ -38,7 +33,7 @@ export const FALLBACK_CLAUDE_CODE_IDENTITY: ClaudeCodeIdentity = Object.freeze({
   version: "2.1.236",
   buildRevision: "1f2",
   sdkVersion: "0.94.0",
-  runtimeVersion: typeof process !== "undefined" ? process.version : "v22.14.0",
+  runtimeVersion: typeof process !== "undefined" && process.version ? process.version : "v22.14.0",
   billingVersion: "2.1.236.1f2",
   userAgentCli: "claude-cli/2.1.236 (external, cli)",
   userAgentSdkCli: "claude-cli/2.1.236 (external, sdk-cli)",
@@ -78,9 +73,16 @@ export function buildIdentity(
 /**
  * 1. Probe local installed CLI: `claude --version`
  * Uses execFile directly (no shell interpolation) per Hard Rule #13.
+ * Dynamic import with webpackIgnore prevents bundling Node built-ins on the client.
  */
 export async function tryGetInstalledVersion(): Promise<string | null> {
+  if (typeof window !== "undefined" || typeof process === "undefined") {
+    return null;
+  }
   try {
+    const cp = await import(/* webpackIgnore: true */ "node:child_process");
+    const util = await import(/* webpackIgnore: true */ "node:util");
+    const execFileAsync = util.promisify(cp.execFile);
     const { stdout } = await execFileAsync("claude", ["--version"], {
       timeout: 2000,
       maxBuffer: 1024,
@@ -98,6 +100,7 @@ export async function tryGetInstalledVersion(): Promise<string | null> {
 export async function tryGetNpmVersion(
   channel: "stable" | "latest" = "stable"
 ): Promise<string | null> {
+  if (typeof fetch !== "function") return null;
   try {
     const res = await fetch(NPM_REGISTRY_URL, {
       signal: AbortSignal.timeout(3000),
@@ -125,13 +128,23 @@ export async function tryGetNpmVersion(
 export async function resolveClaudeCodeIdentity(
   options: ClaudeCodeResolverOptions = {}
 ): Promise<ClaudeCodeIdentity> {
-  const envMode = (process.env.CLAUDE_CODE_VERSION_MODE || "").trim().toLowerCase();
+  const envMode =
+    typeof process !== "undefined" && process.env
+      ? (process.env.CLAUDE_CODE_VERSION_MODE || "").trim().toLowerCase()
+      : "";
   const mode = options.mode || (envMode === "installed" || envMode === "fixed" ? envMode : "auto");
 
-  const envChannel = (process.env.CLAUDE_CODE_VERSION_CHANNEL || "").trim().toLowerCase();
+  const envChannel =
+    typeof process !== "undefined" && process.env
+      ? (process.env.CLAUDE_CODE_VERSION_CHANNEL || "").trim().toLowerCase()
+      : "";
   const channel = options.channel || (envChannel === "latest" ? "latest" : "stable");
 
-  const fixedVersion = options.fixedVersion || process.env.CLAUDE_CODE_CLIENT_VERSION?.trim();
+  const fixedVersion =
+    options.fixedVersion ||
+    (typeof process !== "undefined" && process.env
+      ? process.env.CLAUDE_CODE_CLIENT_VERSION?.trim()
+      : undefined);
 
   // Mode: Fixed or explicit env fixed version
   if (mode === "fixed" || (fixedVersion && mode !== "installed")) {
@@ -169,7 +182,10 @@ export async function refreshClaudeCodeIdentity(
   if (isRefreshing) return activeIdentity;
   isRefreshing = true;
   try {
-    const envTtl = Number(process.env.CLAUDE_CODE_VERSION_CACHE_TTL);
+    const envTtl =
+      typeof process !== "undefined" && process.env
+        ? Number(process.env.CLAUDE_CODE_VERSION_CACHE_TTL)
+        : 0;
     const ttl =
       (Number.isFinite(envTtl) && envTtl > 0 ? envTtl * 1000 : null) ||
       options?.cacheTtlMs ||
