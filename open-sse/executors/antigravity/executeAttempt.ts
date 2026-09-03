@@ -21,12 +21,13 @@ import {
   removeHeaderCaseInsensitive,
 } from "../../services/antigravityClientProfile.ts";
 import * as prl from "../../utils/providerRequestLogging.ts";
+import { generateAntigravityRequestId } from "../../services/antigravityIdentity.ts";
 import {
   createCreditsExtractionTransform as createCreditsExtractionTransformImpl,
   buildSsePassthroughResult,
   type SsePassthroughResult,
 } from "./streamingPassthrough.ts";
-import type { AntigravityCredentials } from "../antigravity.ts";
+import { cleanModelName, type AntigravityCredentials } from "../antigravity.ts";
 
 const LONG_RETRY_THRESHOLD_MS = 60_000;
 const CREDITS_EXHAUSTED_TTL_MS = 5 * 60 * 60 * 1000; // 5 hours
@@ -388,28 +389,35 @@ export async function sendAntigravityRequest(
       // The backend may have shipped/renamed models the synced catalog does not
       // know yet (pinned-catalog staleness). Kick a discovery sync for this
       // connection so the fresh list lands in the synced catalog. If sync succeeds,
-      // transparently retry once so the first request for a freshly shipped model
-      // does not fail.
+      // re-resolve the model with the updated catalog, re-serialize the request envelope,
+      // and transparently retry once so the first request for a freshly shipped model
+      // or alias succeeds on the first try.
       if (credentials.connectionId) {
         const synced = await awaitReactiveModelSync(provider, credentials.connectionId);
         if (synced) {
+          const reResolvedModel = await cleanModelName(model, undefined, provider);
+          const retryBody: Record<string, unknown> = {
+            ...transformedBody,
+            model: reResolvedModel,
+            requestId: generateAntigravityRequestId(),
+          };
+          const reSerialized = serializeAntigravityRequest(provider, headers, retryBody);
+          const retryHeaders = reSerialized.headers;
+          applyAntigravityClientProfileHeaders(retryHeaders, credentials, retryBody);
+
           log.info(
             "RETRY",
-            `[Antigravity] Discovery sync succeeded after 404 for ${model}, retrying request once`
+            `[Antigravity] Discovery sync succeeded after 404 for ${model} (re-resolved to ${reResolvedModel}), retrying request with rebuilt envelope`
           );
-          await prl.captureCurrentProviderBody(
-            url,
-            finalHeaders,
-            serializedRequest.bodyString,
-            log
-          );
+          await prl.captureCurrentProviderBody(url, retryHeaders, reSerialized.bodyString, log);
           response = await fetchAntigravityWithReadinessTimeout(url, {
             method: "POST",
-            headers: finalHeaders,
-            body: getChunkedOrFixedBody(serializedRequest.bodyString, stream),
+            headers: retryHeaders,
+            body: getChunkedOrFixedBody(reSerialized.bodyString, stream),
             ...(stream ? { duplex: "half" } : {}),
             signal,
           });
+          finalHeaders = retryHeaders;
         }
       }
     }

@@ -13,10 +13,7 @@ import {
   getAntigravityOAuthUserAgent,
 } from "../services/antigravityHeaders.ts";
 import { classify429, decide429, type Decision } from "../services/antigravity429Engine.ts";
-import {
-  parseRetryFromErrorText,
-  type RetryHintProvenance,
-} from "../services/accountFallback.ts";
+import { parseRetryFromErrorText, type RetryHintProvenance } from "../services/accountFallback.ts";
 import { parseDetailedRetryHintFromJsonBody } from "../services/retryAfterJson.ts";
 import {
   shouldRetryWithCredits,
@@ -28,10 +25,7 @@ import { persistCreditBalance, getAllPersistedCreditBalances } from "@/lib/db/cr
 import { setConnectionRateLimitUntil } from "@/lib/db/providers";
 import { markAntigravityModelQuotaExhausted } from "../services/antigravityFamilyCooldown.ts";
 import { getMitmAlias } from "@/lib/db/models";
-import {
-  MAX_ANTIGRAVITY_OUTPUT_TOKENS,
-  resolveAntigravityOutputCap,
-} from "./antigravityOutputCap.ts";
+import { resolveAntigravityOutputCap } from "./antigravityOutputCap.ts";
 export { MAX_ANTIGRAVITY_OUTPUT_TOKENS } from "./antigravityOutputCap.ts";
 import {
   ensureAntigravityProjectAssigned,
@@ -270,7 +264,11 @@ export function markConnectionQuotaExhausted(
  * specific upstream id, pass it here. It is an ALREADY-RESOLVED upstream id, so it bypasses
  * the MITM/static alias resolution and is used verbatim (after prefix stripping).
  */
-async function cleanModelName(model: string, modelIdOverride?: string): Promise<string> {
+export async function cleanModelName(
+  model: string,
+  modelIdOverride?: string,
+  provider = "antigravity"
+): Promise<string> {
   if (modelIdOverride) {
     return modelIdOverride.includes("/") ? modelIdOverride.split("/").pop()! : modelIdOverride;
   }
@@ -282,16 +280,16 @@ async function cleanModelName(model: string, modelIdOverride?: string): Promise<
   //    Built during model sync — contains ONLY currently-available models.
   //    Obsolete/removed models are automatically excluded.
   try {
-    const mitmAliases = await getMitmAlias("antigravity");
+    const mitmAliases = await getMitmAlias(provider);
     if (mitmAliases && typeof mitmAliases === "object") {
       const aliases = mitmAliases as Record<string, unknown>;
       const raw = aliases[stripped];
       // Only honor string aliases; corrupted/non-string DB values fall through
       // to the static alias resolution below (never return undefined here).
       if (typeof raw === "string" && raw) {
-        // Strip the "antigravity/" prefix if present; use the raw model ID otherwise.
-        const PREFIX = "antigravity/";
-        clean = raw.startsWith(PREFIX) ? raw.slice(PREFIX.length) : raw;
+        // Strip the provider prefix if present; use the raw model ID otherwise.
+        const prefix = `${provider}/`;
+        clean = raw.startsWith(prefix) ? raw.slice(prefix.length) : raw;
       }
     }
   } catch {
@@ -379,7 +377,9 @@ const COMPETITIVE_AGENT_PROMPT_PATTERNS: RegExp[] = [
  */
 export function stripCompetitiveAgentPrompts(systemInstruction: unknown): unknown {
   const record = asRecord(systemInstruction);
-  const parts = Array.isArray(record?.parts) ? (record.parts as Array<Record<string, unknown>>) : [];
+  const parts = Array.isArray(record?.parts)
+    ? (record.parts as Array<Record<string, unknown>>)
+    : [];
   if (parts.length === 0) return systemInstruction;
 
   let changed = false;
@@ -387,7 +387,10 @@ export function stripCompetitiveAgentPrompts(systemInstruction: unknown): unknow
     if (typeof part.text !== "string" || part.text.length === 0) return part;
     let text = part.text;
     for (const pattern of COMPETITIVE_AGENT_PROMPT_PATTERNS) {
-      const stripped = text.replace(pattern, "").replace(/\n{3,}/g, "\n\n").trimStart();
+      const stripped = text
+        .replace(pattern, "")
+        .replace(/\n{3,}/g, "\n\n")
+        .trimStart();
       if (stripped !== text) {
         changed = true;
         text = stripped;
@@ -1352,7 +1355,7 @@ export class AntigravityExecutor extends BaseExecutor {
       accountId,
       urlIndex,
       retryAttemptsByUrl,
-      fallbackCount,
+      fallbackCount: _fallbackCount,
     } = ctx;
 
     const { response, finalHeaders } = await sendAntigravityRequest(
