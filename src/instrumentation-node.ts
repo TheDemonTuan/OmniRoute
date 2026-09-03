@@ -417,17 +417,11 @@ export async function registerNodejs(): Promise<void> {
   console.log("[STARTUP] Guardrail registry initialized");
   console.log("[STARTUP] Builtin skill handlers registered");
   const { initClaudeCodeIdentity } = await import("@/shared/services/claudeCodeIdentity");
-  try {
-    const claudeIdentity = await initClaudeCodeIdentity();
-    console.log("[CLAUDE_CODE_IDENTITY]", {
-      version: claudeIdentity.version,
-      billingVersion: claudeIdentity.billingVersion,
-      userAgent: claudeIdentity.userAgentCli,
-    });
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.warn("[STARTUP] Claude Code identity init non-fatal error:", msg);
-  }
+  void initClaudeCodeIdentity().then(
+    (identity) => console.log(`[STARTUP] Claude Code identity initialized (${identity.version})`),
+    (err) =>
+      console.warn("[STARTUP] Claude Code identity init non-fatal error:", err?.message || err)
+  );
   if (!isBackgroundServicesDisabled()) {
     startBackgroundRefresh();
     console.log("[STARTUP] Quota cache background refresh started");
