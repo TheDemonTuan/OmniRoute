@@ -8,7 +8,7 @@
 import { mergeAbortSignals, type ExecutorLog } from "../base.ts";
 import { applyFingerprint, isCliCompatEnabled } from "../../config/cliFingerprints.ts";
 import { buildAntigravityUpstreamError } from "../antigravityUpstreamError.ts";
-import { maybeTriggerReactiveModelSync } from "@/lib/providerModels/reactiveModelSync.ts";
+import { awaitReactiveModelSync } from "@/lib/providerModels/reactiveModelSync.ts";
 import {
   HTTP_STATUS,
   STREAM_READINESS_TIMEOUT_MS,
@@ -387,12 +387,30 @@ export async function sendAntigravityRequest(
     if (response.status === HTTP_STATUS.NOT_FOUND) {
       // The backend may have shipped/renamed models the synced catalog does not
       // know yet (pinned-catalog staleness). Kick a discovery sync for this
-      // connection so the fresh list lands in the synced catalog and the next
-      // request can resolve. Cooldown + in-flight dedup live in the trigger.
-      // credentials.connectionId is optional (base.ts): no connection row means
-      // there is no synced catalog to refresh, so skip rather than pass undefined.
+      // connection so the fresh list lands in the synced catalog. If sync succeeds,
+      // transparently retry once so the first request for a freshly shipped model
+      // does not fail.
       if (credentials.connectionId) {
-        maybeTriggerReactiveModelSync(provider, credentials.connectionId);
+        const synced = await awaitReactiveModelSync(provider, credentials.connectionId);
+        if (synced) {
+          log.info(
+            "RETRY",
+            `[Antigravity] Discovery sync succeeded after 404 for ${model}, retrying request once`
+          );
+          await prl.captureCurrentProviderBody(
+            url,
+            finalHeaders,
+            serializedRequest.bodyString,
+            log
+          );
+          response = await fetchAntigravityWithReadinessTimeout(url, {
+            method: "POST",
+            headers: finalHeaders,
+            body: getChunkedOrFixedBody(serializedRequest.bodyString, stream),
+            ...(stream ? { duplex: "half" } : {}),
+            signal,
+          });
+        }
       }
     }
   }

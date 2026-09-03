@@ -32,6 +32,9 @@ const RETIRED_PUBLIC_MODELS = [
 ] as const;
 
 const EXPECTED_LEADING_MODEL_ORDER = [
+  "gemini-3.8-flash-high",
+  "gemini-3.8-flash-medium",
+  "gemini-3.8-flash-low",
   "gemini-3.7-flash-high",
   "gemini-3.7-flash-medium",
   "gemini-3.7-flash-low",
@@ -45,6 +48,9 @@ const EXPECTED_LEADING_MODEL_ORDER = [
 ] as const;
 
 const ACTIVE_FLASH_MODEL_IDS = [
+  "gemini-3.8-flash-high",
+  "gemini-3.8-flash-medium",
+  "gemini-3.8-flash-low",
   "gemini-3.7-flash-high",
   "gemini-3.7-flash-medium",
   "gemini-3.7-flash-low",
