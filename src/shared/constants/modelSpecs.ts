@@ -181,6 +181,41 @@ export const MODEL_SPECS: Record<string, ModelSpec> = {
     supportsTools: true,
     supportsVision: true,
   },
+  // ── Gemini 3.8 Flash (Antigravity/AGY per-effort tiers) ───────────
+  // No defaultThinkingBudget/thinkingBudgetCap on purpose: 3.8 steers reasoning through
+  // thinkingConfig.thinkingLevel (low/medium/high), not through a token budget like the
+  // 3.7 tiered backend. Declaring a budget here would make capThinkingBudget() inject a
+  // 3.7-shaped thinkingBudget the 3.8 backend does not use.
+  "gemini-3.8-flash-high": {
+    maxOutputTokens: 65536,
+    contextWindow: 1048576,
+    supportsThinking: true,
+    supportsTools: true,
+    supportsVision: true,
+  },
+  "gemini-3.8-flash-medium": {
+    maxOutputTokens: 65536,
+    contextWindow: 1048576,
+    supportsThinking: true,
+    supportsTools: true,
+    supportsVision: true,
+  },
+  "gemini-3.8-flash-low": {
+    maxOutputTokens: 65536,
+    contextWindow: 1048576,
+    supportsThinking: true,
+    supportsTools: true,
+    supportsVision: true,
+  },
+  "gemini-3.8-flash": {
+    maxOutputTokens: 65536,
+    contextWindow: 1048576,
+    supportsThinking: true,
+    supportsTools: true,
+    supportsVision: true,
+    aliases: ["gemini-3.8-flash-medium"],
+  },
+
   // ── Gemini 3.7 Flash (current Antigravity/AGY live tiers) ─────────
   // The tier suffix configures the thinking budget passed to the upstream
   // gemini-3.7-flash-tiered backend (high: 24.5k, medium: 8k, low: 1k).

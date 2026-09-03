@@ -38,6 +38,7 @@ import {
   normalizeUsageQuotasForProvider,
   sanitizeUsageQuotasForProvider,
 } from "./providerLimits/quotaNormalize";
+import { getCachedLiveModelIds, refreshLiveModelIds } from "./providerLimits/liveModelIds";
 import { syncInChunksWithSpacing } from "./providerLimits/chunkedSpacingSync";
 import {
   refreshAndUpdateCredentialsWithResolver,
@@ -154,7 +155,11 @@ function sanitizeProviderLimitsCacheForConnection(
   if (!connection || !entry || !entry.quotas) return entry;
   if (connection.provider !== "antigravity" && connection.provider !== "agy") return entry;
 
-  const sanitizedQuotas = normalizeUsageQuotasForProvider(connection.provider, entry.quotas);
+  const sanitizedQuotas = normalizeUsageQuotasForProvider(
+    connection.provider,
+    entry.quotas,
+    getCachedLiveModelIds(connection.provider)
+  );
   return sanitizedQuotas === entry.quotas ? entry : { ...entry, quotas: sanitizedQuotas };
 }
 
@@ -168,7 +173,12 @@ function shouldRefreshProviderLimitsCache(
   return (
     !hasRetrieveUserQuotaSource(connection.provider, cache) ||
     Object.keys(cache.quotas).some(
-      (quotaKey) => !isUsageQuotaKeyAllowed(connection.provider, quotaKey)
+      (quotaKey) =>
+        !isUsageQuotaKeyAllowed(
+          connection.provider,
+          quotaKey,
+          getCachedLiveModelIds(connection.provider)
+        )
     )
   );
 }
@@ -704,6 +714,10 @@ export async function getSanitizedCachedProviderLimitsMap(): Promise<
     return { ...caches };
   }
 
+  // Refresh the live-discovery snapshot the sync sanitizer reads, so a model the
+  // connection reports but the static catalog predates keeps its quota bucket.
+  await Promise.all([refreshLiveModelIds("antigravity"), refreshLiveModelIds("agy")]);
+
   const byId = new Map(sanitizableConnections.map((conn) => [conn.id, conn]));
   const sanitized: Record<string, ProviderLimitsCacheEntry> = {};
   for (const [connectionId, entry] of Object.entries(caches)) {
@@ -747,7 +761,8 @@ async function fetchLiveProviderLimitsWithOptions(
       connection.provider,
       (await runWithProxyContext(apiKeyProxy?.proxy ?? null, () =>
         getUsageForProvider(connection as unknown as JsonRecord, options)
-      )) as JsonRecord
+      )) as JsonRecord,
+      await refreshLiveModelIds(connection.provider)
     );
     if (isRecord(usage.quotas)) {
       setQuotaCache(connectionId, connection.provider, usage.quotas);
@@ -779,7 +794,8 @@ async function fetchLiveProviderLimitsWithOptions(
 
       let usageData = sanitizeUsageQuotasForProvider(
         conn.provider,
-        (await getUsageForProvider(conn as unknown as JsonRecord, options)) as JsonRecord
+        (await getUsageForProvider(conn as unknown as JsonRecord, options)) as JsonRecord,
+        await refreshLiveModelIds(conn.provider)
       );
 
       // Reactive 401 recovery (on-demand/force path only): an unauthorized usage
@@ -797,7 +813,8 @@ async function fetchLiveProviderLimitsWithOptions(
           await syncToCloudIfEnabled();
           usageData = sanitizeUsageQuotasForProvider(
             conn.provider,
-            (await getUsageForProvider(conn as unknown as JsonRecord, options)) as JsonRecord
+            (await getUsageForProvider(conn as unknown as JsonRecord, options)) as JsonRecord,
+            await refreshLiveModelIds(conn.provider)
           );
         }
       }
@@ -963,6 +980,7 @@ export async function syncAllProviderLimits(
 
   const fetchOne = async (connection: ProviderConnectionLike) => {
     const existingCache = getProviderLimitsCache(connection.id);
+    await refreshLiveModelIds(connection.provider);
     const forceRefresh =
       source === "manual" ||
       shouldRefreshProviderLimitsCache(connection, existingCache || undefined);
