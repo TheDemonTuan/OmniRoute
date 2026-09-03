@@ -27,6 +27,7 @@ import {
   sortQuotasByWindow,
 } from "../quotaParsing";
 import KiloPassMeter from "./KiloPassMeter";
+import AntigravityQuotaGroups from "../AntigravityQuotaGroups";
 
 const CURRENCY_SYMBOLS: Record<string, string> = {
   USD: "$",
@@ -136,6 +137,7 @@ export function shouldShowLoadingPlaceholder(
 
 interface Props {
   quotas: any[];
+  quotaGroups?: Array<Record<string, unknown>>;
   providerId?: string;
   loading: boolean;
   error: string | null;
@@ -321,6 +323,7 @@ function QuotaDetailRow({
 
 export default function QuotaCardExpanded({
   quotas,
+  quotaGroups = [],
   providerId,
   loading,
   error,
@@ -383,6 +386,8 @@ export default function QuotaCardExpanded({
           <span className="material-symbols-outlined text-[13px]">error</span>
           <span>{error}</span>
         </div>
+      ) : (providerId === "antigravity" || providerId === "agy") && quotaGroups.length > 0 ? (
+        <AntigravityQuotaGroups groups={quotaGroups as any[]} />
       ) : quotas.length === 0 && message ? (
         <div className="text-[11px] text-text-muted italic" title={message}>
           {message}

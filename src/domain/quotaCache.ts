@@ -286,11 +286,13 @@ function resolveAntigravityQuotaWindowsForModel(
     });
   }
 
+  // A family is usable only while every upstream-reported window is above the
+  // threshold. Summary keys are canonical and independent of today's model list.
   const familyAggregates =
     requestedFamily === "gemini"
-      ? ["gemini_weekly"]
+      ? ["gemini_session", "gemini_weekly"]
       : requestedFamily === "claude"
-        ? ["claude_gpt_weekly"]
+        ? ["claude_gpt_session", "claude_gpt_weekly"]
         : [];
 
   const exactWindows = quotaNames.filter((windowName) => {
@@ -315,13 +317,14 @@ function isAntigravityQuotaExhausted(
   const quotaNames = Object.keys(entry.quotas || {});
   if (quotaNames.length === 0) return entry.exhausted;
   const matchingWindows = resolveAntigravityQuotaWindowsForModel(quotaNames, requestedModel);
-  return (
-    matchingWindows.length > 0 &&
-    matchingWindows.every(
-      (windowName) =>
-        getQuotaWindowStatus(connectionId, windowName, DEFAULT_QUOTA_THRESHOLD_PERCENT)
-          ?.reachedThreshold
-    )
+  // Antigravity enforces both 5h and weekly windows for a family. A remaining
+  // 5h bucket cannot make an account usable when weekly is exhausted (or vice versa).
+  // Missing/unreported windows are absent from `matchingWindows` and deliberately fall
+  // back to the legacy per-model information rather than being treated as full quota.
+  return matchingWindows.some(
+    (windowName) =>
+      getQuotaWindowStatus(connectionId, windowName, DEFAULT_QUOTA_THRESHOLD_PERCENT)
+        ?.reachedThreshold
   );
 }
 
