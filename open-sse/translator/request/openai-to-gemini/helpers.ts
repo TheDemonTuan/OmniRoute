@@ -11,8 +11,9 @@ export type GeminiGenerationConfig = {
   topK?: unknown;
   maxOutputTokens?: unknown;
   thinkingConfig?: {
-    thinkingBudget: number;
-    includeThoughts: boolean;
+    thinkingBudget?: number;
+    thinkingLevel?: "LOW" | "MEDIUM" | "HIGH" | string;
+    includeThoughts?: boolean;
   };
   responseMimeType?: string;
   responseSchema?: unknown;
@@ -89,8 +90,47 @@ export function deepCleanUndefined(value: unknown, depth = 0): void {
   }
 }
 
-export function applyAntigravityGenerationDefaults(generationConfig: GeminiGenerationConfig) {
+export function getGeminiThinkingLevel(
+  model: string,
+  reasoningEffort?: unknown
+): "LOW" | "MEDIUM" | "HIGH" | null {
+  const lower = model.toLowerCase();
+
+  // Gemini 3.8 models use thinkingLevel ("LOW" | "MEDIUM" | "HIGH"), not numeric thinkingBudget
+  if (!lower.startsWith("gemini-3.8-flash") && !lower.includes("gemini-3.8-flash")) {
+    return null;
+  }
+
+  if (typeof reasoningEffort === "string") {
+    const effort = reasoningEffort.toLowerCase();
+    if (effort === "low") return "LOW";
+    if (effort === "medium") return "MEDIUM";
+    if (effort === "high" || effort === "auto" || effort === "max" || effort === "xhigh") {
+      return "HIGH";
+    }
+  }
+
+  if (lower.endsWith("-low")) return "LOW";
+  if (lower.endsWith("-medium")) return "MEDIUM";
+  if (lower.endsWith("-high")) return "HIGH";
+
+  return "MEDIUM";
+}
+
+export function applyAntigravityGenerationDefaults(
+  generationConfig: GeminiGenerationConfig,
+  model?: string
+) {
   const config = { ...generationConfig };
+  const isGemini38 = typeof model === "string" && model.toLowerCase().includes("gemini-3.8-flash");
+
+  if (isGemini38) {
+    delete config.topK;
+    delete config.topP;
+    delete config.temperature;
+    return config;
+  }
+
   if (config.topK === undefined) {
     config.topK = 40;
   }
