@@ -1,5 +1,6 @@
 /**
- * Wire-version accessors backed by the dynamic Claude Code identity resolver.
+ * Wire-version data captured from the signed Claude Code binary, backed by
+ * the dynamic Claude Code identity resolver.
  *
  * Keep this leaf dependency-free (except for internal shared service) so
  * server executors, compatibility bridges, and client-facing identity
@@ -8,7 +9,6 @@
 
 import {
   FALLBACK_CLAUDE_CODE_IDENTITY,
-  computeClaudeCodeBillingVersion,
   getClaudeCodeIdentity,
   initClaudeCodeIdentity,
   resolveClaudeCodeIdentity,
@@ -20,6 +20,14 @@ export type ClaudeCodeEntrypoint = "cli" | "sdk-cli";
 
 export function getClaudeCodeVersion(): string {
   return getClaudeCodeIdentity().version;
+}
+
+export function getClaudeCodeBuildRevision(): string {
+  return getClaudeCodeIdentity().buildRevision;
+}
+
+export function getClaudeCodeBillingVersion(): string {
+  return getClaudeCodeIdentity().billingVersion;
 }
 
 export function getClaudeCodeSdkVersion(): string {
@@ -35,13 +43,15 @@ export function getClaudeCodeUserAgent(entrypoint: ClaudeCodeEntrypoint = "cli")
   return entrypoint === "sdk-cli" ? identity.userAgentSdkCli : identity.userAgentCli;
 }
 
-export function getClaudeCodeBillingVersion(firstUserMessage = ""): string {
-  return computeClaudeCodeBillingVersion(getClaudeCodeVersion(), firstUserMessage);
-}
+// Fallback baseline constants for static typing and fallback baseline references
+export const CLAUDE_CODE_CLIENT_VERSION = FALLBACK_CLAUDE_CODE_IDENTITY.version;
+export const CLAUDE_CODE_CLIENT_BUILD_REVISION = FALLBACK_CLAUDE_CODE_IDENTITY.buildRevision;
+export const CLAUDE_CODE_CLIENT_BILLING_VERSION = FALLBACK_CLAUDE_CODE_IDENTITY.billingVersion;
+export const CLAUDE_CODE_SDK_PACKAGE_VERSION = FALLBACK_CLAUDE_CODE_IDENTITY.sdkVersion;
+export const CLAUDE_CODE_RUNTIME_VERSION = FALLBACK_CLAUDE_CODE_IDENTITY.runtimeVersion;
 
 export {
   FALLBACK_CLAUDE_CODE_IDENTITY,
-  computeClaudeCodeBillingVersion,
   getClaudeCodeIdentity,
   initClaudeCodeIdentity,
   resolveClaudeCodeIdentity,
