@@ -1,59 +1,47 @@
 /**
  * tests/unit/claude-codex-identity-version-sync.test.ts
  *
- * Guards the pinned CLI identity versions against drift. The Claude Code version
- * lives in FOUR places (claudeIdentity, anthropicHeaders, claudeCodeCompatible,
- * ccBridgeTransforms) and MUST stay in lockstep — a partial bump produces an
- * inconsistent wire fingerprint. The Codex client version lives in codexClient.
- *
- * When you capture a newer claude-cli / codex release, bump ALL constants and
- * update the pinned values below in the same change.
+ * Guards the CLI identity versions against drift. Claude Code versions
+ * resolve dynamically through the identity resolver. Codex client version lives in codexClient.
  */
 
 import test from "node:test";
 import assert from "node:assert/strict";
 
-const id = await import("../../open-sse/executors/claudeIdentity.ts");
 const hdr = await import("../../open-sse/config/anthropicHeaders.ts");
 const compat = await import("../../open-sse/services/claudeCodeCompatible.ts");
-const bridge = await import("../../open-sse/services/ccBridgeTransforms.ts");
 const codexCfg = await import("../../open-sse/config/codexClient.ts");
 const canonical = await import("../../src/shared/constants/claudeCodeClient.ts");
 
-test("Claude CLI version constants are in lockstep across all 4 sources", () => {
-  const V = canonical.CLAUDE_CODE_CLIENT_VERSION;
-  assert.equal(id.CLAUDE_CODE_VERSION, V, "claudeIdentity.CLAUDE_CODE_VERSION drift");
-  assert.equal(hdr.CLAUDE_CLI_VERSION, V, "anthropicHeaders.CLAUDE_CLI_VERSION drift");
-  assert.equal(compat.CLAUDE_CODE_COMPATIBLE_VERSION, V, "claudeCodeCompatible version drift");
-  assert.equal(bridge.DEFAULT_CLAUDE_CODE_VERSION, V, "ccBridgeTransforms version drift");
+test("Claude CLI version getters are in lockstep across sources", () => {
+  const V = canonical.getClaudeCodeVersion();
+  assert.equal(hdr.getClaudeCliVersion(), V, "anthropicHeaders.getClaudeCliVersion() drift");
+  assert.equal(compat.getClaudeCodeCompatibleVersion(), V, "claudeCodeCompatible version drift");
   assert.equal(
-    hdr.CLAUDE_CLI_USER_AGENT,
+    hdr.getClaudeCliUserAgent(),
     `claude-cli/${V} (external, cli)`,
-    "CLAUDE_CLI_USER_AGENT drift"
+    "getClaudeCliUserAgent drift"
   );
   assert.equal(
-    compat.CLAUDE_CODE_COMPATIBLE_USER_AGENT,
+    compat.getClaudeCodeCompatibleUserAgent(),
     `claude-cli/${V} (external, sdk-cli)`,
-    "CLAUDE_CODE_COMPATIBLE_USER_AGENT drift"
+    "getClaudeCodeCompatibleUserAgent drift"
   );
 });
 
-test("Claude CLI wire versions match the captured baseline binary", () => {
-  assert.equal(canonical.CLAUDE_CODE_CLIENT_VERSION, "2.1.258");
-  assert.equal(canonical.CLAUDE_CODE_CLIENT_BUILD_REVISION, "1f2");
-  assert.equal(canonical.CLAUDE_CODE_CLIENT_BILLING_VERSION, "2.1.258.1f2");
-  assert.equal(canonical.CLAUDE_CODE_SDK_PACKAGE_VERSION, "0.94.0");
+test("Claude CLI wire versions match the baseline identity", () => {
+  assert.equal(canonical.FALLBACK_CLAUDE_CODE_IDENTITY.version, "2.1.258");
+  assert.equal(canonical.FALLBACK_CLAUDE_CODE_IDENTITY.sdkVersion, "0.94.0");
   assert.equal(
-    compat.CLAUDE_CODE_COMPATIBLE_STAINLESS_PACKAGE_VERSION,
-    canonical.CLAUDE_CODE_SDK_PACKAGE_VERSION
+    compat.getClaudeCodeCompatibleStainlessPackageVersion(),
+    canonical.getClaudeCodeSdkVersion()
   );
   assert.equal(
-    compat.CLAUDE_CODE_COMPATIBLE_STAINLESS_RUNTIME_VERSION,
-    canonical.CLAUDE_CODE_RUNTIME_VERSION
+    compat.getClaudeCodeCompatibleStainlessRuntimeVersion(),
+    canonical.getClaudeCodeRuntimeVersion()
   );
-  assert.equal(hdr.CLAUDE_CLI_STAINLESS_PACKAGE_VERSION, canonical.CLAUDE_CODE_SDK_PACKAGE_VERSION);
-  assert.equal(hdr.CLAUDE_CLI_STAINLESS_RUNTIME_VERSION, canonical.CLAUDE_CODE_RUNTIME_VERSION);
-  assert.equal(hdr.CLAUDE_CLI_BILLING_VERSION, canonical.CLAUDE_CODE_CLIENT_BILLING_VERSION);
+  assert.equal(hdr.getClaudeCliStainlessPackageVersion(), canonical.getClaudeCodeSdkVersion());
+  assert.equal(hdr.getClaudeCliStainlessRuntimeVersion(), canonical.getClaudeCodeRuntimeVersion());
 });
 
 test("Codex client is pinned to the captured 0.149.0 release", () => {

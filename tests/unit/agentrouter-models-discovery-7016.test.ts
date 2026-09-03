@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { PROVIDER_MODELS_CONFIG } from "../../src/app/api/providers/[id]/models/discovery/providerModelsConfig.ts";
-import { CLAUDE_CODE_COMPATIBLE_USER_AGENT } from "../../open-sse/services/claudeCodeCompatible.ts";
+import { getClaudeCodeCompatibleUserAgent } from "../../open-sse/services/claudeCodeCompatible.ts";
 
 // Regression guard for #7016 — AgentRouter's "Import from /models" must hit the
 // live /v1/models endpoint. Previously the provider had no PROVIDER_MODELS_CONFIG
@@ -25,7 +25,7 @@ test("agentrouter discovery headers carry the Claude Code wire image + x-api-key
   const headers = cfg.buildHeaders!("sk-agentrouter");
 
   // CC wire-image markers (mirrors the chat path — see agentrouter-cc-wire-image.test.ts).
-  assert.equal(headers["User-Agent"], CLAUDE_CODE_COMPATIBLE_USER_AGENT);
+  assert.equal(headers["User-Agent"], getClaudeCodeCompatibleUserAgent());
   assert.equal(headers["x-app"], "cli");
   assert.equal(headers["anthropic-dangerous-direct-browser-access"], "true");
   assert.ok(headers["anthropic-beta"], "expected the CC anthropic-beta header");

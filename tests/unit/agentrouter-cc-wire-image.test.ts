@@ -11,8 +11,8 @@ import {
   CC_WIRE_IMAGE_BUILTINS,
   usesCcWireImage,
 } from "../../open-sse/services/ccWireImageBuiltins.ts";
-import { CLAUDE_CODE_COMPATIBLE_USER_AGENT } from "../../open-sse/services/claudeCodeCompatible.ts";
-import { CLAUDE_CLI_USER_AGENT } from "../../open-sse/config/anthropicHeaders.ts";
+import { getClaudeCodeCompatibleUserAgent } from "../../open-sse/services/claudeCodeCompatible.ts";
+import { getClaudeCliUserAgent } from "../../open-sse/config/anthropicHeaders.ts";
 import { applyFingerprint } from "../../open-sse/config/cliFingerprints.ts";
 
 // Regression guard for #6056 — the built-in `agentrouter` provider must route
@@ -44,8 +44,8 @@ test("(b) agentrouter outbound headers carry the dynamic CC wire image", () => {
   const headers = buildProviderHeaders("agentrouter", { apiKey: "sk-agentrouter" }, true);
 
   // CC wire image markers (not the static getClaudeCliHeaders() shape).
-  assert.equal(headers["User-Agent"], CLAUDE_CODE_COMPATIBLE_USER_AGENT);
-  assert.notEqual(headers["User-Agent"], CLAUDE_CLI_USER_AGENT);
+  assert.equal(headers["User-Agent"], getClaudeCodeCompatibleUserAgent());
+  assert.notEqual(headers["User-Agent"], getClaudeCliUserAgent());
   assert.equal(headers["x-app"], "cli");
   assert.equal(headers["anthropic-dangerous-direct-browser-access"], "true");
   assert.ok(headers["anthropic-beta"], "expected the CC anthropic-beta header");
@@ -60,7 +60,7 @@ test("(b) applyFingerprint selects the claude-code-compatible fingerprint for ag
   );
   // Fingerprint reordering keeps the CC wire image + the preserved x-api-key auth.
   assert.equal(headers["x-api-key"], "sk-agentrouter");
-  assert.equal(headers["User-Agent"], CLAUDE_CODE_COMPATIBLE_USER_AGENT);
+  assert.equal(headers["User-Agent"], getClaudeCodeCompatibleUserAgent());
 });
 
 test("(c) CRUX: agentrouter keeps its OWN x-api-key auth (NOT CC Bearer)", () => {

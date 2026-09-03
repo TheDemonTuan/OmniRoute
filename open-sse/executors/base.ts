@@ -78,6 +78,7 @@ import {
   remapToolNamesInRequest,
 } from "../services/claudeCodeToolRemapper.ts";
 import { obfuscateInBody } from "../services/claudeCodeObfuscation.ts";
+import { extractFirstUserMessageText } from "../services/ccBridgeTransforms.ts";
 import { sanitizeClaudeToolSchemas } from "../translator/helpers/schemaCoercion.ts";
 import { sanitizeResponsesInputItems } from "../services/responsesInputSanitizer.ts";
 import { applySystemTransformPipeline, PROVIDER_CLAUDE } from "../services/systemTransforms.ts";
@@ -1165,7 +1166,10 @@ export class BaseExecutor {
 
           // system[0] (billing) and system[1] (sentinel) must not carry
           // cache_control — that belongs on upstream prompt blocks at [2..].
-          const billingLine = `x-anthropic-billing-header: cc_version=${getClaudeCodeBillingVersion()}; cc_entrypoint=cli; cch=00000;`;
+          const firstUserText = extractFirstUserMessageText(
+            Array.isArray(tb.messages) ? (tb.messages as unknown[]) : []
+          );
+          const billingLine = `x-anthropic-billing-header: cc_version=${getClaudeCodeBillingVersion(firstUserText)}; cc_entrypoint=cli; cch=00000;`;
           const SENTINEL = "You are Claude Code, Anthropic's official CLI for Claude.";
 
           const sysBlocks: Array<Record<string, unknown>> = Array.isArray(tb.system)

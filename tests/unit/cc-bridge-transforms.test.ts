@@ -52,7 +52,10 @@ test("DEFAULT_CC_BRIDGE_PIPELINE places billing header at [0] and identity at [1
     DEFAULT_CC_BRIDGE_PIPELINE
   );
   const blocks = result.body.system as any[];
-  assert.ok(blocks[0].text.startsWith("x-anthropic-billing-header: cc_version=2.1.258.1f2;"));
+  assert.match(
+    blocks[0].text,
+    /^x-anthropic-billing-header: cc_version=\d+\.\d+\.\d+\.[0-9a-f]{3};/
+  );
   assert.equal(blocks[1].text, CLAUDE_AGENT_SDK_IDENTITY);
 });
 

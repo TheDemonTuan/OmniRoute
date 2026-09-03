@@ -1,8 +1,8 @@
 /**
  * Dynamic Claude Code identity resolver.
  *
- * Resolves the Claude Code CLI wire-identity (version, buildRevision,
- * sdkVersion, runtimeVersion, billingVersion, user-agents) using:
+ * Resolves the Claude Code CLI wire-identity (version, sdkVersion,
+ * runtimeVersion, user-agents) using:
  *   1. Environment override (CLAUDE_CODE_CLIENT_VERSION / mode='fixed')
  *   2. NPM registry dist-tags (@anthropic-ai/claude-code: latest | stable)
  *   3. Installed local binary (`claude --version` if mode='installed' or 'auto')
@@ -12,14 +12,19 @@
  * to `getClaudeCodeIdentity()` have zero latency and never block requests.
  */
 
+import wireVersions from "../data/claudeCodeWireVersions.json";
+
 export interface ClaudeCodeIdentity {
   readonly version: string;
-  readonly buildRevision: string;
   readonly sdkVersion: string;
   readonly runtimeVersion: string;
-  readonly billingVersion: string;
   readonly userAgentCli: string;
   readonly userAgentSdkCli: string;
+}
+
+export interface ClaudeCodeWireMetadata {
+  readonly sdkVersion: string;
+  readonly runtimeVersion: string;
 }
 
 export interface ClaudeCodeResolverOptions {
@@ -29,42 +34,81 @@ export interface ClaudeCodeResolverOptions {
   cacheTtlMs?: number;
 }
 
+export const FALLBACK_WIRE_METADATA: ClaudeCodeWireMetadata = Object.freeze({
+  sdkVersion: "0.94.0",
+  runtimeVersion: typeof process !== "undefined" && process.version ? process.version : "v24.3.0",
+});
+
 export const FALLBACK_CLAUDE_CODE_IDENTITY: ClaudeCodeIdentity = Object.freeze({
   version: "2.1.258",
-  buildRevision: "1f2",
   sdkVersion: "0.94.0",
-  runtimeVersion: typeof process !== "undefined" && process.version ? process.version : "v22.14.0",
-  billingVersion: "2.1.258.1f2",
+  runtimeVersion: typeof process !== "undefined" && process.version ? process.version : "v24.3.0",
   userAgentCli: "claude-cli/2.1.258 (external, cli)",
   userAgentSdkCli: "claude-cli/2.1.258 (external, sdk-cli)",
 });
 
 const DEFAULT_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const NPM_REGISTRY_URL = "https://registry.npmjs.org/@anthropic-ai/claude-code";
+const BILLING_SALT = "59cf53e54c78";
+const BILLING_INDICES = [4, 7, 20] as const;
 
 let activeIdentity: ClaudeCodeIdentity = FALLBACK_CLAUDE_CODE_IDENTITY;
 let cacheExpiresAt = 0;
 let isRefreshing = false;
 
+function sha256Hex(input: string): string {
+  try {
+    const cryptoModule = require("crypto");
+    return cryptoModule.createHash("sha256").update(input, "utf8").digest("hex");
+  } catch {
+    return "000000";
+  }
+}
+
+/**
+ * Compute the dynamic cc_version header value (e.g. 2.1.259.xxx)
+ * where xxx is a 3-character hex fingerprint computed from the version
+ * and sampled characters of the first user message.
+ */
+export function computeClaudeCodeBillingVersion(version: string, firstUserMessage = ""): string {
+  const cleanVersion = String(version || "")
+    .trim()
+    .replace(/^v/, "");
+  const sampled = BILLING_INDICES.map((index) =>
+    typeof firstUserMessage[index] === "string" ? firstUserMessage[index] : "\0"
+  ).join("");
+
+  const suffix = sha256Hex(`${BILLING_SALT}${sampled}${cleanVersion}`).slice(0, 3);
+  return `${cleanVersion}.${suffix}`;
+}
+
+export function resolveWireMetadata(version: string): ClaudeCodeWireMetadata {
+  const clean = String(version || "")
+    .trim()
+    .replace(/^v/, "");
+  const found = (wireVersions as Record<string, ClaudeCodeWireMetadata>)[clean];
+  if (found && typeof found.sdkVersion === "string" && typeof found.runtimeVersion === "string") {
+    return found;
+  }
+  return FALLBACK_WIRE_METADATA;
+}
+
 export function buildIdentity(
   version: string,
-  buildRevision = "1f2",
-  sdkVersion = "0.94.0"
+  sdkVersion?: string,
+  runtimeVersion?: string
 ): ClaudeCodeIdentity {
   const cleanVersion = String(version || "")
     .trim()
     .replace(/^v/, "");
-  const cleanRevision = String(buildRevision || "1f2").trim();
-  const cleanSdk = String(sdkVersion || "0.94.0").trim();
-  const runtimeVersion =
-    typeof process !== "undefined" && process.version ? process.version : "v22.14.0";
+  const meta = resolveWireMetadata(cleanVersion);
+  const cleanSdk = String(sdkVersion || meta.sdkVersion).trim();
+  const cleanRuntime = String(runtimeVersion || meta.runtimeVersion).trim();
 
   return Object.freeze({
     version: cleanVersion,
-    buildRevision: cleanRevision,
     sdkVersion: cleanSdk,
-    runtimeVersion,
-    billingVersion: `${cleanVersion}.${cleanRevision}`,
+    runtimeVersion: cleanRuntime,
     userAgentCli: `claude-cli/${cleanVersion} (external, cli)`,
     userAgentSdkCli: `claude-cli/${cleanVersion} (external, sdk-cli)`,
   });

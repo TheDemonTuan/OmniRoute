@@ -22,7 +22,7 @@ import {
 import { applyProviderRequestDefaults } from "../services/providerRequestDefaults.ts";
 import { stripUnsupportedParams } from "../translator/paramSupport.ts";
 import { getRotatingApiKey } from "../services/apiKeyRotator.ts";
-import { CLAUDE_CLI_STAINLESS_PACKAGE_VERSION } from "../config/anthropicHeaders.ts";
+import { getClaudeCliStainlessPackageVersion } from "../config/anthropicHeaders.ts";
 import {
   getRuntimeVersion,
   normalizeStainlessArch,
@@ -291,7 +291,7 @@ export class GlmExecutor extends DefaultExecutor {
       "X-Stainless-Arch": normalizeStainlessArch(),
       "X-Stainless-OS": normalizeStainlessPlatform(),
       "X-Stainless-Runtime-Version": getRuntimeVersion(),
-      "X-Stainless-Package-Version": CLAUDE_CLI_STAINLESS_PACKAGE_VERSION,
+      "X-Stainless-Package-Version": getClaudeCliStainlessPackageVersion(),
       "X-Claude-Code-Session-Id": randomUUID(),
       "x-client-request-id": randomUUID(),
     };

@@ -218,14 +218,10 @@ describe("claudeIdentity — stripProxyToolPrefix", () => {
   });
 });
 
-describe("claudeIdentity — constants", () => {
-  it("exports CLAUDE_CODE_VERSION", () => {
-    assert.ok(typeof mod.CLAUDE_CODE_VERSION === "string");
-    assert.ok(mod.CLAUDE_CODE_VERSION.length > 0);
-  });
-
-  it("exports CLAUDE_CODE_STAINLESS_VERSION", () => {
-    assert.ok(typeof mod.CLAUDE_CODE_STAINLESS_VERSION === "string");
-    assert.ok(mod.CLAUDE_CODE_STAINLESS_VERSION.length > 0);
+describe("claudeIdentity — dynamic identity getters", () => {
+  it("getClaudeCodeStainlessVersion returns string", () => {
+    assert.ok(typeof mod.getClaudeCodeStainlessVersion === "function");
+    assert.ok(typeof mod.getClaudeCodeStainlessVersion() === "string");
+    assert.ok(mod.getClaudeCodeStainlessVersion().length > 0);
   });
 });

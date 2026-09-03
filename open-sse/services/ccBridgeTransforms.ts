@@ -21,11 +21,7 @@
  */
 import { createHash } from "node:crypto";
 
-import {
-  CLAUDE_CODE_CLIENT_BUILD_REVISION,
-  CLAUDE_CODE_CLIENT_VERSION,
-  getClaudeCodeVersion,
-} from "@/shared/constants/claudeCodeClient";
+import { getClaudeCodeVersion } from "@/shared/constants/claudeCodeClient";
 
 // ────────────────────────────────────────────────────────────────────────────
 // DSL types
@@ -102,7 +98,7 @@ export interface InjectBillingHeaderOp {
    *   - static-zero: emit "00000" (relay endpoints don't validate)
    */
   cchAlgo: "sha256-first-user" | "xxhash64-body" | "static-zero";
-  /** Override the embedded `cc_version=` value. Defaults to CLAUDE_CODE_CLIENT_VERSION. */
+  /** Override the embedded `cc_version=` value. Defaults to dynamic Claude Code version. */
   version?: string;
   /** Override its captured build revision. Defaults to a computed compatibility suffix. */
   buildRevision?: string;
@@ -121,8 +117,6 @@ export interface CcBridgeTransformsConfig {
 export const CCH_SALT = "59cf53e54c78";
 /** Character positions sampled from the first user message text. */
 export const CCH_POSITIONS = [4, 7, 20] as const;
-/** Default `cc_version=` value embedded in the billing header. */
-export const DEFAULT_CLAUDE_CODE_VERSION = CLAUDE_CODE_CLIENT_VERSION;
 /** Identity sentinel prepended for Claude Agent SDK callers. */
 export const CLAUDE_AGENT_SDK_IDENTITY =
   "You are a Claude agent, built on Anthropic's Claude Agent SDK.";
@@ -184,7 +178,6 @@ export const DEFAULT_CC_BRIDGE_PIPELINE: TransformOp[] = [
     entrypoint: "sdk-cli",
     versionFormat: "ex-machina",
     cchAlgo: "sha256-first-user",
-    buildRevision: CLAUDE_CODE_CLIENT_BUILD_REVISION,
   },
 ];
 
@@ -219,11 +212,13 @@ interface Message {
  * Pull the textual content of the first user message in the request.
  * Returns "" when no user message has text content.
  */
-export function extractFirstUserMessageText(messages: Message[]): string {
+export function extractFirstUserMessageText(messages: Message[] | unknown[]): string {
   if (!Array.isArray(messages)) return "";
 
-  for (const msg of messages) {
-    if (msg?.role !== "user") continue;
+  for (const item of messages) {
+    if (!item || typeof item !== "object") continue;
+    const msg = item as Message;
+    if (msg.role !== "user") continue;
     if (typeof msg.content === "string") return msg.content;
     if (Array.isArray(msg.content)) {
       for (const block of msg.content) {
