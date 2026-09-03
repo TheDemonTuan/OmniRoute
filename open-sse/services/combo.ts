@@ -16,10 +16,12 @@ import {
   hasPerModelQuota,
   isAccountSemaphoreFull,
   isModelLocked,
+  lockModelIfPerModelQuota,
   MODEL_ACCESS_DENIED_PATTERNS,
   recordModelLockoutFailure,
   recordProviderFailure,
   recordProviderSuccess,
+  retryHintBypassesMaxCooldownMs,
   selectLockoutCooldownMs,
 } from "./accountFallback.ts";
 import {
@@ -167,6 +169,7 @@ import {
   recordStickyWeightedSuccess,
   resolveComboStickyRoundRobinLimit,
 } from "./combo/rrState.ts";
+import { expandTargetsForAllStrategies } from "./combo/connectionAwareExpansion.ts";
 import {
   validateResponseQuality,
   releaseQualityClone,
@@ -228,6 +231,8 @@ export {
 import { applyComboTargetExhaustion } from "./combo/targetExhaustion.ts";
 import {
   applyNativeCodexTurnPin,
+  areAllPinnedTargetsModelScopedUnusable,
+  createPinnedModelUnavailableResponse,
   getNativeCodexTurnPin,
   pinNativeCodexTurn,
 } from "./combo/nativeCodexTurnPin.ts";
@@ -354,6 +359,33 @@ export function releaseStickyPinOnFailure(
   clearStickyBinding(messageHash);
 }
 
+/**
+ * Clear persisted LKGP pins when a target fails or is skipped due to
+ * exhaustion, cooldown, or unavailability (#11911 #919).
+ */
+export function clearStaleLKGP(
+  comboName: string,
+  executionKey?: string | null,
+  comboId?: string | null,
+  log?: { warn?: (tag: string, msg: string, data?: unknown) => void } | null,
+  tag: string = "COMBO"
+): void {
+  void (async () => {
+    try {
+      const { clearLKGP } = await import("@/lib/db/settings");
+      const promises: Promise<void>[] = [clearLKGP(comboName, comboId || comboName)];
+      if (executionKey) {
+        promises.push(clearLKGP(comboName, executionKey));
+      }
+      await Promise.all(promises);
+    } catch (err) {
+      log?.warn?.(tag, "Failed to clear Last Known Good Provider. This is non-fatal.", {
+        err,
+      });
+    }
+  })();
+}
+
 const DEFAULT_MODEL_P95_MS: Record<string, number> = {
   "grok-4-fast-non-reasoning": 1143,
   "grok-4-1-fast-non-reasoning": 1244,
@@ -397,7 +429,7 @@ export async function buildAutoCandidates(
   // apply, so auto-routing behavior is unchanged.
   const quotaCutoffEnabled =
     (resilienceSettings ?? resolveResilienceSettings(null))?.quotaPreflight?.enabled === true;
-  const { getPricingForModel } = await import("../../src/lib/localDb");
+  const { getPricingForModel } = await import("@/lib/db/settings");
   const quotaPromises = new Map<string, Promise<unknown>>();
   let historicalLatencyStats: Record<string, HistoricalLatencyStatsEntry> = {};
   try {
@@ -838,6 +870,8 @@ async function handleComboChatInner({
     combo,
     config,
     strategy,
+    settings,
+    apiKeyAllowedConnections,
     allCombos,
     handleSingleModelWithTimeout,
     log,
@@ -888,6 +922,7 @@ async function handleComboChatInner({
       settings,
       allCombos,
       signal,
+      apiKeyAllowedConnections,
       hiddenModelsByProvider,
       clientManagedResponsesContext,
       deferContextOverflowWhenCompressible,
@@ -927,30 +962,49 @@ async function handleComboChatInner({
   const { stickyWeightedLimit, getWeightedStepKeyForTarget, preScreenMap } = targetResolution;
   const _sticky = targetResolution.sticky;
   let orderedTargets = targetResolution.orderedTargets;
+  const quotaCutoffResetWindowConfig = resolveResetWindowConfig(config as Record<string, unknown>);
+
   if (activeNativeTurnPin) {
-    orderedTargets = applyNativeCodexTurnPin(orderedTargets, activeNativeTurnPin);
-    if (orderedTargets.length === 0) {
-      // #11371: quota-share ordering already reserved a winner slot; release it on
-      // this early exit (idempotent).
+    const pinnedTargets = applyNativeCodexTurnPin(orderedTargets, activeNativeTurnPin);
+    if (pinnedTargets.length === 0) {
+      //#11371: quota-share ordering reserved a winner slot; release on
+      //early exit (idempotent).
       targetResolution.quotaShareRelease?.();
-      return errorResponse(
-        409,
-        "The pinned native Codex turn target is no longer available; the turn cannot be moved to another provider"
+      log.warn(
+        "COMBO",
+        `Native Codex turn cannot continue: pinned model ${activeNativeTurnPin.modelStr} unavailable (target not in combo); preserving turn pin and terminating turn`
+      );
+      return createPinnedModelUnavailableResponse();
+    }
+    const allPinnedUnusable = await areAllPinnedTargetsModelScopedUnusable({
+      pinnedTargets,
+      resilienceSettings,
+      quotaCutoffResetWindowConfig,
+      comboName: combo.name,
+      body: body as Record<string, unknown>,
+      log,
+      isModelAvailable,
+    });
+    if (allPinnedUnusable) {
+      targetResolution.quotaShareRelease?.();
+      log.warn(
+        "COMBO",
+        `Native Codex turn cannot continue: pinned model ${activeNativeTurnPin.modelStr} is unavailable (model-scoped); preserving turn pin and terminating turn`
+      );
+      return createPinnedModelUnavailableResponse();
+    } else {
+      orderedTargets = pinnedTargets;
+      log.info(
+        "COMBO",
+        `Native Codex turn pinned to ${activeNativeTurnPin.modelStr} on connection ${activeNativeTurnPin.connectionId.slice(0, 8)}`
       );
     }
-    log.info(
-      "COMBO",
-      `Native Codex turn pinned to ${activeNativeTurnPin.modelStr} connection ${activeNativeTurnPin.connectionId.slice(0, 8)}`
-    );
   }
 
   // #5923 (Finding #4) — reset-window config for the shared per-target quota-
   // exhaustion cutoff below. The "auto" strategy already applies its own cutoff
   // via buildAutoCandidates/routableCandidates, so this only affects the other
   // 16 strategies (priority, weighted, etc.) that funnel through executeTarget.
-  const quotaCutoffResetWindowConfig = resolveResetWindowConfig(config as Record<string, unknown>);
-
-  // QA P0 diagnostics: record the order in which targets were actually attempted
   // (provider/model ids only) so a terminal combo failure can report the attempt
   // sequence alongside pool size + exhaustion reasons. Accumulates across set retries.
   const comboAttemptOrder: Array<{ provider: string; model: string }> = [];
@@ -1078,8 +1132,19 @@ async function handleComboChatInner({
     let lastError: string | null = null;
     let earliestRetryAfter: ComboRetryAfter | null = null;
     let lastStatus: number | null = null;
+    // #11804: the loop-safety timer is armed per setTry iteration but must be
+    // cleared on EVERY exit path, not just the happy one. Hoisted to function
+    // scope so the `finally` at the end of this function always reaches it —
+    // otherwise each error path (all_targets_skipped / all_accounts_inactive /
+    // aggregated status / final fallback / global timeout) returned to the client
+    // leaving a 10-minute timer pending, whose closure retains orderedTargets and
+    // the exhausted provider/connection sets. Field evidence on the issue: the
+    // client got a 502 immediately, and "Combo loop safety timeout ...
+    // force-terminating" was logged exactly 600s later.
+    let activeLoopSafetyTimer: ReturnType<typeof setTimeout> | null = null;
 
-    for (let setTry = 0; setTry <= maxSetRetries; setTry++) {
+    try {
+      for (let setTry = 0; setTry <= maxSetRetries; setTry++) {
       // #1731: Per-set-iteration set of providers whose quota is fully exhausted.
       // Reset each retry so providers excluded in a previous attempt get another chance.
       const exhaustedProviders = new Set<string>();
@@ -1165,6 +1230,7 @@ async function handleComboChatInner({
           );
         }, loopSafetyMs);
         loopSafetyTimer.unref?.();
+        activeLoopSafetyTimer = loopSafetyTimer;
       });
       const runningTasks = new Set<Promise<void>>();
       let anySuccess = false;
@@ -1198,6 +1264,7 @@ async function handleComboChatInner({
           strategy === "priority" && target.fallbackOnlyOnQuotaExhaustion === true;
         const stopProtectedPriorityTarget = (message: string) => {
           observeFailure(false, target.executionKey);
+          clearStaleLKGP(combo.name, target.executionKey, combo.id, log, "COMBO");
           return protectedPriorityTarget
             ? { ok: false, response: errorResponse(503, message) }
             : null;
@@ -1219,7 +1286,8 @@ async function handleComboChatInner({
         if (
           resilienceSettings.providerCooldown.enabled &&
           Boolean(provider && provider !== "unknown") &&
-          isProviderInCooldown(provider, target.connectionId ?? undefined, resilienceSettings)
+          (isProviderInCooldown(provider, target.connectionId ?? undefined, resilienceSettings) ||
+            isProviderInCooldown(provider, undefined, resilienceSettings))
         ) {
           log.info("COMBO", `Skipping ${modelStr} — provider ${provider} in global cooldown`);
           recordComboDecision(traceInvocationId, {
@@ -1259,6 +1327,7 @@ async function handleComboChatInner({
           );
           if (persistedSkip) {
             log.info("COMBO", persistedSkip);
+            clearStaleLKGP(combo.name, target.executionKey, combo.id, log, "COMBO");
             if (i > 0) fallbackCount++;
             return null;
           }
@@ -1317,6 +1386,7 @@ async function handleComboChatInner({
               "COMBO",
               `Skipping ${modelStr} — quota exhaustion cutoff (${quotaCutoff.reason || "quota_exhausted"})`
             );
+            clearStaleLKGP(combo.name, target.executionKey, combo.id, log, "COMBO");
             recordComboDecision(traceInvocationId, {
               step: target.executionKey,
               target: modelStr,
@@ -1354,6 +1424,7 @@ async function handleComboChatInner({
               "COMBO",
               `Skipping ${modelStr} — quota budget ${quotaDecision.reason} (remaining ${quotaDecision.tokensRemaining ?? 0}, cost ${quotaDecision.estimatedCost ?? 0})`
             );
+            clearStaleLKGP(combo.name, target.executionKey, combo.id, log, "COMBO");
             if (i > 0) fallbackCount++;
             return null;
           }
@@ -1371,6 +1442,7 @@ async function handleComboChatInner({
               "COMBO",
               `Skipping ${modelStr} — no credentials available or model excluded`
             );
+            clearStaleLKGP(combo.name, target.executionKey, combo.id, log, "COMBO");
             recordComboDecision(traceInvocationId, {
               step: target.executionKey,
               target: modelStr,
@@ -1602,7 +1674,8 @@ async function handleComboChatInner({
                 lastModel,
                 modelStr,
                 `Model routing: ${lastModel} → ${modelStr}`,
-                existingHandoff
+                existingHandoff,
+                universalHandoffConfig.relayMode
               );
             }
           }
@@ -1931,7 +2004,7 @@ async function handleComboChatInner({
               const connId = effectiveConnectionId || undefined;
               void (async () => {
                 try {
-                  const { setLKGP } = await import("../../src/lib/localDb");
+                  const { setLKGP } = await import("@/lib/db/settings");
                   await Promise.all([
                     setLKGP(combo.name, target.executionKey, provider, connId),
                     setLKGP(combo.name, combo.id || combo.name, provider, connId),
@@ -2142,12 +2215,12 @@ async function handleComboChatInner({
             fallbackResult.usedUpstreamRetryHint === true
               ? cooldownMs
               : (fallbackResult.quotaResetHintMs ?? 0);
-          // #6863 vs #7940: lockoutHintMs is only ever nonzero when it traces back to
-          // a genuine upstream signal (usedUpstreamRetryHint or a parsed quotaResetHintMs)
-          // — never a synthetic estimate. Tell recordModelLockoutFailure to honor it
-          // exactly instead of clamping it to maxCooldownMs (#7940's cap still applies
-          // to the exponential-backoff / synthetic-default paths).
-          const lockoutHintVerified = lockoutHintMs > 0;
+          // Only a transport header or google.rpc.RetryInfo is authoritative enough
+          // to bypass maxCooldownMs. Prose and generic JSON remain useful exact hints,
+          // but the operator cap still bounds them.
+          const lockoutHintVerified = retryHintBypassesMaxCooldownMs(
+            fallbackResult.retryHintSource
+          );
           const selectedConnectionId =
             result.headers?.get("X-OmniRoute-Selected-Connection-Id") ||
             result.headers?.get("x-omniroute-selected-connection-id") ||
@@ -2176,6 +2249,13 @@ async function handleComboChatInner({
           // exhausted — if it's the currently sticky-bound one, release the pin now
           // rather than waiting for the next turn's lazy headroom/status recheck.
           releaseStickyPinOnFailure(_sticky.messageHash, targetWithConnection.connectionId);
+          if (
+            providerExhausted ||
+            exhaustedConnections.has(`${provider}:${targetWithConnection.connectionId}`) ||
+            (provider && exhaustedProviders.has(provider))
+          ) {
+            clearStaleLKGP(combo.name, target.executionKey, combo.id, log, "COMBO");
+          }
 
           // #2101: Prevent infinite fallback loops with 400 Bad Request errors that are genuinely
           // body-specific (malformed JSON, bad format, missing required fields).
@@ -2222,6 +2302,7 @@ async function handleComboChatInner({
             lastStatus = result.status;
             if (i > 0) fallbackCount++;
             log.warn("COMBO", `Model ${modelStr} failed with body-specific error, stopping combo`);
+            clearStaleLKGP(combo.name, target.executionKey, combo.id, log, "COMBO");
             // #4279: surface the 400 via the {ok,response} contract so the OUTER
             // target loop resolves the combo and stops. A bare `break` here only
             // exits the inner retry loop; executeTarget then returns null, which
@@ -2229,6 +2310,26 @@ async function handleComboChatInner({
             // to the next model — so the guard failed to stop fallback and a combo
             // of N body-rejecting targets tried all N. Mirrors the 499 path above.
             return { ok: false, response: result };
+          }
+
+          // A model-scoped 400 ("The requested model is not supported" / "not
+          // available for integrator") is permanent for THIS connection — the
+          // account/integration will not gain support for the model mid-session.
+          // Combo still advances to the next target immediately (unchanged,
+          // preserves #5249's cross-provider fallback), but without a lockout
+          // here the SAME dead model gets retried on every future, separate
+          // request forever (observed: every auto-combo request wasted several
+          // upstream 400s on the same GitHub models, all day). isModelLocked()
+          // is checked before dispatch (see the pre-check above this loop), so
+          // this lockout is honored on the next request.
+          if (result.status === 400 && isModelScoped400(errorText) && provider && rawModel) {
+            lockModelIfPerModelQuota(
+              provider,
+              targetWithConnection.connectionId || "",
+              rawModel,
+              "model_capacity",
+              60 * 60 * 1000 // 1h
+            );
           }
 
           // Trigger shared provider circuit breaker for 5xx errors and connection failures. If the
@@ -2342,10 +2443,8 @@ async function handleComboChatInner({
                     // upstream reset (lockoutHintVerified) bypasses it.
                     exactCooldownMs: selectLockoutCooldownMs(lockoutHintMs, mlSettings),
                     maxCooldownMs: mlSettings.maxCooldownMs,
-                    // #6863: a parsed upstream quota reset is authoritative — the upstream
-                    // told us exactly when it resets, so honor it in full instead of
-                    // clamping to maxCooldownMs (which only bounds computed backoff).
-                    exactCooldownIsUpstreamReset: lockoutHintMs > mlSettings.baseCooldownMs,
+                    // Preserve authoritative structured/header resets; clamp body prose.
+                    exactCooldownIsUpstreamReset: lockoutHintVerified,
                   }
                 );
                 lockoutRecorded = true;
@@ -2392,19 +2491,7 @@ async function handleComboChatInner({
           // *next* separate request. Circuit breaker / model lockout deliberately
           // don't react to request-scoped failure classes (see scopedFailure below),
           // so nothing else clears this stale pin.
-          void (async () => {
-            try {
-              const { clearLKGP } = await import("../../src/lib/localDb");
-              await Promise.all([
-                clearLKGP(combo.name, target.executionKey),
-                clearLKGP(combo.name, combo.id || combo.name),
-              ]);
-            } catch (err) {
-              log.warn("COMBO", "Failed to clear Last Known Good Provider. This is non-fatal.", {
-                err,
-              });
-            }
-          })();
+          clearStaleLKGP(combo.name, target.executionKey, combo.id, log, "COMBO");
           recordedAttempts++;
           lastError = errorText || String(result.status);
           comboErrors.push({
@@ -2434,9 +2521,8 @@ async function handleComboChatInner({
                   // upstream reset (lockoutHintVerified) bypasses it.
                   exactCooldownMs: selectLockoutCooldownMs(lockoutHintMs, mlSettings),
                   maxCooldownMs: mlSettings.maxCooldownMs,
-                  // #6863: an authoritative parsed upstream reset must be honored in full,
-                  // never clamped to maxCooldownMs (which only bounds computed backoff).
-                  exactCooldownIsUpstreamReset: lockoutHintMs > mlSettings.baseCooldownMs,
+                  // Preserve authoritative structured/header resets; clamp body prose.
+                  exactCooldownIsUpstreamReset: lockoutHintVerified,
                 }
               );
             }
@@ -2818,11 +2904,20 @@ async function handleComboChatInner({
     // Surface the recovery hint with a generic retry recommendation so the client at least
     // gets a non-opaque message instead of "Combo routing completed without an upstream response".
     recordComboFailure(effectiveSessionId, combo.name);
-    return errorResponseWithComboDiagnostics(
-      503,
-      "Combo routing completed without an upstream response",
-      buildNoUpstreamResponseDiagnostics(orderedTargets.length)
-    );
+      return errorResponseWithComboDiagnostics(
+        503,
+        "Combo routing completed without an upstream response",
+        buildNoUpstreamResponseDiagnostics(orderedTargets.length)
+      );
+    } finally {
+      // #11804: always release the loop-safety timer. Covering every exit path by
+      // construction here means a future `return` added to this function cannot
+      // silently reintroduce the leak.
+      if (activeLoopSafetyTimer) {
+        clearTimeout(activeLoopSafetyTimer);
+        activeLoopSafetyTimer = null;
+      }
+    }
   };
 
   // FASE 2.1: acquire the per-connection concurrency slot for the selected
@@ -2878,6 +2973,7 @@ async function handleRoundRobinCombo({
   settings,
   allCombos,
   signal,
+  apiKeyAllowedConnections = null,
   nesting = null,
   hiddenModelsByProvider = getHiddenModelsByProvider(),
   clientManagedResponsesContext,
@@ -2934,12 +3030,25 @@ async function handleRoundRobinCombo({
         }
     : allCombos;
 
-  const orderedTargets = resolveComboTargets(
+  let orderedTargets = resolveComboTargets(
     rrExpandedCombo,
     rrExpandedAllCombos,
     clampComboDepth(config.maxComboDepth),
     hiddenModelsByProvider
   );
+  // Connection-aware expansion is opt-in. RR runs outside
+  // resolveComboTargetPipeline, so it wires the same stage here. Rotation
+  // granularity becomes model x connection: rrStartIndex takes mod over the
+  // expanded list, so each account occupies its own rotation slot.
+  orderedTargets = await expandTargetsForAllStrategies({
+    strategy: "round-robin",
+    targets: orderedTargets,
+    comboName: combo.name,
+    config: combo.config,
+    settings: settings as Record<string, unknown> | null | undefined,
+    log,
+    apiKeyAllowedConnectionIds: apiKeyAllowedConnections,
+  });
   const tagFilteredTargets = await applyRequestTagRouting(orderedTargets, body, log);
   const evalRankedTargets = orderTargetsByEvalScores(tagFilteredTargets, config.evalRouting, log);
   // Align with the main/auto paths: combo config OR top-level settings (#8488 / #8494).
@@ -3212,6 +3321,7 @@ async function handleRoundRobinCombo({
             "COMBO-RR",
             `Skipping ${modelStr} — no credentials available or model excluded`
           );
+          clearStaleLKGP(combo.name, target.executionKey, combo.id, log, "COMBO-RR");
           if (offset > 0) fallbackCount++;
           continue;
         }
@@ -3227,6 +3337,7 @@ async function handleRoundRobinCombo({
         )
       ) {
         log.info("COMBO-RR", `Skipping ${modelStr} — provider ${provider} in global cooldown`);
+        clearStaleLKGP(combo.name, target.executionKey, combo.id, log, "COMBO-RR");
         if (offset > 0) fallbackCount++;
         continue;
       }
@@ -3239,6 +3350,7 @@ async function handleRoundRobinCombo({
       );
       if (exhaustedSkip) {
         log.info("COMBO-RR", exhaustedSkip);
+        clearStaleLKGP(combo.name, target.executionKey, combo.id, log, "COMBO-RR");
         if (offset > 0) fallbackCount++;
         continue;
       }
@@ -3286,24 +3398,20 @@ async function handleRoundRobinCombo({
               "COMBO-RR",
               `Maximum combo attempts (${maxGlobalAttempts}) exceeded. Terminating loop to prevent runaway requests.`
             );
-            return errorResponseWithComboDiagnostics(
-              503,
-              "Maximum combo retry limit reached",
-              {
-                poolSize: modelCount,
-                attempted: globalAttempts,
-                excluded: [
-                  ...[...exhaustedProviders].map((p) => ({ provider: p, reason: "exhausted" })),
-                  ...[...exhaustedConnections].map((c) => formatExhaustedConnectionKey(String(c))),
-                ],
-                attemptOrder: rrOutcomes.map((o) => ({
-                  provider: o.model.split("/")[0] || "unknown",
-                  model: o.model,
-                })),
-                terminalReason: "max_attempts_exceeded",
-                recovery: buildRecoveryHint("max_attempts_exceeded"),
-              }
-            );
+            return errorResponseWithComboDiagnostics(503, "Maximum combo retry limit reached", {
+              poolSize: modelCount,
+              attempted: globalAttempts,
+              excluded: [
+                ...[...exhaustedProviders].map((p) => ({ provider: p, reason: "exhausted" })),
+                ...[...exhaustedConnections].map((c) => formatExhaustedConnectionKey(String(c))),
+              ],
+              attemptOrder: rrOutcomes.map((o) => ({
+                provider: o.model.split("/")[0] || "unknown",
+                model: o.model,
+              })),
+              terminalReason: "max_attempts_exceeded",
+              recovery: buildRecoveryHint("max_attempts_exceeded"),
+            });
           }
           if (retry > 0) {
             log.info(
@@ -3502,7 +3610,7 @@ async function handleRoundRobinCombo({
               const connId = effectiveConnectionId || undefined;
               void (async () => {
                 try {
-                  const { setLKGP } = await import("../../src/lib/localDb");
+                  const { setLKGP } = await import("@/lib/db/settings");
                   await Promise.all([
                     setLKGP(combo.name, target.executionKey, provider, connId),
                     setLKGP(combo.name, combo.id || combo.name, provider, connId),
@@ -3678,6 +3786,13 @@ async function handleRoundRobinCombo({
             _rrSessionSticky.messageHash,
             targetWithConnection.connectionId
           );
+          if (
+            providerExhausted ||
+            exhaustedConnections.has(`${provider}:${targetWithConnection.connectionId}`) ||
+            (provider && exhaustedProviders.has(provider))
+          ) {
+            clearStaleLKGP(combo.name, target.executionKey, combo.id, log, "COMBO-RR");
+          }
 
           // Transient errors → mark in semaphore so round-robin stops stampeding this target.
           if (
@@ -3733,19 +3848,7 @@ async function handleRoundRobinCombo({
           // LKGP (#919) mirror of handleComboChat's failure-path clear above — see
           // that comment for why this must happen (nothing else clears a pin left
           // by a request-scoped failure class like a stream-readiness timeout).
-          void (async () => {
-            try {
-              const { clearLKGP } = await import("../../src/lib/localDb");
-              await Promise.all([
-                clearLKGP(combo.name, target.executionKey),
-                clearLKGP(combo.name, combo.id || combo.name),
-              ]);
-            } catch (err) {
-              log.warn("COMBO-RR", "Failed to clear Last Known Good Provider. This is non-fatal.", {
-                err,
-              });
-            }
-          })();
+          clearStaleLKGP(combo.name, target.executionKey, combo.id, log, "COMBO-RR");
           recordedAttempts++;
           lastError = errorText || String(result.status);
           lastStatus = result.status;

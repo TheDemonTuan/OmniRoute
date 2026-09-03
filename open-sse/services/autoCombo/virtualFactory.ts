@@ -6,6 +6,9 @@ import { getSettings } from "@/lib/db/settings";
 import { getProviderRegistry } from "./providerRegistryAccessor";
 import type { ConnectionFields } from "@/lib/db/encryption";
 import { NOAUTH_PROVIDERS } from "@/shared/constants/providers";
+import { isMicrosoftDesignerWebRetiredProviderId } from "@/shared/constants/designerWebRetirement";
+import { isRuntimeRetiredProviderId } from "@/shared/constants/providerRetirement";
+import { isCommonChatGptWebRetiredProviderId } from "@/shared/constants/chatgptWebRetirement";
 import { hasUsableWebSessionCredential } from "@/shared/providers/webSessionCredentials";
 import { toNumber } from "@/shared/utils/numeric";
 import { isCompatibleProviderConnectionId } from "@/shared/utils/compatibleProviderId";
@@ -28,12 +31,18 @@ import { buildFamilyCandidateFilter, type ModelFamily } from "./modelFamily";
 import { getHiddenModelsByProvider } from "@/models";
 import { getSyncedAvailableModelsByConnection, getCustomModels } from "@/lib/db/models";
 import { filterPaidOnlyCandidates } from "./paidModelFilter";
+import { filterModelExposureCandidates } from "./modelExposureFilter";
 import {
   filterSubscriptionOnlyCandidates,
   orderPoolByRung,
   type LadderOptions,
 } from "./subscriptionLadder";
-import { filterStrictZeroCostCandidates, filterTosAvoidCandidates } from "./strictZeroCostFilter";
+import {
+  classifyStrictZeroCostCandidate,
+  filterStrictZeroCostCandidates,
+  filterTosAvoidCandidates,
+  findBudgetEntry,
+} from "./strictZeroCostFilter";
 import { resolveFreeAccessState } from "./freeAccessQuota";
 import { isModelExcludedByConnection } from "@/domain/connectionModelRules";
 import { resolveProviderAlias } from "../model.ts";
@@ -41,8 +50,8 @@ import { filterExcludedCandidates } from "./candidateOverrides";
 import { getExcludedConnectionIds } from "@/lib/db/autoCandidateOverrides";
 import {
   filterResilienceBlockedCandidates,
+  buildConnectionResilienceMap,
   SYNTHETIC_NOAUTH_CONNECTION_ID as RESILIENCE_NOAUTH_CONNECTION_ID,
-  type ConnectionResilienceView,
 } from "./resilienceCandidateFilter";
 import type { ChaosTuning } from "./chaosEngine";
 
@@ -102,6 +111,13 @@ export interface VirtualAutoComboCandidate {
   resolvedSupportsVision?: boolean;
   resolvedReasoning?: boolean;
   resolvedSupportsThinking?: boolean;
+  /**
+   * Why STRICT_ZERO_COST would exclude this candidate, or null when it would
+   * not. Only populated for the read-only inspector build (`skip`), where the
+   * guard is deliberately not applied — dispatch builds leave it undefined and
+   * do no extra work.
+   */
+  freeAccessExclusion?: import("./strictZeroCostFilter").StrictZeroCostExclusionReason | null;
 }
 
 type VirtualAutoCombo = AutoComboConfig & {
@@ -115,6 +131,9 @@ type VirtualAutoCombo = AutoComboConfig & {
     allowedConnectionIds?: string[];
     weight: number;
     label: string;
+    /** Carried through from the candidate for the read-only inspector; absent
+     * on every dispatch build. */
+    freeAccessExclusion?: import("./strictZeroCostFilter").StrictZeroCostExclusionReason | null;
   }>;
   /** MAX of candidates' context windows — safe to advertise because the
    * auto-combo context pre-filter routes oversized requests to large-window
@@ -309,9 +328,9 @@ const SYNTHETIC_NOAUTH_CONNECTION_ID = RESILIENCE_NOAUTH_CONNECTION_ID;
 
 // Allowlist of no-auth (keyless) providers permitted to enter the `auto`/`auto-*`
 // candidate pool. Narrowed to the backends verified to answer without any
-// configuration on our reference egress (VPS .15): `opencode` and `felo-web`
-// both return 200 there, while duckduckgo-web (429/VQD rate limit), theoldllm
-// (403 Vercel egress block), chipotle (502), aihorde (401, anon key rejected)
+// configuration on our reference egress (VPS .15): `opencode` returns 200
+// there, while duckduckgo-web (429/VQD rate limit),
+// chipotle (502), aihorde (401, anon key rejected)
 // and the others are unreliable. The excluded providers stay fully usable via
 // direct `<alias>/<model>` calls — they are just kept OUT of auto-routing until
 // re-verified. Re-add an id here to bring it back into every auto/* pool.
@@ -324,7 +343,7 @@ const SYNTHETIC_NOAUTH_CONNECTION_ID = RESILIENCE_NOAUTH_CONNECTION_ID;
 // pool, so it admits any no-auth backend that genuinely serves the family (e.g.
 // auggie, a local CLI subprocess with zero HTTP egress, belongs in auto/glm
 // regardless of this list). See the `bypassAllowlist` param below.
-const AUTO_COMBO_NOAUTH_ALLOWLIST = new Set<string>(["opencode", "felo-web"]);
+const AUTO_COMBO_NOAUTH_ALLOWLIST = new Set<string>(["opencode"]);
 
 function isChatAutoComboNoAuthProvider(
   providerDef: NoAuthProviderDefinition,
@@ -581,17 +600,20 @@ export async function prepareVirtualAutoComboInputs(
   options: {
     includeResolvedCapabilities?: boolean;
     resolutionSnapshot?: ModelCapabilityResolutionSnapshot;
-  } = {}
+  } = {},
+  skip = false // #9133 — inspector opt-out, see filterResilienceBlockedCandidates
 ): Promise<PreparedVirtualAutoComboInputs> {
-  const [connections, disabledNoAuthConnections, settings] = await Promise.all([
+  const [rawConnections, rawDisabledNoAuthConnections, settings] = await Promise.all([
     getCachedProviderConnections({ isActive: true }) as Promise<VirtualFactoryConn[]>,
-    // #6557: no-auth providers (opencode/mimocode/etc.) don't get an isActive
-    // filter applied above since their credential is synthetic, but a real
-    // provider_connections row CAN exist for them (created via "Add Account")
-    // and its own isActive=false must gate the auto-combo pool too — not just
+    // #6557: synthetic no-auth credentials bypass active filtering, but a real Add Account
+    // row may exist; its isActive=false must also gate auto-combo.
     getCachedProviderConnections({ isActive: false }) as Promise<VirtualFactoryConn[]>,
     getSettings().catch(() => ({}) as Record<string, unknown>),
   ]);
+  const available = (conn: VirtualFactoryConn) =>
+    !isCommonChatGptWebRetiredProviderId(conn.provider);
+  const connections = rawConnections.filter(available);
+  const disabledNoAuthConnections = rawDisabledNoAuthConnections.filter(available);
   const blockedProviders = new Set(
     Array.isArray(settings.blockedProviders) ? (settings.blockedProviders as string[]) : []
   );
@@ -600,19 +622,24 @@ export async function prepareVirtualAutoComboInputs(
       .filter((conn) => conn.provider in NOAUTH_PROVIDERS)
       .map((conn) => conn.provider)
   );
+  const runtimeConnections = connections.filter(
+    (connection) =>
+      !isMicrosoftDesignerWebRetiredProviderId(connection.provider) &&
+      !isRuntimeRetiredProviderId(connection.provider)
+  );
   const hiddenModelsMap = getHiddenModelsByProvider();
   // #7622: a no-auth provider's own provider_connections row (#6557) can carry
   // `providerSpecificData.excludedModels` regardless of its isActive state (the
   // dispatch-time enforcement in auth.ts does not gate on isActive either), so
   // gather it from BOTH the active and disabled connection lists.
   const noAuthProviderSpecificData = new Map<string, Record<string, unknown> | null | undefined>();
-  for (const conn of [...connections, ...disabledNoAuthConnections]) {
+  for (const conn of [...runtimeConnections, ...disabledNoAuthConnections]) {
     if (conn.provider in NOAUTH_PROVIDERS) {
       noAuthProviderSpecificData.set(conn.provider, conn.providerSpecificData);
     }
   }
 
-  const validConnections = connections.filter(hasUsableConnectionCredential);
+  const validConnections = runtimeConnections.filter(hasUsableConnectionCredential);
 
   const candidatePool: VirtualAutoComboCandidate[] = [];
   const registry = getProviderRegistry();
@@ -698,10 +725,10 @@ export async function prepareVirtualAutoComboInputs(
 
   // #7623: honor existing model lockouts + connection cooldown/terminal state so
   // auto/* never advertises models the dispatch path would immediately skip.
-  const connectionsById = new Map<string, ConnectionResilienceView>();
-  for (const conn of [...connections, ...disabledNoAuthConnections]) {
-    connectionsById.set(conn.id, conn);
-  }
+  const connectionsById = buildConnectionResilienceMap([
+    ...runtimeConnections,
+    ...disabledNoAuthConnections,
+  ]);
 
   const connectedProviders = new Set(validConnections.map((conn) => conn.provider));
   const buildPreparedPool = (bypassNoAuthAllowlist: boolean) => {
@@ -717,13 +744,18 @@ export async function prepareVirtualAutoComboInputs(
       ),
     ];
 
-    const resilienceFilteredPool = filterResilienceBlockedCandidates(pool, connectionsById);
+    const resilienceFilteredPool = filterResilienceBlockedCandidates(pool, connectionsById, skip);
     if (resilienceFilteredPool !== pool) pool = resilienceFilteredPool;
 
     // #6512 (follow-up to #6328/#6495): when the operator opts into `hidePaidModels`,
     // exclude paid-only backends from EVERY `auto/*` candidate pool.
     const paidFilteredPool = filterPaidOnlyCandidates(pool, settings.hidePaidModels === true);
     if (paidFilteredPool !== pool) pool = paidFilteredPool;
+
+    // #11481: mandatory mirror of the /v1/models exposure allow/deny list —
+    // see src/shared/utils/modelExposureList.ts for why (#6512's lesson).
+    const exposureFilteredPool = filterModelExposureCandidates(pool, settings);
+    if (exposureFilteredPool !== pool) pool = exposureFilteredPool;
 
     // STRICT_ZERO_COST: opt-in, off by default (`settings.freeAccessPolicy !== "strict"`
     // leaves `pool` byte-identical, same contract as `hidePaidModels`). See
@@ -732,16 +764,41 @@ export async function prepareVirtualAutoComboInputs(
     // per-candidate: `resolveFreeAccessState` here is a raw pass-through of the real
     // per-(provider,connectionId) resolver; the filter itself decides which connection(s)
     // on each candidate to check and rewrites `allowedConnectionIds` to the SAFE subset.
-    const strictFilteredPool = filterStrictZeroCostCandidates(pool, {
-      enabled: settings.freeAccessPolicy === "strict",
-      resolveFreeAccessState,
+    const strictZeroCostThresholds = {
       // 1 percentage point of headroom, not 0: `freeAccessQuota.ts` reports
       // remaining allowance as a percentage, and a raw ">0" comparison would
       // let a reading of e.g. 0.3% (rounding noise, not real headroom) pass.
       minRemainingAllowance: 1,
       maxStateAgeMs: toNumber(settings.autoRefreshProviderQuotaInterval, 180) * 1000,
+    };
+    const strictZeroCostOn = settings.freeAccessPolicy === "strict";
+    const strictFilteredPool = filterStrictZeroCostCandidates(pool, {
+      // The read-only candidate inspector (#9133) must be able to see what the
+      // guard would exclude, and why — the same opt-out the resilience filter
+      // already honours through `skip`. Dispatch (`skip === false`) is unaffected.
+      enabled: strictZeroCostOn && !skip,
+      resolveFreeAccessState,
+      ...strictZeroCostThresholds,
     });
     if (strictFilteredPool !== pool) pool = strictFilteredPool;
+
+    // Annotate here rather than in the handler: this is where the thresholds and
+    // `resolveFreeAccessState` already live. Doing it downstream would mean a second
+    // copy of both, with nothing to keep them in agreement.
+    if (strictZeroCostOn && skip) {
+      pool = pool.map((candidate) => {
+        const verdict = classifyStrictZeroCostCandidate(
+          candidate,
+          findBudgetEntry(candidate),
+          resolveFreeAccessState,
+          strictZeroCostThresholds
+        );
+        return {
+          ...candidate,
+          freeAccessExclusion: verdict.outcome === "safe" ? null : verdict.outcome,
+        };
+      });
+    }
 
     // Separate, optional ToS guard — independent of economic safety on purpose.
     const tosFilteredPool = filterTosAvoidCandidates(pool, settings.excludeTosAvoid === true);
@@ -1041,6 +1098,9 @@ export async function createVirtualAutoComboFromPrepared(
       : {}),
     weight: snapshotScores.get(candidate.modelStr) ?? 1,
     label: candidate.provider,
+    ...(candidate.freeAccessExclusion === undefined
+      ? {}
+      : { freeAccessExclusion: candidate.freeAccessExclusion }),
   }));
   const autoConfig = {
     candidatePool: providerPool,

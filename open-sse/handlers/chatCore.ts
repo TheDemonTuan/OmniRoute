@@ -77,7 +77,11 @@ import {
   isStripReasoningRequested,
 } from "./chatCore/headers.ts";
 import { markCodexScopeRateLimited } from "./chatCore/codexFailover.ts";
-import { getCodexClientSessionId, isCodexOriginatedHeaders } from "../config/codexIdentity.ts";
+import {
+  getCodexClientSessionId,
+  isCodexOriginatedHeaders,
+  isClaudeCodeOriginatedHeaders,
+} from "../config/codexIdentity.ts";
 import {
   noteCodexTurnStateProvenance,
   readCodexTurnStateHeader,
@@ -119,11 +123,7 @@ export {
   buildStreamingResponseHeaders,
   stripStaleForwardingHeaders,
 };
-import {
-  extractMemoryTextFromResponse,
-  extractMemoryTextFromRequestBody,
-  resolveMemoryOwnerId,
-} from "./chatCore/memoryExtraction.ts";
+import { resolveMemoryOwnerId, runMemoryExtractionGate } from "./chatCore/memoryExtraction.ts";
 import { CORS_HEADERS } from "../utils/cors.ts";
 import { checkResourcePressureGuard } from "../utils/resourcePressure.ts";
 import { normalizeHeaders } from "../utils/headers.ts";
@@ -131,7 +131,7 @@ import { resolveChatCoreRequestFormat } from "./chatCore/requestFormat.ts";
 import { resolveChatCoreTargetFormat } from "./chatCore/targetFormat.ts";
 import { resolveOmniGlyphTransport } from "../services/compression/imageTransportPolicy.ts";
 import { stripStore, usesClaudeBridge } from "./chatCore/agentRouterProtocol.ts";
-import { defaultClaudeToolType } from "./chatCore/claudeToolDefaults.ts";
+import { normalizeClaudeToolsForDispatch } from "./chatCore/claudeToolDefaults.ts";
 import { injectSystemPrompt, injectCustomSystemPrompt } from "../services/systemPrompt.ts";
 import { translateRequest, needsTranslation } from "../translator/index.ts";
 import { FORMATS } from "../translator/formats.ts";
@@ -359,6 +359,7 @@ import { assertExclusiveConnectionLeaseFence } from "@/lib/db/exclusiveConnectio
 import { deleteSessionAccountAffinity } from "@/lib/db/sessionAccountAffinity";
 import { getCacheControlSettings } from "@/lib/cacheControlSettings";
 import { guardrailRegistry } from "@/lib/guardrails";
+import type { VideoBridgeLogRedactionEntry } from "@/lib/guardrails/videoBridge";
 import {
   shouldPreserveCacheControl,
   resolveConnectionCacheOverride,
@@ -399,8 +400,12 @@ import {
   acquireMany as acquireConcurrencyGates,
   markBlocked as markAccountSemaphoreBlocked,
 } from "../services/accountSemaphore.ts";
-import { lockModel, lockModelIfPerModelQuota } from "../services/accountFallback.ts";
-import { lockExactModel } from "../services/accountFallback.ts";
+import {
+  lockModel,
+  lockModelIfPerModelQuota,
+  recordCoreOwnedAntigravityQuotaState,
+  shouldDeferAntigravityQuotaStateToCaller,
+} from "../services/accountFallback.ts";
 import {
   generateSignature,
   getCachedResponse,
@@ -468,11 +473,21 @@ import {
   isRpmExhausted,
 } from "../services/geminiRateLimitTracker.ts";
 import { isSmallEnoughForSemanticCache } from "../utils/estimateSize.ts";
+import { getProactiveCompressionRatio } from "@/lib/db/compression";
 
 type ChatCoreExecutorResult = ReturnType<typeof normalizeExecutorResult> & {
   _executionCredentials?: Record<string, unknown>;
   _accountSemaphoreRelease?: () => void;
 };
+
+/**
+ * #12150 P1b: shape of handleChatCore's optional `videoBridgeLog` param — see
+ * its destructure default below. `handleChatCore`'s own params object has no
+ * type annotation (pre-existing convention for this god-function), so this
+ * alias is applied via a local cast at each read site instead of widening
+ * the whole destructure to a typed object.
+ */
+type VideoBridgeLogParam = { observed: boolean; redaction: VideoBridgeLogRedactionEntry[] } | null;
 
 /**
  * Core chat handler - shared between SSE and Worker
@@ -524,8 +539,23 @@ export async function handleChatCore({
   skipResourcePressureGuard = false,
   reasoningTransportFallback = "drop",
   managedLease = null,
+  // #12150 P1b: additive, optional video-bridge log/Memory shadow — shape is
+  // VideoBridgeLogParam (defined near the top of this file). Built once in chat.ts from
+  // preCallGuardrails.results (video-bridge guardrail meta) and threaded here
+  // through executeChatWithBreaker. `undefined` for every non-video request,
+  // so this parameter changes nothing on the byte-identical default path.
+  // `observed` gates durable Memory extraction (surface 3); `redaction` is
+  // applied to a CLONE of `body` at the persistAttemptLogs sink (surface 1) —
+  // the model-bound `body` itself is never touched.
+  videoBridgeLog = undefined,
 }) {
   let { provider, model, extendedContext } = modelInfo;
+  // #12150 P1b: true iff the video-bridge guardrail rendered >=1 transcript
+  // cue into a replaced part of this request. Gates both request- and
+  // response-derived Memory extraction
+  // (chatCore/memoryExtraction.ts::runMemoryExtractionGate).
+  const videoBridgeObserved: boolean =
+    (videoBridgeLog as VideoBridgeLogParam | undefined)?.observed === true;
   const resilienceSettings = resolveResilienceSettings(cachedSettings);
   if (!skipResourcePressureGuard) {
     try {
@@ -921,6 +951,19 @@ export async function handleChatCore({
     });
   if (webSearchFallbackPlan.enabled) {
     body = bodyWithWebSearchFallback as typeof body;
+    // Server-side web-search execution cannot be injected into an arbitrary
+    // client SSE stream (streaming interception is not implemented — #9725), so
+    // a stream:true OpenAI Responses request whose web_search tool was converted
+    // to the fallback is executed non-streaming: the assembled response then
+    // carries the executed results (function_call_output + web_search_call) and
+    // JSON-tolerating Responses clients (pi-web-access) consume it directly.
+    if (
+      sourceFormat === FORMATS.OPENAI_RESPONSES &&
+      (body as Record<string, unknown>).stream === true
+    ) {
+      (body as Record<string, unknown>).stream = false;
+      log?.info?.("TOOLS", `web_search fallback forced non-streaming response for ${provider}`);
+    }
     log?.info?.(
       "TOOLS",
       `Converted ${webSearchFallbackPlan.convertedToolCount} web_search tool(s) to OmniRoute fallback for ${provider}`
@@ -964,8 +1007,14 @@ export async function handleChatCore({
   const isCodexResponsesEcho =
     (isResponsesEndpoint || sourceFormat === FORMATS.OPENAI_RESPONSES) &&
     isCodexOriginatedHeaders(clientRawRequest?.headers);
+
+  // Detect Claude Code CLI so we can auto-enable model echo — this prevents
+  // session restore failures when the resolved upstream model (e.g.
+  // `oc/nemotron-3-ultra-free`) is not recognized by the client on `--resume`.
+  const isClaudeCodeClient = isClaudeCodeOriginatedHeaders(clientRawRequest?.headers);
+
   let echoModel =
-    (settings.echoRequestedModelName === true || isCodexResponsesEcho) &&
+    (settings.echoRequestedModelName === true || isCodexResponsesEcho || isClaudeCodeClient) &&
     typeof requestedModel === "string" &&
     requestedModel
       ? requestedModel
@@ -1039,6 +1088,9 @@ export async function handleChatCore({
       // client explicitly sent x-omniroute-session-id. The raw header remains a
       // fallback for any caller that somehow bypassed conversationId resolution.
       sessionTag: conversationId || explicitSessionIdHeader,
+      // #12150 P1b surface 1: undefined for every non-video request (byte-identical
+      // to before this param existed) — see applyVideoBridgeLogRedaction.
+      videoBridgeLogRedaction: (videoBridgeLog as VideoBridgeLogParam | undefined)?.redaction,
     });
 
   // Primary path: merge client model id + alias target so config on either key applies; resolved
@@ -1423,7 +1475,7 @@ export async function handleChatCore({
       };
       if ((isCombo && comboName) || routingComboId) {
         try {
-          const { getComboByName } = await import("../../src/lib/localDb");
+          const { getComboByName } = await import("@/lib/db/combos");
           let comboConfig = await getComboByName(comboName);
           if (!comboConfig && comboName?.startsWith("combo/")) {
             comboConfig = await getComboByName(comboName.substring(6));
@@ -1557,12 +1609,12 @@ export async function handleChatCore({
             await import("../services/compression/outputStyles/backCompat.ts");
           const selection = resolveOutputStyleSelection(config);
           if (selection.length > 0) {
-            const { applyOutputStyles } =
+            const { applyOutputStyles, resolveOutputStyleLanguage } =
               await import("../services/compression/outputStyles/apply.ts");
-            const outputStyleLanguage =
-              config.languageConfig?.enabled === true
-                ? config.languageConfig.defaultLanguage
-                : "en";
+            const outputStyleLanguage = resolveOutputStyleLanguage(
+              config.languageConfig,
+              body as Parameters<typeof resolveOutputStyleLanguage>[1]
+            );
             outputStyleResult = applyOutputStyles(
               body as Parameters<typeof applyOutputStyles>[0],
               selection,
@@ -1914,7 +1966,7 @@ export async function handleChatCore({
     if (isCombo && comboName) {
       log?.info?.("CONTEXT", `Attempting to resolve combo limits for comboName=${comboName}`);
       try {
-        const { getComboByName } = await import("../../src/lib/localDb");
+        const { getComboByName } = await import("@/lib/db/combos");
         const { resolveComboTargets } = await import("../services/combo.ts");
         let comboConfig = await getComboByName(comboName);
         if (!comboConfig && comboName.startsWith("combo/")) {
@@ -1943,10 +1995,22 @@ export async function handleChatCore({
         // target's window; min(...allTargets) is only a defensive fallback —
         // the old unconditional min compressed a 1M-target request at the
         // smallest sibling's window ("agent keeps forgetting things").
+        // An explicit `context_length` on the combo record (Agent Features →
+        // Context length) is an operator declaration and outranks the inferred
+        // per-target window — see resolveComboContextLimit().
+        const rawComboContextLength = (comboConfig as { context_length?: unknown } | null)
+          ?.context_length;
+        const comboContextLength =
+          typeof rawComboContextLength === "number" &&
+          Number.isFinite(rawComboContextLength) &&
+          rawComboContextLength > 0
+            ? rawComboContextLength
+            : null;
         const resolved = resolveComboContextLimit({
           provider,
           model: effectiveModel,
           comboTargetLimits,
+          comboContextLength,
         });
         contextLimit = resolved.limit;
         log?.info?.(
@@ -1958,7 +2022,7 @@ export async function handleChatCore({
       }
     }
 
-    const COMPRESSION_THRESHOLD = 0.7;
+    const COMPRESSION_THRESHOLD = getProactiveCompressionRatio();
     let reservedTokens = 0;
     if (Array.isArray(body.tools)) {
       reservedTokens = estimateTokens(body.tools);
@@ -2586,9 +2650,13 @@ export async function handleChatCore({
   // definitions that omit the required `type` discriminator with HTTP 400. Default
   // a missing `type` to "custom" before dispatch, mirroring Anthropic's own
   // inference, so legacy Claude-format tool payloads survive strict gateways (#2195).
+  // AgentRouter is the opposite quirk: its Rust deserializer only accepts versioned
+  // tool types and 400s on `type: "custom"` — there the discriminator is stripped
+  // instead (see claudeToolDefaults.ts).
   if (targetFormat === FORMATS.CLAUDE && Array.isArray(translatedBody.tools)) {
-    translatedBody.tools = defaultClaudeToolType(
-      translatedBody.tools
+    translatedBody.tools = normalizeClaudeToolsForDispatch(
+      translatedBody.tools,
+      provider
     ) as typeof translatedBody.tools;
   }
 
@@ -2692,6 +2760,7 @@ export async function handleChatCore({
 
   const previousResponseIdPolicy = applyResponsesPreviousResponseIdPolicy(translatedBody, {
     mode: settings.responsesPreviousResponseIdMode,
+    provider,
     sourceFormat,
     targetFormat,
     credentials,
@@ -2804,7 +2873,12 @@ export async function handleChatCore({
     log?.debug?.("PARAMS", `Renamed max_completion_tokens to max_tokens for ${model}`);
   }
 
-  stripStore(translatedBody, provider, targetFormat);
+  stripStore(
+    translatedBody,
+    provider,
+    targetFormat,
+    credentials?.providerSpecificData as Record<string, unknown> | null | undefined
+  );
 
   // Chat clients may send stream_options.include_usage, but OpenAI Responses
   // upstreams (including Azure AI Foundry /responses) reject stream_options.
@@ -4280,19 +4354,57 @@ export async function handleChatCore({
               }
 
               // Providers with per-model quotas — lock the model only, not the connection
-              const quotaCooldownMs = kimiRateLimitResetAt
+              let quotaCooldownMs = kimiRateLimitResetAt
                 ? Math.max(new Date(kimiRateLimitResetAt).getTime() - Date.now(), 0)
                 : retryAfterMs || COOLDOWN_MS.rateLimit;
+              const deferAntigravityQuotaStateToCaller = shouldDeferAntigravityQuotaStateToCaller(
+                provider,
+                typeof onStreamFailure === "function"
+              );
+              const isAntigravityQuotaFamily = shouldDeferAntigravityQuotaStateToCaller(
+                provider,
+                true
+              );
+              let coreOwnedAntigravityLockout: {
+                cooldownMs: number;
+                failureCount: number;
+              } | null = null;
+              if (isAntigravityQuotaFamily && !deferAntigravityQuotaStateToCaller) {
+                const quotaErrorText =
+                  typeof upstreamErrorBody === "string"
+                    ? upstreamErrorBody
+                    : upstreamErrorBody == null
+                      ? message
+                      : JSON.stringify(upstreamErrorBody);
+                coreOwnedAntigravityLockout = await recordCoreOwnedAntigravityQuotaState({
+                  provider,
+                  connectionId: errorConnectionId,
+                  model,
+                  status: statusCode,
+                  errorText: quotaErrorText,
+                  headers: providerResponse.headers,
+                });
+                quotaCooldownMs = coreOwnedAntigravityLockout.cooldownMs;
+              }
               const accountSemaphoreKey = resolveAccountSemaphoreKey({
                 provider,
                 model: currentModel,
                 connectionId: errorConnectionId,
                 credentials,
               });
-              if (accountSemaphoreKey) {
+              if (accountSemaphoreKey && !deferAntigravityQuotaStateToCaller) {
                 markAccountSemaphoreBlocked(accountSemaphoreKey, quotaCooldownMs);
               }
-              if (kimiRateLimitResetAt) {
+              if (deferAntigravityQuotaStateToCaller) {
+                // Defer both model and account-semaphore cooldowns to
+                // markAccountUnavailable, where header/body provenance and the
+                // configured maxCooldownMs are available. Direct consumers such
+                // as Responses pass no owner callback and retain core ownership.
+              } else if (coreOwnedAntigravityLockout) {
+                console.warn(
+                  `[provider] Node ${errorConnectionId} Antigravity model quota exhausted (${statusCode}) for ${model} - ${Math.ceil(coreOwnedAntigravityLockout.cooldownMs / 1000)}s (failureCount=${coreOwnedAntigravityLockout.failureCount}, owner=core)`
+                );
+              } else if (kimiRateLimitResetAt) {
                 await updateProviderConnection(errorConnectionId, {
                   testStatus: "unavailable",
                   rateLimitedUntil: kimiRateLimitResetAt,
@@ -4305,8 +4417,7 @@ export async function handleChatCore({
                   `[provider] Node ${errorConnectionId} Kimi request window exhausted (${statusCode}) — retrying after ${kimiRateLimitResetAt}`
                 );
               } else if (isModelScope() && errorConnectionId) {
-                const lockFn = provider === "antigravity" ? lockExactModel : lockModel;
-                lockFn(provider, errorConnectionId, model, "quota_exhausted", quotaCooldownMs);
+                lockModel(provider, errorConnectionId, model, "quota_exhausted", quotaCooldownMs);
                 console.warn(
                   `[provider] Node ${errorConnectionId} ModelScope model quota exhausted (${statusCode}) for ${model} - ${Math.ceil(quotaCooldownMs / 1000)}s (connection stays active)`
                 );
@@ -5049,17 +5160,22 @@ export async function handleChatCore({
       }
     );
 
-    if (memoryOwnerId && memorySettings?.enabled && memorySettings.maxTokens > 0) {
-      const requestMemoryText = extractMemoryTextFromRequestBody(body as Record<string, unknown>);
-      if (requestMemoryText) {
-        extractFacts(requestMemoryText, memoryOwnerId, pipelineSessionId);
-      }
-
-      const memoryText = extractMemoryTextFromResponse(memoryExtractionResponse);
-      if (memoryText) {
-        extractFacts(memoryText, memoryOwnerId, pipelineSessionId);
-      }
-    }
+    // #12150 P1b surface 3 (fix round 1): a video-bridge-observed request's
+    // request- AND response-derived text both carry the full transcript (the
+    // flattened description on the request side, the model's own reply on
+    // the response side) — neither may populate durable Memory. See
+    // runMemoryExtractionGate for the shared gate + extraction wiring, unit
+    // tested directly in tests/unit/video-bridge-memory-suppression.test.ts.
+    runMemoryExtractionGate({
+      memoryOwnerId,
+      memorySettings,
+      videoBridgeObserved,
+      pipelineSessionId,
+      requestBody: body as Record<string, unknown>,
+      responseBody: memoryExtractionResponse as Record<string, unknown> | null,
+      extractFacts,
+      log,
+    });
 
     const customSkillExecutionEnabled =
       Boolean(memoryOwnerId) && memorySettings?.skillsEnabled === true;
@@ -5390,6 +5506,7 @@ export async function handleChatCore({
 
   const streamReadiness = await ensureStreamReadiness(providerResponse, {
     timeoutMs: streamReadinessPolicy.timeoutMs,
+    maxTimeoutMs: streamReadinessPolicy.maxTimeoutMs,
     provider,
     model,
     log,
@@ -5672,23 +5789,20 @@ export async function handleChatCore({
     });
     // === /Quota Share POST-hook streaming ===
 
-    if (
-      memoryOwnerId &&
-      memorySettings?.enabled &&
-      memorySettings.maxTokens > 0 &&
-      streamStatus === 200
-    ) {
-      const requestMemoryText = extractMemoryTextFromRequestBody(body as Record<string, unknown>);
-      if (requestMemoryText) {
-        extractFacts(requestMemoryText, memoryOwnerId, pipelineSessionId);
-      }
-
-      const streamedMemoryText = extractMemoryTextFromResponse(
-        (streamResponseBody ?? null) as Record<string, unknown> | null
-      );
-      if (streamedMemoryText) {
-        extractFacts(streamedMemoryText, memoryOwnerId, pipelineSessionId);
-      }
+    if (streamStatus === 200) {
+      // #12150 P1b surface 3 (fix round 1): see the matching non-streaming
+      // gate above — an observed request populates NO durable memory from
+      // either the request-derived text or this streamed response.
+      runMemoryExtractionGate({
+        memoryOwnerId,
+        memorySettings,
+        videoBridgeObserved,
+        pipelineSessionId,
+        requestBody: body as Record<string, unknown>,
+        responseBody: (streamResponseBody ?? null) as Record<string, unknown> | null,
+        extractFacts,
+        log,
+      });
     }
 
     // Semantic cache: store assembled streaming response for future cache hits
@@ -5705,6 +5819,8 @@ export async function handleChatCore({
     });
 
     // Plugin onStreamComplete hook — fire-and-forget, fail-open (#9571)
+    // Pass traceId as requestId so plugins can correlate the stream-completion event
+    // with the originating request (the same id used for onRequest/onResponse). (#11825)
     runPluginOnStreamCompleteHook({
       status: normalizedStreamStatus,
       usage: streamUsage as Record<string, unknown> | undefined,
@@ -5713,6 +5829,7 @@ export async function handleChatCore({
       provider,
       errorCode: streamErrorCode,
       startTime,
+      requestId: traceId,
     });
   };
 

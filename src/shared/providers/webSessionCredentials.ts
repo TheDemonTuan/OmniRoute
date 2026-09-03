@@ -28,6 +28,21 @@ export type WebSessionCredentialRequirement =
     };
 
 export const WEB_SESSION_CREDENTIAL_REQUIREMENTS = {
+  "chatgpt-web": {
+    kind: "cookie",
+    credentialName: "Playwright storage-state JSON",
+    placeholder: '{"cookies":[...],"origins":[...]}',
+    acceptsFullCookieHeader: false,
+    storageKeys: ["storageState", "cookies", "origins"],
+    hintFallback:
+      "Export storageState from a browser context that is already signed in to chatgpt.com, then paste the complete JSON object. Raw Cookie headers are intentionally rejected.",
+    guideSteps: [
+      "Sign in to chatgpt.com in a dedicated browser profile.",
+      "Export that profile's Playwright-compatible storageState object.",
+      "Paste the complete JSON object here and validate it before saving.",
+    ],
+    guideNote: "The credential is encrypted at rest and is used only by the local browser context.",
+  },
   "chatgpt-web-codex": {
     kind: "cookie",
     credentialName: "ChatGPT Cookie header (full)",
@@ -55,13 +70,6 @@ export const WEB_SESSION_CREDENTIAL_REQUIREMENTS = {
     placeholder: "R...",
     acceptsFullCookieHeader: false,
     storageKeys: ["apiKey", "token", "uuid", "app-config-uuid"],
-  },
-  "chatgpt-web": {
-    kind: "cookie",
-    credentialName: "__Secure-next-auth.session-token",
-    placeholder: "__Secure-next-auth.session-token=...",
-    acceptsFullCookieHeader: true,
-    storageKeys: ["cookie", "sessionToken", "session-token", "__Secure-next-auth.session-token"],
   },
   "grok-web": {
     kind: "cookie",
@@ -135,13 +143,6 @@ export const WEB_SESSION_CREDENTIAL_REQUIREMENTS = {
     acceptsFullCookieHeader: true,
     storageKeys: ["cookie", "ecto_1_sess", "abra_sess"],
   },
-  "hailuo-web": {
-    kind: "token",
-    credentialName: "_token",
-    placeholder: '_token=... (hailuo.ai → DevTools → Local Storage → "_token")',
-    acceptsFullCookieHeader: false,
-    storageKeys: ["token", "_token"],
-  },
   "claude-web": {
     kind: "cookie",
     credentialName: "sessionKey",
@@ -160,13 +161,6 @@ export const WEB_SESSION_CREDENTIAL_REQUIREMENTS = {
     kind: "token",
     credentialName: "access_token",
     placeholder: "access_token=... or a DevTools HAR export",
-    acceptsFullCookieHeader: false,
-    storageKeys: ["token", "access_token", "accessToken"],
-  },
-  "microsoft-designer-web": {
-    kind: "token",
-    credentialName: "access_token",
-    placeholder: "access_token=... (Authorization: Bearer header from the DallE.ashx request)",
     acceptsFullCookieHeader: false,
     storageKeys: ["token", "access_token", "accessToken"],
   },
@@ -252,14 +246,6 @@ export const WEB_SESSION_CREDENTIAL_REQUIREMENTS = {
       "sessionid=...; ttwid=...; s_v_web_id=... (or fp=verify_... fallback from www.dola.com)",
     acceptsFullCookieHeader: true,
     storageKeys: ["cookie", "sessionid", "ttwid", "s_v_web_id", "fp"],
-  },
-  "qwen-web": {
-    kind: "cookie",
-    credentialName: "full Cookie header (must include cna, ssxmod_itna, token)",
-    placeholder:
-      "cna=...; token=...; ssxmod_itna=...; ssxmod_itna2=... (full Cookie header from chat.qwen.ai)",
-    acceptsFullCookieHeader: true,
-    storageKeys: ["cookie", "token", "ssxmod_itna", "ssxmod_itna2", "cna", "tongyi_sso_ticket"],
   },
   "duckduckgo-web": {
     kind: "cookie",
@@ -362,6 +348,46 @@ export const WEB_SESSION_CREDENTIAL_REQUIREMENTS = {
     placeholder: "__Secure-better-auth.session_token=... or full Cookie header from conol.ai",
     acceptsFullCookieHeader: true,
     storageKeys: ["cookie", "__Secure-better-auth.session_token"],
+  },
+  maxai: {
+    kind: "token",
+    credentialName: "MaxAI access token (Bearer) + device id",
+    placeholder:
+      "Use browser sign-in — OmniRoute mints the MaxAI access token, device id, and user id for you",
+    acceptsFullCookieHeader: false,
+    storageKeys: [
+      "accessToken",
+      "access_token",
+      "maxaiAccessToken",
+      "deviceId",
+      "maxaiDeviceId",
+      "userId",
+      "maxaiUserId",
+    ],
+  },
+  uc: {
+    // UC (uncensored.com) persona: auth is the durable Clerk `__client` cookie
+    // (a JWT with no exp) plus the session id + user id, all stored in
+    // providerSpecificData. The executor mints a short-lived `__session` JWT per
+    // connect from `__client`; it never reads `apiKey`. Storage keys mirror the
+    // aliases resolveUcCredential() accepts (ucClientCookie/clientCookie/__client,
+    // ucSid/sid, ucUid/uid, ucCookies/cookies).
+    kind: "cookie",
+    credentialName: "Clerk __client cookie + session id + user id",
+    placeholder: "__client=...; then set session id (sid) and user id (uid)",
+    acceptsFullCookieHeader: true,
+    storageKeys: [
+      "cookie",
+      "cookies",
+      "ucCookies",
+      "ucClientCookie",
+      "clientCookie",
+      "__client",
+      "ucSid",
+      "sid",
+      "ucUid",
+      "uid",
+    ],
   },
 } satisfies Record<string, WebSessionCredentialRequirement> &
   Record<keyof typeof WEB_COOKIE_PROVIDERS, WebSessionCredentialRequirement>;

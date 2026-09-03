@@ -19,26 +19,24 @@ RUN apt-get update \
 FROM base AS builder
 WORKDIR /app
 
-# Cache dependency layer for ultra-fast incremental builds
+# Cache dependency layer
 COPY package.json bun.lock* pnpm-workspace.yaml* ./
 COPY open-sse/package.json ./open-sse/package.json
 COPY packages/ ./packages/
 
-# Root postinstall helpers needed during bun ci lifecycle execution
+# Root postinstall helpers needed during bun install lifecycle
 COPY scripts/build/ ./scripts/build/
 COPY scripts/dev/sync-env.mjs ./scripts/dev/sync-env.mjs
-# Fast Bun native package install with trustedDependencies and bun ci (fallback to bun install if lockfile drifts)
-RUN bun ci --include=optional --quiet || bun install --include=optional --quiet
 
-# Ensure native tls-client-node binary is fetched if needed (stealth transport fallback)
-RUN if [ -f "node_modules/tls-client-node/scripts/postinstall.js" ] && [ ! -d "node_modules/tls-client-node/bin" ]; then \
-      bun node_modules/tls-client-node/scripts/postinstall.js || true; \
-    fi
+# Fast Bun native package install
+RUN bun install --include=optional --quiet
 
-# Smoke check native database driver used by Bun production (bun:sqlite)
+# Fail the build if wreq-js cannot resolve its current platform binding.
+RUN bun -e "const wreq = require('wreq-js'); if (typeof wreq.createTransport !== 'function') process.exit(1)"
+
+# Smoke check native database driver used by Bun (bun:sqlite)
 RUN bun -e "import { Database } from 'bun:sqlite'; const db = new Database(':memory:'); db.query('SELECT 1 AS ok').get(); db.close(); console.log('bun:sqlite smoke: OK');"
 
-# Copy complete project source code
 COPY . .
 
 # Turbopack is supported on Bun 1.4 + Next 16.3; override via --build-arg OMNIROUTE_USE_TURBOPACK=0 if needed
@@ -54,8 +52,8 @@ ENV DASHBOARD_ALLOW_EMBED=$DASHBOARD_ALLOW_EMBED
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
 
-# Bun native Next.js build execution (direct script invocation without relying on node shim)
-RUN bun scripts/build/build-next-isolated.mjs
+# Bun native Next.js build execution
+RUN bun run --quiet build
 
 # ── Runner Base stage (100% Bun Native Production Runtime) ──────────────────
 FROM oven/bun:1.4.0-slim AS runner-base

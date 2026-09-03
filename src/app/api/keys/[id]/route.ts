@@ -3,9 +3,9 @@ import {
   deleteApiKey,
   getApiKeyById,
   updateApiKeyPermissions,
-  isCloudEnabled,
   ApiKeyPolicyInvariantError,
-} from "@/lib/localDb";
+} from "@/lib/db/apiKeys";
+import { isCloudEnabled } from "@/lib/db/settings";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 import { syncToCloud } from "@/lib/cloudSync";
 import { updateKeyPermissionsSchema } from "@/shared/validation/schemas";
