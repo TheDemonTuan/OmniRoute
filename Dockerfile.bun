@@ -39,8 +39,8 @@ RUN bun -e "import { Database } from 'bun:sqlite'; const db = new Database(':mem
 
 COPY . .
 
-# Turbopack is supported on Bun 1.4 + Next 16.3; override via --build-arg OMNIROUTE_USE_TURBOPACK=0 if needed
-ARG OMNIROUTE_USE_TURBOPACK=1
+# Turbopack is disabled by default in Docker (fumadocs mdx loaders compatibility); override via --build-arg OMNIROUTE_USE_TURBOPACK=1 if needed
+ARG OMNIROUTE_USE_TURBOPACK=0
 ENV OMNIROUTE_USE_TURBOPACK=${OMNIROUTE_USE_TURBOPACK}
 
 ARG OMNIROUTE_BASE_PATH=""
