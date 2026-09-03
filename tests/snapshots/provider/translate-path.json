@@ -1217,7 +1217,7 @@
     }
   },
   "clova-studio": {
-    "format": "openai",
+    "format": "clova",
     "headers": {
       "apiKey": {
         "Accept": "text/event-stream",
@@ -1235,8 +1235,8 @@
       }
     },
     "url": {
-      "nonStream": "https://clovastudio.stream.ntruss.com/v1/openai/chat/completions",
-      "stream": "https://clovastudio.stream.ntruss.com/v1/openai/chat/completions"
+      "nonStream": "https://clovastudio.stream.ntruss.com/v3/chat-completions",
+      "stream": "https://clovastudio.stream.ntruss.com/v3/chat-completions"
     }
   },
   "codebuddy-cn": {

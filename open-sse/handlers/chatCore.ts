@@ -360,6 +360,7 @@ import { deleteSessionAccountAffinity } from "@/lib/db/sessionAccountAffinity";
 import { getCacheControlSettings } from "@/lib/cacheControlSettings";
 import { guardrailRegistry } from "@/lib/guardrails";
 import type { VideoBridgeLogRedactionEntry } from "@/lib/guardrails/videoBridge";
+import { logClientRawRequestRedacted } from "@/lib/guardrails/videoBridgeSnapshotRedaction";
 import {
   shouldPreserveCacheControl,
   resolveConnectionCacheOverride,
@@ -1211,14 +1212,9 @@ export async function handleChatCore({
   });
   const pendingScope = { id: pendingRequestId, model, provider, connectionId: pendingConnId };
   const providerRequestCapture = createPreparedRequestLogger(reqLogger, pendingScope);
-  // 0. Log client raw request (before format conversion)
-  if (clientRawRequest) {
-    reqLogger.logClientRawRequest(
-      clientRawRequest.endpoint,
-      clientRawRequest.body,
-      clientRawRequest.headers
-    );
-  }
+  // 0. Log client raw request (before format conversion) — redacts video transcript
+  // cues in the logged copy only; see videoBridgeSnapshotRedaction.ts.
+  logClientRawRequestRedacted(reqLogger, clientRawRequest, videoBridgeObserved);
   const reasoningRouteDecision =
     body && typeof body === "object"
       ? (body as Record<string, unknown>)._omnirouteReasoningRouteTrace
