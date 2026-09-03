@@ -4,7 +4,11 @@ import {
   CLAUDE_CODE_CLIENT_VERSION,
   CLAUDE_CODE_RUNTIME_VERSION,
   CLAUDE_CODE_SDK_PACKAGE_VERSION,
+  getClaudeCodeBillingVersion,
+  getClaudeCodeRuntimeVersion,
+  getClaudeCodeSdkVersion,
   getClaudeCodeUserAgent,
+  getClaudeCodeVersion,
 } from "@/shared/constants/claudeCodeClient";
 import { modelSupportsContext1mBeta } from "../config/context1m.ts";
 
@@ -171,3 +175,23 @@ export const CLAUDE_CLI_BILLING_VERSION = CLAUDE_CODE_CLIENT_BILLING_VERSION;
 export const CLAUDE_CLI_USER_AGENT = getClaudeCodeUserAgent("cli");
 export const CLAUDE_CLI_STAINLESS_PACKAGE_VERSION = CLAUDE_CODE_SDK_PACKAGE_VERSION;
 export const CLAUDE_CLI_STAINLESS_RUNTIME_VERSION = CLAUDE_CODE_RUNTIME_VERSION;
+
+export function getClaudeCliVersion(): string {
+  return getClaudeCodeVersion();
+}
+
+export function getClaudeCliBillingVersion(): string {
+  return getClaudeCodeBillingVersion();
+}
+
+export function getClaudeCliUserAgent(): string {
+  return getClaudeCodeUserAgent("cli");
+}
+
+export function getClaudeCliStainlessPackageVersion(): string {
+  return getClaudeCodeSdkVersion();
+}
+
+export function getClaudeCliStainlessRuntimeVersion(): string {
+  return getClaudeCodeRuntimeVersion();
+}

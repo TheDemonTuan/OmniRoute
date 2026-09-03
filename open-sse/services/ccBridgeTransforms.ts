@@ -24,6 +24,7 @@ import { createHash } from "node:crypto";
 import {
   CLAUDE_CODE_CLIENT_BUILD_REVISION,
   CLAUDE_CODE_CLIENT_VERSION,
+  getClaudeCodeVersion,
 } from "@/shared/constants/claudeCodeClient";
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -292,7 +293,7 @@ export function buildBillingHeaderValue(
   messages: Message[],
   options: BuildBillingHeaderOptions
 ): string {
-  const version = options.version || DEFAULT_CLAUDE_CODE_VERSION;
+  const version = options.version || getClaudeCodeVersion();
   const firstUserText = extractFirstUserMessageText(messages);
 
   const suffix =
