@@ -6,15 +6,11 @@ import {
   type AlternateFormat,
 } from "../config/providers/alternateFormats.ts";
 import {
+  CLAUDE_CLI_BILLING_VERSION,
+  CLAUDE_CLI_STAINLESS_RUNTIME_VERSION,
   mergeClientAnthropicBeta,
   normalizeAnthropicHeaderVariants,
 } from "../config/anthropicHeaders.ts";
-import {
-  getClaudeCodeBillingVersion,
-  getClaudeCodeRuntimeVersion,
-  getClaudeCodeSdkVersion,
-  getClaudeCodeUserAgent,
-} from "@/shared/constants/claudeCodeClient";
 import { applyContextEditingToBody } from "../config/contextEditing.ts";
 import {
   findOffendingField,
@@ -34,12 +30,8 @@ import {
   addParamToBlocklist,
   isAutoLearnGloballyEnabled,
 } from "@/lib/db/paramFilters";
-import {
-  applyFingerprint,
-  isCliCompatEnabled,
-  stripInternalBodyFields,
-} from "../config/cliFingerprints.ts";
-
+import { applyFingerprint, isCliCompatEnabled, stripInternalBodyFields } from "../config/cliFingerprints.ts";
+import { supportsClaudeMaxEffort, supportsXHighEffort } from "../config/providerModels.ts";
 import { getThinkingBudgetConfig, ThinkingMode } from "../services/thinkingBudget.ts";
 import {
   recordFreeWindowAttempt,
@@ -52,7 +44,11 @@ import type { PoolConfig } from "../services/sessionPool/types.ts";
 import type { Session } from "../services/sessionPool/session.ts";
 import { SessionPool } from "../services/sessionPool/sessionPool.ts";
 import { PoolRegistry } from "../services/sessionPool/poolRegistry.ts";
-import { resolveKeyForRequest } from "../services/apiKeyRotator.ts";
+import {
+  getRotatingApiKey,
+  getValidApiKey,
+  resolveKeyForRequest,
+} from "../services/apiKeyRotator.ts";
 import type { KeyHealth } from "../services/apiKeyRotator.ts";
 import { getOpenAICompatibleType, isClaudeCodeCompatible } from "../services/provider.ts";
 import { usesCcWireImage } from "../services/ccWireImageBuiltins.ts";
@@ -78,7 +74,6 @@ import {
   remapToolNamesInRequest,
 } from "../services/claudeCodeToolRemapper.ts";
 import { obfuscateInBody } from "../services/claudeCodeObfuscation.ts";
-import { extractFirstUserMessageText } from "../services/ccBridgeTransforms.ts";
 import { sanitizeClaudeToolSchemas } from "../translator/helpers/schemaCoercion.ts";
 import { sanitizeResponsesInputItems } from "../services/responsesInputSanitizer.ts";
 import { applySystemTransformPipeline, PROVIDER_CLAUDE } from "../services/systemTransforms.ts";
@@ -91,6 +86,8 @@ import {
 } from "../services/contextManager.ts";
 import { randomUUID } from "node:crypto";
 import {
+  CLAUDE_CODE_VERSION,
+  CLAUDE_CODE_STAINLESS_VERSION,
   buildUserIdJson,
   getSessionId,
   parseUpstreamMetadataUserId,
@@ -518,8 +515,8 @@ export class BaseExecutor {
     stream = true,
     clientHeaders?: Record<string, string> | null,
     model?: string,
-    _health?: Record<string, KeyHealth>,
-    _body?: unknown
+    health?: Record<string, KeyHealth>,
+    body?: unknown
   ): Record<string, string> {
     void clientHeaders;
     void model;
@@ -1166,10 +1163,7 @@ export class BaseExecutor {
 
           // system[0] (billing) and system[1] (sentinel) must not carry
           // cache_control — that belongs on upstream prompt blocks at [2..].
-          const firstUserText = extractFirstUserMessageText(
-            Array.isArray(tb.messages) ? (tb.messages as unknown[]) : []
-          );
-          const billingLine = `x-anthropic-billing-header: cc_version=${getClaudeCodeBillingVersion(firstUserText)}; cc_entrypoint=cli; cch=00000;`;
+          const billingLine = `x-anthropic-billing-header: cc_version=${CLAUDE_CLI_BILLING_VERSION}; cc_entrypoint=cli; cch=00000;`;
           const SENTINEL = "You are Claude Code, Anthropic's official CLI for Claude.";
 
           const sysBlocks: Array<Record<string, unknown>> = Array.isArray(tb.system)
@@ -1265,8 +1259,8 @@ export class BaseExecutor {
               ),
               "anthropic-dangerous-direct-browser-access": "true",
               "x-app": "cli",
-              "User-Agent": getClaudeCodeUserAgent("cli"),
-              "X-Stainless-Package-Version": getClaudeCodeSdkVersion(),
+              "User-Agent": `claude-cli/${CLAUDE_CODE_VERSION} (external, cli)`,
+              "X-Stainless-Package-Version": CLAUDE_CODE_STAINLESS_VERSION,
               "X-Stainless-Timeout": "600",
               "accept-encoding": "gzip, deflate, br, zstd",
               connection: "keep-alive",
@@ -1294,7 +1288,7 @@ export class BaseExecutor {
             headers["X-Stainless-Lang"] = "js";
             headers["X-Stainless-OS"] = stainlessOS();
             headers["X-Stainless-Runtime"] = "node";
-            headers["X-Stainless-Runtime-Version"] = getClaudeCodeRuntimeVersion();
+            headers["X-Stainless-Runtime-Version"] = CLAUDE_CLI_STAINLESS_RUNTIME_VERSION;
             headers["X-Stainless-Retry-Count"] = "0";
             delete headers["X-Stainless-Os"];
           }

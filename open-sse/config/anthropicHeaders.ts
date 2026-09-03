@@ -1,9 +1,10 @@
 import {
-  getClaudeCodeBillingVersion,
-  getClaudeCodeRuntimeVersion,
-  getClaudeCodeSdkVersion,
+  CLAUDE_CODE_CLIENT_BILLING_VERSION,
+  CLAUDE_CODE_CLIENT_BUILD_REVISION,
+  CLAUDE_CODE_CLIENT_VERSION,
+  CLAUDE_CODE_RUNTIME_VERSION,
+  CLAUDE_CODE_SDK_PACKAGE_VERSION,
   getClaudeCodeUserAgent,
-  getClaudeCodeVersion,
 } from "@/shared/constants/claudeCodeClient";
 import { modelSupportsContext1mBeta } from "../config/context1m.ts";
 
@@ -164,22 +165,9 @@ export function normalizeAnthropicHeaderVariants(headers: Record<string, string>
   }
 }
 
-export function getClaudeCliVersion(): string {
-  return getClaudeCodeVersion();
-}
-
-export function getClaudeCliBillingVersion(firstUserMessage = ""): string {
-  return getClaudeCodeBillingVersion(firstUserMessage);
-}
-
-export function getClaudeCliUserAgent(): string {
-  return getClaudeCodeUserAgent("cli");
-}
-
-export function getClaudeCliStainlessPackageVersion(): string {
-  return getClaudeCodeSdkVersion();
-}
-
-export function getClaudeCliStainlessRuntimeVersion(): string {
-  return getClaudeCodeRuntimeVersion();
-}
+export const CLAUDE_CLI_VERSION = CLAUDE_CODE_CLIENT_VERSION;
+export const CLAUDE_CLI_BUILD_REVISION = CLAUDE_CODE_CLIENT_BUILD_REVISION;
+export const CLAUDE_CLI_BILLING_VERSION = CLAUDE_CODE_CLIENT_BILLING_VERSION;
+export const CLAUDE_CLI_USER_AGENT = getClaudeCodeUserAgent("cli");
+export const CLAUDE_CLI_STAINLESS_PACKAGE_VERSION = CLAUDE_CODE_SDK_PACKAGE_VERSION;
+export const CLAUDE_CLI_STAINLESS_RUNTIME_VERSION = CLAUDE_CODE_RUNTIME_VERSION;

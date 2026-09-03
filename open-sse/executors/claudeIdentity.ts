@@ -11,15 +11,15 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 
 import {
-  getClaudeCodeSdkVersion,
-  getClaudeCodeUserAgent,
+  CLAUDE_CODE_CLIENT_VERSION,
+  CLAUDE_CODE_SDK_PACKAGE_VERSION,
 } from "@/shared/constants/claudeCodeClient";
 
 // ---------- Versions ------------------------------------------------------
 
-export function getClaudeCodeStainlessVersion(): string {
-  return getClaudeCodeSdkVersion();
-}
+export const CLAUDE_CODE_VERSION = CLAUDE_CODE_CLIENT_VERSION;
+/** Bundled @anthropic-ai/sdk version for the pinned CLI release. */
+export const CLAUDE_CODE_STAINLESS_VERSION = CLAUDE_CODE_SDK_PACKAGE_VERSION;
 
 // ---------- Stainless OS / Arch / Runtime --------------------------------
 
@@ -156,7 +156,7 @@ export async function fetchClaudeBootstrap(accessToken: string): Promise<ClaudeB
       headers: {
         Authorization: `Bearer ${accessToken}`,
         Accept: "application/json",
-        "User-Agent": getClaudeCodeUserAgent("cli"),
+        "User-Agent": `claude-cli/${CLAUDE_CODE_VERSION} (external, cli)`,
         "anthropic-beta": "oauth-2025-04-20",
       },
       signal: ctrl.signal,

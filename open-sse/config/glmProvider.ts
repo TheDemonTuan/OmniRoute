@@ -255,9 +255,7 @@ export const GLMT_REQUEST_DEFAULTS = Object.freeze({
 });
 
 export const GLM_COUNT_TOKENS_TIMEOUT_MS = 3_000;
-export function getGlmClaudeCodeUserAgent(): string {
-  return getClaudeCodeUserAgent("sdk-cli");
-}
+export const GLM_CLAUDE_CODE_USER_AGENT = getClaudeCodeUserAgent("sdk-cli");
 export const GLM_ANTHROPIC_BETA = [
   "claude-code-20250219",
   "interleaved-thinking-2025-05-14",
@@ -584,7 +582,7 @@ export function buildGlmBaseHeaders(apiKey: string, stream = true): Record<strin
     "anthropic-version": ANTHROPIC_VERSION_HEADER,
     "anthropic-beta": GLM_ANTHROPIC_BETA,
     "anthropic-dangerous-direct-browser-access": "true",
-    "User-Agent": getGlmClaudeCodeUserAgent(),
+    "User-Agent": GLM_CLAUDE_CODE_USER_AGENT,
     "X-Stainless-Lang": "js",
     "X-Stainless-Runtime": "node",
     "X-Stainless-Retry-Count": "0",
