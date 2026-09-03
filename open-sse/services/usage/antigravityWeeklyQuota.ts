@@ -148,11 +148,19 @@ function toQuotaWindow(
   bucket: JsonRecord
 ): AntigravityQuotaWindow | null {
   if (bucket.disabled === true) return null;
-  const rawFraction = toNumber(bucket.remainingFraction, -1);
+
+  // retrieveUserQuotaSummary currently reports consumption under `remaining`, unlike
+  // retrieveUserQuota's flat bucket shape. Accept both so an upstream envelope change
+  // cannot silently erase every family window from Provider Quota.
+  const remainingData = toRecord(bucket.remaining);
+  const rawFraction = toNumber(
+    remainingData.remainingFraction ?? bucket.remainingFraction,
+    -1
+  );
   if (rawFraction < 0) return null;
 
   const remainingFraction = Math.max(0, Math.min(1, rawFraction));
-  const resetAt = parseResetTime(bucket.resetTime);
+  const resetAt = parseResetTime(remainingData.resetTime ?? bucket.resetTime);
   const unlimited = !resetAt && remainingFraction >= 1;
   const total = 1000;
   const remaining = Math.round(total * remainingFraction);

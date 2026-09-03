@@ -55,6 +55,33 @@ test("Antigravity quota summary parses 5h and weekly windows for each family", (
   assert.equal(summary.quotas.gemini_session.quotaAggregate, true);
 });
 
+test("Antigravity quota summary reads retrieveUserQuotaSummary's nested remaining shape", () => {
+  const summary = parseAntigravityQuotaSummary({
+    groups: [
+      {
+        displayName: "Gemini Models",
+        buckets: [
+          {
+            bucketId: "gemini-5h",
+            window: "5h",
+            remaining: { remainingFraction: 0.74, resetTime: "2026-09-03T12:00:00Z" },
+          },
+          {
+            bucketId: "gemini-weekly",
+            window: "weekly",
+            remaining: { remainingFraction: 0.36, resetTime: "2026-09-07T12:00:00Z" },
+          },
+        ],
+      },
+    ],
+  });
+
+  assert.equal(summary.groups.length, 1);
+  assert.equal(summary.quotas.gemini_session.remainingPercentage, 74);
+  assert.equal(summary.quotas.gemini_weekly.remainingPercentage, 36);
+  assert.equal(summary.quotas.gemini_weekly.resetAt, "2026-09-07T12:00:00.000Z");
+});
+
 test("Antigravity quota summary skips disabled and unreported buckets", () => {
   const summary = parseAntigravityQuotaSummary({
     groups: [
