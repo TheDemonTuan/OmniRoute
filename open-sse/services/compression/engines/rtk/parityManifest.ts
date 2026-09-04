@@ -1,23 +1,120 @@
 import { RTK_UPSTREAM_BASELINE } from "./upstream.ts";
 
-export interface RtkParityFilterEntry {
-  id: string;
+export type RtkParityLevel =
+  "full" | "semantic" | "partial" | "passthrough" | "not-supported" | "not-applicable";
+
+export interface RtkParityEntry {
   family: string;
-  category: string;
-  upstreamVersionIntroduced: string;
-  status: "active" | "planned" | "deprecated";
+  filterIds: string[];
+  localStatus: "active" | "planned" | "deprecated";
+  parity: RtkParityLevel;
+  upstreamSince?: string;
+  auditedAgainst: string;
+  gaps: string[];
+  fixtureGroups: string[];
   notes?: string;
 }
 
 export interface RtkParityManifest {
   upstreamTag: string;
   auditedAt: string;
-  filters: RtkParityFilterEntry[];
+  parityScope: "behavioral-semantic";
+  families: RtkParityEntry[];
+  filters: Array<{
+    id: string;
+    family: string;
+    category: string;
+    upstreamVersionIntroduced: string;
+    status: "active" | "planned" | "deprecated";
+    notes?: string;
+  }>;
 }
 
 export const RTK_PARITY_MANIFEST: RtkParityManifest = {
   upstreamTag: RTK_UPSTREAM_BASELINE.stableTag,
   auditedAt: RTK_UPSTREAM_BASELINE.auditedAt,
+  parityScope: "behavioral-semantic",
+  families: [
+    {
+      family: "ctest",
+      filterIds: ["test-ctest"],
+      localStatus: "active",
+      parity: "semantic",
+      upstreamSince: "v0.47.0",
+      auditedAgainst: "v0.47.0",
+      gaps: [],
+      fixtureGroups: ["ctest"],
+      notes: "Stateful processor with retry deduplication, failure tracking, and passthrough flags",
+    },
+    {
+      family: "maven",
+      filterIds: ["maven"],
+      localStatus: "active",
+      parity: "semantic",
+      upstreamSince: "v0.47.0",
+      auditedAgainst: "v0.47.0",
+      gaps: [],
+      fixtureGroups: ["maven"],
+      notes:
+        "Stateful processor for mvn/mvnw/mvnd with multi-module lanes and dependency:tree passthrough",
+    },
+    {
+      family: "phpt",
+      filterIds: ["test-phpt"],
+      localStatus: "active",
+      parity: "semantic",
+      upstreamSince: "v0.47.0",
+      auditedAgainst: "v0.47.0",
+      gaps: [],
+      fixtureGroups: ["phpt"],
+      notes: "Stateful processor for run-tests.php with diff block preservation and failure caps",
+    },
+    {
+      family: "git-diff",
+      filterIds: ["git-diff"],
+      localStatus: "active",
+      parity: "semantic",
+      upstreamSince: "v0.1.0",
+      auditedAgainst: "v0.47.0",
+      gaps: [],
+      fixtureGroups: ["git-diff"],
+      notes:
+        "Stateful processor preserving hunk headers, declared lengths, and word-diff passthrough",
+    },
+    {
+      family: "typescript",
+      filterIds: ["build-typescript"],
+      localStatus: "active",
+      parity: "semantic",
+      upstreamSince: "v0.1.0",
+      auditedAgainst: "v0.47.0",
+      gaps: [],
+      fixtureGroups: ["typescript"],
+      notes: "Stateful processor preserving multiline pretty diagnostics and global error headers",
+    },
+    {
+      family: "grep",
+      filterIds: ["shell-grep"],
+      localStatus: "active",
+      parity: "semantic",
+      upstreamSince: "v0.1.0",
+      auditedAgainst: "v0.47.0",
+      gaps: [],
+      fixtureGroups: ["shell-grep"],
+      notes: "Command-aware passthrough for format-altering flags (-c, -l, -L, -o, -Z, --json)",
+    },
+    {
+      family: "ls",
+      filterIds: ["shell-ls"],
+      localStatus: "active",
+      parity: "semantic",
+      upstreamSince: "v0.1.0",
+      auditedAgainst: "v0.47.0",
+      gaps: [],
+      fixtureGroups: ["shell-ls"],
+      notes: "Explicit omission hint and dotfile preservation",
+    },
+  ],
   filters: [
     {
       id: "aws",
@@ -165,7 +262,7 @@ export const RTK_PARITY_MANIFEST: RtkParityManifest = {
       category: "vcs",
       upstreamVersionIntroduced: "v0.1.0",
       status: "active",
-      notes: "Hardened for quotes and formatting in v0.47.0 baseline",
+      notes: "Hardened for quotes, declared lengths and word-diff in v0.47.0",
     },
     {
       id: "git-log",

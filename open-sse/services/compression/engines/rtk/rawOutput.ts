@@ -118,36 +118,43 @@ export function maybePersistRtkRawOutput(
   const dir = bucketDir(id);
   const fileName = `${now}-${commandSlug || "tool-output"}-${id}.log`;
   const filePath = path.join(dir, fileName);
+  const tmpFilePath = path.join(dir, `.${fileName}.tmp-${crypto.randomBytes(4).toString("hex")}`);
   try {
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(filePath, redaction.text);
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(tmpFilePath, redaction.text, { mode: 0o600 });
+    fs.renameSync(tmpFilePath, filePath);
   } catch {
-    // Best-effort capture: a disk error (ENOSPC / EACCES / read-only DATA_DIR) must NEVER
-    // fail the compression pipeline. Skip the capture, exactly like retention "never".
+    try {
+      if (fs.existsSync(tmpFilePath)) fs.unlinkSync(tmpFilePath);
+    } catch {
+      // ignore cleanup error
+    }
     return null;
   }
 
-  // Sidecar metadata: the .log filename only carries a lossy command SLUG, so persist
-  // the FULL command (and timestamp/flags) next to it. Keeps the .log pure output (the
-  // raw-output recovery route still returns it verbatim) while letting the RTK
-  // learn/discover sample source recover the exact command. Best-effort: a sidecar
-  // write failure never fails the capture.
+  // Sidecar metadata: redact command and write atomically with 0600 permissions
   try {
+    const safeCommand = options.command ? redactRtkRawOutput(options.command).text : null;
     const metaPath = filePath.replace(/\.log$/, ".meta.json");
+    const tmpMetaPath = path.join(
+      dir,
+      `.${fileName}.meta.tmp-${crypto.randomBytes(4).toString("hex")}`
+    );
     fs.writeFileSync(
-      metaPath,
+      tmpMetaPath,
       JSON.stringify({
-        command: options.command ?? null,
+        command: safeCommand,
         timestamp: now,
         failure,
-        redacted: redaction.redacted,
+        redacted: redaction.redacted || safeCommand !== options.command,
         bytes: Buffer.byteLength(redaction.text, "utf8"),
-      })
+      }),
+      { mode: 0o600 }
     );
+    fs.renameSync(tmpMetaPath, metaPath);
   } catch {
     // Sidecar is an optimisation for learn/discover; the .log (with slug) still works.
   }
-
   return {
     id,
     path: filePath,

@@ -4,6 +4,17 @@
   "description": "Keep CTest failed tests, execution summaries, and failure diagnostics while collapsing passing tests.",
   "category": "test",
   "priority": 90,
+  "processor": "ctest",
+  "commandPolicy": {
+    "passthroughPatterns": [
+      "(?:^|\\s)-(?:V|VV)(?:\\s|$)",
+      "(?:^|\\s)--verbose(?:\\s|$)",
+      "(?:^|\\s)-N(?:\\s|$)",
+      "(?:^|\\s)--show-only(?:\\s|$)",
+      "(?:^|\\s)--help(?:\\s|$)",
+      "(?:^|\\s)--version(?:\\s|$)"
+    ]
+  },
   "match": {
     "outputTypes": ["test-ctest"],
     "commands": ["^ctest\\b"],

@@ -4,6 +4,7 @@
   "description": "Preserve failed PHPT tests, XFAIL/BORK reasons, diffs, and summary counts while collapsing passing tests.",
   "category": "test",
   "priority": 90,
+  "processor": "phpt",
   "match": {
     "outputTypes": ["test-phpt"],
     "commands": ["^(?:php\\s+)?run-tests\\.php\\b"],

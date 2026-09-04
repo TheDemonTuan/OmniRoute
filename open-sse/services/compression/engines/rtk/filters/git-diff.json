@@ -4,6 +4,7 @@
   "description": "Drop low-signal diff metadata while preserving files, hunks, and changed lines.",
   "category": "git",
   "priority": 94,
+  "processor": "git-diff",
   "match": {
     "outputTypes": ["git-diff"],
     "commands": ["^git\\s+(?:diff|show)\\b"],

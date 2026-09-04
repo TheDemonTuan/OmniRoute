@@ -15,6 +15,8 @@ import {
   type RtkRawOutputPointer,
 } from "./rawOutput.ts";
 import { applyRenderer } from "./renderers/index.ts";
+import { executeRtkProcessor } from "./processors/index.ts";
+import { normalizeTransport } from "./normalize.ts";
 import { isTextBlock } from "../../messageContent.ts";
 import { adaptBodyForCompression } from "../../bodyAdapter.ts";
 import { isAnthropicToolResultBlock } from "../../toolResultCompressor.ts";
@@ -241,8 +243,8 @@ export function processRtkText(
     };
   }
 
-  const hasBom = text.charCodeAt(0) === 0xfeff;
-  const cleanText = hasBom ? text.slice(1) : text;
+  const normalized = normalizeTransport(text);
+  const cleanText = normalized.text;
 
   const config = mergeRtkConfig(options.config);
   const originalTokens = estimateCompressionTokens(text);
@@ -250,6 +252,7 @@ export function processRtkText(
   const rulesApplied: string[] = [];
   const rawOutputPointers: RtkRawOutputPointer[] = [];
   let result = cleanText;
+  let ownsTruncation = false;
   const detection = detectCommandType(text, options.command);
   // #4559: A document/file read (e.g. a Read tool returning a ~147-line code/prose
   // file) is NOT repetitive command output, but the generic-output *fallback* filter
@@ -272,19 +275,40 @@ export function processRtkText(
     });
     if (filter && !config.disabledFilters.includes(filter.id)) {
       if (config.enabledFilters.length === 0 || config.enabledFilters.includes(filter.id)) {
-        const filtered = applyLineFilter(result, {
-          ...filter,
-          maxLines: effectiveMaxLines(
-            filter.maxLines || config.maxLinesPerResult,
-            config.intensity
-          ),
-        });
-        result = filtered.text;
-        if (filtered.appliedRules.length > 0) {
-          techniquesUsed.push("rtk-filter");
-          rulesApplied.push(...filtered.appliedRules);
+        // If the filter specifies a dedicated stateful processor, execute it first
+        if (filter.processor) {
+          const procResult = executeRtkProcessor(filter.processor, {
+            command: options.command ?? null,
+            normalizedCommand: detection.command,
+            stdout: result,
+            maxLines: filter.maxLines || config.maxLinesPerResult,
+            rawRecoveryEnabled: config.rawOutputRetention !== "never",
+          });
+          if (procResult.status === "compressed") {
+            result = procResult.text;
+            ownsTruncation = procResult.ownsTruncation;
+            techniquesUsed.push(`rtk-processor:${procResult.processor}`);
+            rulesApplied.push(`rtk:processor:${procResult.processor}`);
+            matchedFilterPatterns = filter.priorityPatterns;
+          } else if (procResult.status === "passthrough") {
+            // Explicit passthrough mode: do not apply line filter
+            matchedFilterPatterns = [];
+          }
+        } else {
+          const filtered = applyLineFilter(result, {
+            ...filter,
+            maxLines: effectiveMaxLines(
+              filter.maxLines || config.maxLinesPerResult,
+              config.intensity
+            ),
+          });
+          result = filtered.text;
+          if (filtered.appliedRules.length > 0) {
+            techniquesUsed.push("rtk-filter");
+            rulesApplied.push(...filtered.appliedRules);
+          }
+          matchedFilterPatterns = filter.priorityPatterns;
         }
-        matchedFilterPatterns = filter.priorityPatterns;
       }
     }
   }
@@ -353,17 +377,17 @@ export function processRtkText(
       return [];
     }
   });
-  // #4559: skip the generic line/char hard-cap for document/file reads (see
-  // isDocumentLikeRead above) so the middle of a code/prose read is not dropped.
-  const truncated = isDocumentLikeRead
-    ? { text: result, truncated: false, droppedLines: 0 }
-    : smartTruncate(result, {
-        maxLines: effectiveMaxLines(config.maxLinesPerResult, config.intensity),
-        maxChars: config.maxCharsPerResult,
-        preserveHead: config.intensity === "aggressive" ? 16 : 24,
-        preserveTail: config.intensity === "aggressive" ? 16 : 24,
-        priorityPatterns: [...defaultPriorityPatterns, ...filterPriorityPatterns],
-      });
+  // #4559: skip the generic line/char hard-cap for document/file reads or when processor owns truncation
+  const truncated =
+    isDocumentLikeRead || ownsTruncation
+      ? { text: result, truncated: false, droppedLines: 0 }
+      : smartTruncate(result, {
+          maxLines: effectiveMaxLines(config.maxLinesPerResult, config.intensity),
+          maxChars: config.maxCharsPerResult,
+          preserveHead: config.intensity === "aggressive" ? 16 : 24,
+          preserveTail: config.intensity === "aggressive" ? 16 : 24,
+          priorityPatterns: [...defaultPriorityPatterns, ...filterPriorityPatterns],
+        });
   if (truncated.truncated) {
     result = truncated.text;
     techniquesUsed.push("rtk-truncate");

@@ -69,6 +69,22 @@ const rtkFilterPreserveSchema = z
   })
   .strict();
 
+const rtkCommandPolicySchema = z
+  .object({
+    passthroughPatterns: z.array(z.string()).default([]),
+    supportedPatterns: z.array(z.string()).default([]),
+    requireKnownCommand: z.boolean().default(false),
+  })
+  .strict();
+
+const rtkSafetySchema = z
+  .object({
+    minimumConfidence: z.number().min(0).max(1).default(0),
+    ownsTruncation: z.boolean().default(false),
+    preserveOriginalOnUnknownMode: z.boolean().default(false),
+  })
+  .strict();
+
 const rtkFilterPackSchema = z
   .object({
     id: z.string().min(1),
@@ -76,6 +92,9 @@ const rtkFilterPackSchema = z
     description: z.string().default(""),
     category: rtkFilterCategorySchema,
     priority: z.number().int().min(0).max(100).default(50),
+    processor: z.enum(["ctest", "maven", "phpt", "git-diff", "typescript"]).optional(),
+    commandPolicy: rtkCommandPolicySchema.optional(),
+    safety: rtkSafetySchema.optional(),
     match: rtkFilterMatchSchema,
     rules: rtkFilterRulesSchema.default({} as unknown as z.infer<typeof rtkFilterRulesSchema>),
     preserve: rtkFilterPreserveSchema.default(
@@ -123,6 +142,17 @@ export interface RtkFilterDefinition {
   matchPatterns: string[];
   category: z.infer<typeof rtkFilterCategorySchema>;
   priority: number;
+  processor?: "ctest" | "maven" | "phpt" | "git-diff" | "typescript";
+  commandPolicy?: {
+    passthroughPatterns: string[];
+    supportedPatterns: string[];
+    requireKnownCommand: boolean;
+  };
+  safety?: {
+    minimumConfidence: number;
+    ownsTruncation: boolean;
+    preserveOriginalOnUnknownMode: boolean;
+  };
   stripPatterns: string[];
   keepPatterns: string[];
   priorityPatterns: string[];
@@ -194,6 +224,15 @@ export function validateRtkFilter(value: unknown): RtkFilterDefinition {
     matchPatterns: dropReDoSProne(parsed.match.patterns),
     category: parsed.category,
     priority: parsed.priority,
+    processor: parsed.processor,
+    commandPolicy: parsed.commandPolicy
+      ? {
+          passthroughPatterns: dropReDoSProne(parsed.commandPolicy.passthroughPatterns),
+          supportedPatterns: dropReDoSProne(parsed.commandPolicy.supportedPatterns),
+          requireKnownCommand: parsed.commandPolicy.requireKnownCommand,
+        }
+      : undefined,
+    safety: parsed.safety,
     stripPatterns: dropReDoSProne(parsed.rules.dropPatterns),
     keepPatterns: dropReDoSProne(parsed.rules.includePatterns),
     priorityPatterns: dropReDoSProne(preservePatterns),

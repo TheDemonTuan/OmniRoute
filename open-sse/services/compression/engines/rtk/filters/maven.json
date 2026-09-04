@@ -4,6 +4,15 @@
   "description": "Drop repetitive Maven download and plugin noise while keeping project build summaries, failures, and errors.",
   "category": "build",
   "priority": 90,
+  "processor": "maven",
+  "commandPolicy": {
+    "passthroughPatterns": [
+      "dependency:(?:tree|list|analyze|resolve)",
+      "help:(?:effective-pom|evaluate|describe|help)",
+      "(?:^|\\s)-X(?:\\s|$)",
+      "(?:^|\\s)--debug(?:\\s|$)"
+    ]
+  },
   "match": {
     "outputTypes": ["maven"],
     "commands": ["^(?:mvn|mvnw|\\./mvnw|mvnd)\\b"],
