@@ -110,13 +110,20 @@ export function maybePersistRtkRawOutput(
   const maxBytes = Math.max(1024, Math.floor(options.maxBytes ?? 1_048_576));
   const redaction = redactRtkRawOutput(safeUtf8Slice(raw, maxBytes));
   const now = Date.now();
-  const commandSlug = (options.command || "tool-output")
-    .replace(/[^A-Za-z0-9_-]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .slice(0, 48);
-  const id = safeId(`${now}:${commandSlug}:${raw.length}:${redaction.text}`);
+  const safeCommand = options.command ? redactRtkRawOutput(options.command).text : null;
+  const commandHash = options.command
+    ? crypto.createHash("sha256").update(options.command).digest("hex").slice(0, 16)
+    : null;
+  // Never derive filename from raw command argv (which may leak secrets in filename/fs metadata).
+  // Use safe executable name or fallback to "tool-output".
+  const familySlug =
+    (options.command ? options.command.trim().split(/\s+/)[0] : "tool-output")
+      .replace(/[^A-Za-z0-9_-]+/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .slice(0, 24) || "tool-output";
+  const id = safeId(`${now}:${familySlug}:${raw.length}:${redaction.text}`);
   const dir = bucketDir(id);
-  const fileName = `${now}-${commandSlug || "tool-output"}-${id}.log`;
+  const fileName = `${now}-${familySlug}-${id}.log`;
   const filePath = path.join(dir, fileName);
   const tmpFilePath = path.join(dir, `.${fileName}.tmp-${crypto.randomBytes(4).toString("hex")}`);
   try {
@@ -134,7 +141,6 @@ export function maybePersistRtkRawOutput(
 
   // Sidecar metadata: redact command and write atomically with 0600 permissions
   try {
-    const safeCommand = options.command ? redactRtkRawOutput(options.command).text : null;
     const metaPath = filePath.replace(/\.log$/, ".meta.json");
     const tmpMetaPath = path.join(
       dir,
@@ -143,7 +149,10 @@ export function maybePersistRtkRawOutput(
     fs.writeFileSync(
       tmpMetaPath,
       JSON.stringify({
+        family: familySlug,
         command: safeCommand,
+        safeSignature: safeCommand,
+        commandHash,
         timestamp: now,
         failure,
         redacted: redaction.redacted || safeCommand !== options.command,

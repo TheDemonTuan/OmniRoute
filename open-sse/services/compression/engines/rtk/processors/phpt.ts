@@ -4,8 +4,10 @@ import type { RtkProcessor, RtkProcessorContext, RtkProcessorResult } from "./ty
 const MAX_FAILURES_SHOWN = 20;
 const MAX_DIFF_LINES_PER_FAILURE = 6;
 
+type PhptStatus = "PASS" | "FAIL" | "SKIP" | "BORK" | "WARN" | "LEAK" | "XFAIL" | "XLEAK";
+
 interface PhptFailure {
-  status: "FAIL" | "BORK" | "LEAK";
+  status: PhptStatus;
   testName: string;
   testPath: string;
   reason?: string;
@@ -54,7 +56,17 @@ export const phptProcessor: RtkProcessor = {
     let inHeader = false;
     let inDiff = false;
     let currentDiffLines: string[] = [];
-    let totalFailuresCount = 0;
+
+    const counts: Record<PhptStatus, number> = {
+      PASS: 0,
+      FAIL: 0,
+      SKIP: 0,
+      BORK: 0,
+      WARN: 0,
+      LEAK: 0,
+      XFAIL: 0,
+      XLEAK: 0,
+    };
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
@@ -78,7 +90,9 @@ export const phptProcessor: RtkProcessor = {
         if (
           trimmed.startsWith("TIME START") ||
           trimmed.startsWith("PHP ") ||
-          trimmed.startsWith("CWD")
+          trimmed.startsWith("CWD") ||
+          trimmed.startsWith("OS ") ||
+          trimmed.startsWith("SAPI ")
         ) {
           headerLines.push(line);
         }
@@ -101,24 +115,25 @@ export const phptProcessor: RtkProcessor = {
         continue;
       }
 
-      const matchFailure = /^(FAIL|BORK|LEAK)\s+(.*?)\s+\[(.*?)\](?:\s+reason:\s+(.*))?$/.exec(
-        trimmed
-      );
-      if (matchFailure) {
-        totalFailuresCount++;
-        const [, status, testName, testPath, reason] = matchFailure;
-        failures.push({
-          status: status as "FAIL" | "BORK" | "LEAK",
-          testName,
-          testPath,
-          reason,
-          diffLines: [...currentDiffLines],
-        });
-        currentDiffLines = [];
-        continue;
-      }
+      // Supports status anchors at line start or after TEST N/M [path]
+      const matchResult =
+        /(?:^|\]\s*)(PASS|FAIL|SKIP|BORK|WARN|LEAK|XFAIL|XLEAK)\s+(.*?)(?:\s+\[(.*?)\])?(?:\s+reason:\s+(.*))?$/.exec(
+          trimmed
+        );
+      if (matchResult) {
+        const [, statusStr, testName, testPath, reason] = matchResult;
+        const status = statusStr as PhptStatus;
+        counts[status] = (counts[status] || 0) + 1;
 
-      if (/^(?:PASS|SKIP|WARN|XFAIL|XLEAK)\s+/.test(trimmed)) {
+        if (status === "FAIL" || status === "BORK" || status === "LEAK") {
+          failures.push({
+            status,
+            testName,
+            testPath: testPath || "unknown",
+            reason,
+            diffLines: [...currentDiffLines],
+          });
+        }
         currentDiffLines = [];
         continue;
       }
@@ -130,7 +145,9 @@ export const phptProcessor: RtkProcessor = {
         trimmed.startsWith("Tests skipped   :") ||
         trimmed.startsWith("Tests warned    :") ||
         trimmed.startsWith("Tests leaked    :") ||
-        trimmed.startsWith("Expected fail   :")
+        trimmed.startsWith("Tests borked    :") ||
+        trimmed.startsWith("Expected fail   :") ||
+        trimmed.startsWith("Expected leak   :")
       ) {
         summaryLines.push(line);
       }
@@ -141,7 +158,10 @@ export const phptProcessor: RtkProcessor = {
       outputLines.push(...headerLines);
     }
 
-    const shownFailures = failures.slice(0, MAX_FAILURES_SHOWN);
+    const maxShown = ctx.renderBudget?.maxLines
+      ? Math.min(MAX_FAILURES_SHOWN, Math.floor(ctx.renderBudget.maxLines / 4))
+      : MAX_FAILURES_SHOWN;
+    const shownFailures = failures.slice(0, maxShown);
     for (const f of shownFailures) {
       outputLines.push(
         `${f.status} ${f.testName} [${f.testPath}]${f.reason ? ` reason: ${f.reason}` : ""}`
@@ -158,8 +178,8 @@ export const phptProcessor: RtkProcessor = {
       }
     }
 
-    if (failures.length > MAX_FAILURES_SHOWN) {
-      const omittedFailures = failures.length - MAX_FAILURES_SHOWN;
+    if (failures.length > shownFailures.length) {
+      const omittedFailures = failures.length - shownFailures.length;
       outputLines.push(`... +${omittedFailures} more failures`);
     }
 
@@ -177,7 +197,7 @@ export const phptProcessor: RtkProcessor = {
       confidence: 0.95,
       ownsTruncation: true,
       stats: {
-        totalFailures: totalFailuresCount,
+        ...counts,
         shownFailures: shownFailures.length,
       },
     };

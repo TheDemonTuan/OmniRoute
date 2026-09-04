@@ -32,11 +32,25 @@ function checkFilters(): void {
 
   console.log(`Loaded ${filters.length} filters across ${files.length} JSON files.`);
 
-  // Check manifest completeness
+  // 1. Check manifest completeness (disk -> manifest)
   const manifestFilterIds = new Set(RTK_PARITY_MANIFEST.filters.map((f) => f.id));
   for (const filter of filters) {
     if (!manifestFilterIds.has(filter.id)) {
       throw new Error(`Filter on disk '${filter.id}' missing from parity manifest.`);
+    }
+  }
+
+  // 2. Check reverse completeness (manifest -> disk)
+  for (const item of RTK_PARITY_MANIFEST.filters) {
+    if (!filterIds.has(item.id)) {
+      throw new Error(`Manifest filter '${item.id}' does not exist on disk.`);
+    }
+  }
+
+  // 3. Check families and parity claims
+  for (const family of RTK_PARITY_MANIFEST.families) {
+    if (family.parity === "full" && family.gaps.length > 0) {
+      throw new Error(`Family '${family.family}' is marked 'full' but has non-empty gaps.`);
     }
   }
 
@@ -45,7 +59,7 @@ function checkFilters(): void {
 
 try {
   checkFilters();
-  console.log("All RTK filters and parity contracts valid.");
+  console.log("All RTK filters and parity contracts verified.");
 } catch (err) {
   console.error("Parity check failed:", err);
   process.exit(1);

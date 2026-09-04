@@ -2,12 +2,19 @@ export type RtkProcessorId = "ctest" | "maven" | "phpt" | "git-diff" | "typescri
 
 export type RtkProcessorStatus = "compressed" | "passthrough" | "unrecognized" | "invalid";
 
+export interface RtkProcessorRenderBudget {
+  maxLines?: number;
+  maxChars?: number;
+  maxEstimatedTokens?: number;
+}
+
 export interface RtkProcessorContext {
   command: string | null;
   normalizedCommand: string | null;
   stdout: string;
   stderr?: string;
   maxLines?: number;
+  renderBudget?: RtkProcessorRenderBudget;
   rawRecoveryEnabled?: boolean;
 }
 

@@ -70,6 +70,11 @@ export const ctestProcessor: RtkProcessor = {
     let currentFailure: CTestFailure | null = null;
     let inFailedTrailer = false;
 
+    const maxLinesPerFailure = 25;
+    const maxTotalFailures = ctx.renderBudget?.maxLines
+      ? Math.max(5, Math.floor(ctx.renderBudget.maxLines / 10))
+      : 50;
+
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       const trimmed = line.trim();
@@ -120,7 +125,11 @@ export const ctestProcessor: RtkProcessor = {
       }
 
       if (currentFailure && !trimmed.startsWith("Start ") && !trimmed.includes("% tests passed")) {
-        currentFailure.diagnosticLines.push(line);
+        if (currentFailure.diagnosticLines.length < maxLinesPerFailure) {
+          currentFailure.diagnosticLines.push(line);
+        } else if (currentFailure.diagnosticLines.length === maxLinesPerFailure) {
+          currentFailure.diagnosticLines.push("... [failure diagnostics truncated]");
+        }
         continue;
       }
 
@@ -138,7 +147,13 @@ export const ctestProcessor: RtkProcessor = {
       outputLines.push(...headerLines);
     }
 
+    let count = 0;
     for (const [, failure] of seenTests) {
+      if (count >= maxTotalFailures) {
+        outputLines.push(`... +${seenTests.size - count} more failed tests omitted`);
+        break;
+      }
+      count++;
       const dur = failure.duration ? `    ${failure.duration}` : "";
       outputLines.push(
         `Test #${failure.testIndex}: ${failure.testName} ...***${failure.status}${dur}`

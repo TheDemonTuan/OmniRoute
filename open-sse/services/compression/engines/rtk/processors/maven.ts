@@ -8,6 +8,8 @@ const PASSTHROUGH_GOALS = [
   /(?:^|\s)--debug(?:\s|$)/,
 ];
 
+const MAX_STACKTRACE_FRAMES = 15;
+
 export const mavenProcessor: RtkProcessor = {
   id: "maven",
   process(ctx: RtkProcessorContext): RtkProcessorResult {
@@ -60,6 +62,7 @@ export const mavenProcessor: RtkProcessor = {
     const kept: string[] = [];
     let inReactorSummary = false;
     let inStackTrace = false;
+    let stackTraceFrameCount = 0;
     let inCompileErrorContinuation = false;
 
     for (let i = 0; i < lines.length; i++) {
@@ -68,6 +71,7 @@ export const mavenProcessor: RtkProcessor = {
 
       if (!trimmed) {
         inStackTrace = false;
+        stackTraceFrameCount = 0;
         inCompileErrorContinuation = false;
         continue;
       }
@@ -128,6 +132,7 @@ export const mavenProcessor: RtkProcessor = {
         kept.push(line);
         inCompileErrorContinuation = true;
         inStackTrace = true;
+        stackTraceFrameCount = 0;
         continue;
       }
 
@@ -154,17 +159,24 @@ export const mavenProcessor: RtkProcessor = {
       ) {
         kept.push(line);
         inStackTrace = true;
+        stackTraceFrameCount = 0;
         continue;
       }
 
-      // Stacktrace frames under active failure
+      // Stacktrace frames under active failure (bounded by MAX_STACKTRACE_FRAMES)
       if (
         inStackTrace &&
         (trimmed.startsWith("at ") ||
           trimmed.startsWith("Caused by:") ||
           /^[a-zA-Z0-9_.]+(?:Exception|Error):/.test(trimmed))
       ) {
-        kept.push(line);
+        if (stackTraceFrameCount < MAX_STACKTRACE_FRAMES) {
+          kept.push(line);
+          stackTraceFrameCount++;
+        } else if (stackTraceFrameCount === MAX_STACKTRACE_FRAMES) {
+          kept.push("    ... [stack trace truncated]");
+          stackTraceFrameCount++;
+        }
         continue;
       }
 

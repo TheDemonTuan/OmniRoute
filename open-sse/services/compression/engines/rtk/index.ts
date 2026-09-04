@@ -17,6 +17,7 @@ import {
 import { applyRenderer } from "./renderers/index.ts";
 import { executeRtkProcessor } from "./processors/index.ts";
 import { normalizeTransport } from "./normalize.ts";
+import { evaluateRtkCommandPolicy } from "./commandPolicy.ts";
 import { isTextBlock } from "../../messageContent.ts";
 import { adaptBodyForCompression } from "../../bodyAdapter.ts";
 import { isAnthropicToolResultBlock } from "../../toolResultCompressor.ts";
@@ -275,7 +276,23 @@ export function processRtkText(
     });
     if (filter && !config.disabledFilters.includes(filter.id)) {
       if (config.enabledFilters.length === 0 || config.enabledFilters.includes(filter.id)) {
-        // If the filter specifies a dedicated stateful processor, execute it first
+        // 1. Evaluate centralized command & safety policy
+        const policy = evaluateRtkCommandPolicy(filter, detection, options.command);
+        if (policy.action === "passthrough" || policy.action === "reject") {
+          // Terminal passthrough: bypass entire downstream pipeline (renderers, stripping, dedup, truncate)
+          return {
+            text,
+            originalTokens,
+            compressedTokens: originalTokens,
+            tokensSaved: 0,
+            savingsPercent: 0,
+            techniquesUsed: [],
+            rulesApplied: [`rtk:policy:passthrough:${policy.reason ?? "flag"}`],
+            rawOutputPointers: [],
+          };
+        }
+
+        // 2. If the filter specifies a dedicated stateful processor, execute it
         if (filter.processor) {
           const procResult = executeRtkProcessor(filter.processor, {
             command: options.command ?? null,
@@ -290,9 +307,18 @@ export function processRtkText(
             techniquesUsed.push(`rtk-processor:${procResult.processor}`);
             rulesApplied.push(`rtk:processor:${procResult.processor}`);
             matchedFilterPatterns = filter.priorityPatterns;
-          } else if (procResult.status === "passthrough") {
-            // Explicit passthrough mode: do not apply line filter
-            matchedFilterPatterns = [];
+          } else {
+            // Terminal passthrough for "passthrough", "invalid", "unrecognized"
+            return {
+              text,
+              originalTokens,
+              compressedTokens: originalTokens,
+              tokensSaved: 0,
+              savingsPercent: 0,
+              techniquesUsed: [],
+              rulesApplied: [`rtk:processor:${procResult.processor}:${procResult.status}`],
+              rawOutputPointers: [],
+            };
           }
         } else {
           const filtered = applyLineFilter(result, {

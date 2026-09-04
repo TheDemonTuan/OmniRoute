@@ -15,7 +15,7 @@ export const gitDiffProcessor: RtkProcessor = {
       };
     }
 
-    // Fail-open for word diff formats: [-deleted-] or {+added+}
+    // Fail-open for word diff formats: [-deleted-] or {+added+} or combined @@@
     if (raw.includes("[-") || raw.includes("{+") || raw.includes("@@@")) {
       return {
         status: "passthrough",
@@ -47,10 +47,35 @@ export const gitDiffProcessor: RtkProcessor = {
     let oldRemaining = 0;
     let newRemaining = 0;
 
+    const maxBudgetLines = ctx.renderBudget?.maxLines || ctx.maxLines || 1000;
+
     for (let i = 0; i < lines.length; i++) {
+      if (kept.length >= maxBudgetLines) {
+        kept.push(`... +${lines.length - i} more lines omitted (budget cap reached)`);
+        break;
+      }
+
       const line = lines[i];
 
-      if (line.startsWith("diff --git ")) {
+      // File headers & metadata preservation
+      if (
+        line.startsWith("diff --git ") ||
+        line.startsWith("index ") ||
+        line.startsWith("--- ") ||
+        line.startsWith("+++ ") ||
+        line.startsWith("rename from ") ||
+        line.startsWith("rename to ") ||
+        line.startsWith("copy from ") ||
+        line.startsWith("copy to ") ||
+        line.startsWith("similarity index ") ||
+        line.startsWith("dissimilarity index ") ||
+        line.startsWith("new file mode ") ||
+        line.startsWith("deleted file mode ") ||
+        line.startsWith("old mode ") ||
+        line.startsWith("new mode ") ||
+        line.startsWith("Binary files ") ||
+        line.startsWith("GIT binary patch")
+      ) {
         kept.push(line);
         inHunk = false;
         continue;
@@ -68,10 +93,6 @@ export const gitDiffProcessor: RtkProcessor = {
       }
 
       if (inHunk) {
-        if (line.startsWith("+++ ") || line.startsWith("--- ")) {
-          continue;
-        }
-
         if (line.startsWith("+")) {
           kept.push(line);
           newRemaining = Math.max(0, newRemaining - 1);
@@ -79,7 +100,7 @@ export const gitDiffProcessor: RtkProcessor = {
           kept.push(line);
           oldRemaining = Math.max(0, oldRemaining - 1);
         } else if (line.startsWith(" ")) {
-          // Context line
+          // Context line: omit to compress, but decrement consumed count
           oldRemaining = Math.max(0, oldRemaining - 1);
           newRemaining = Math.max(0, newRemaining - 1);
         } else if (line.startsWith("\\ No newline at end of file")) {

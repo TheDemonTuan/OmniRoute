@@ -129,7 +129,7 @@ const DETECTORS: Detector[] = [
       /^\[INFO\] Scanning for projects\.\.\./m,
       /^\[INFO\] Building /m,
       /^\[INFO\] BUILD (?:SUCCESS|FAILURE)\b/m,
-      /^\[ERROR\]/m,
+      /^\[ERROR\] Failed to execute goal/m,
     ],
   },
   {
