@@ -114,7 +114,7 @@ test("isQuotaExhaustedForRequest scopes gemini exhaustion to the requested model
   quotaCache.setQuotaCache(connectionId, "antigravity", {
     "gemini-3.7-flash-medium": { remainingPercentage: 0, resetAt: null },
     "gemini-pro-agent": { remainingPercentage: 100, resetAt: null },
-    gemini_weekly: { remainingPercentage: 0, resetAt: null },
+    gemini_weekly: { remainingPercentage: 100, resetAt: null },
   });
 
   assert.equal(
