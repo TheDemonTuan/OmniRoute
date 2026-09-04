@@ -27,7 +27,9 @@ import {
   sortQuotasByWindow,
 } from "../quotaParsing";
 import KiloPassMeter from "./KiloPassMeter";
-import AntigravityQuotaGroups from "../AntigravityQuotaGroups";
+import AntigravityQuotaGroups, {
+  resolveAntigravityQuotaGroups,
+} from "../AntigravityQuotaGroups";
 
 const CURRENCY_SYMBOLS: Record<string, string> = {
   USD: "$",
@@ -349,6 +351,13 @@ export default function QuotaCardExpanded({
     translateUsageOrFallback(t, key, fallback, values);
 
   const [expanded, setExpanded] = useState(false);
+  const resolvedAntigravityGroups = useMemo(
+    () =>
+      providerId === "antigravity" || providerId === "agy"
+        ? resolveAntigravityQuotaGroups(quotaGroups, quotas)
+        : [],
+    [providerId, quotaGroups, quotas]
+  );
   const sortedQuotas = useMemo(
     () => resolveQuotaDisplayOrder(providerId, quotas),
     [quotas, providerId]
@@ -386,8 +395,9 @@ export default function QuotaCardExpanded({
           <span className="material-symbols-outlined text-[13px]">error</span>
           <span>{error}</span>
         </div>
-      ) : (providerId === "antigravity" || providerId === "agy") && quotaGroups.length > 0 ? (
-        <AntigravityQuotaGroups groups={quotaGroups as any[]} />
+      ) : (providerId === "antigravity" || providerId === "agy") &&
+        resolvedAntigravityGroups.length > 0 ? (
+        <AntigravityQuotaGroups groups={resolvedAntigravityGroups} />
       ) : quotas.length === 0 && message ? (
         <div className="text-[11px] text-text-muted italic" title={message}>
           {message}
