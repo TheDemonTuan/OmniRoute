@@ -5,15 +5,7 @@ export interface CommandDetectionResult {
   command: string | null;
   confidence: number;
   category:
-    | "git"
-    | "test"
-    | "build"
-    | "shell"
-    | "docker"
-    | "package"
-    | "infra"
-    | "cloud"
-    | "generic";
+    "git" | "test" | "build" | "shell" | "docker" | "package" | "infra" | "cloud" | "generic";
   matchedPatterns: string[];
 }
 
@@ -29,6 +21,9 @@ const COMMAND_PREFIXES = [
   "make",
   "gradle",
   "gradlew",
+  "mvn",
+  "mvnw",
+  "mvnd",
   "dotnet",
   "terraform",
   "tofu",
@@ -43,6 +38,7 @@ const COMMAND_PREFIXES = [
   "python",
   "go",
   "cargo",
+  "ctest",
   "tsc",
   "eslint",
   "webpack",
@@ -62,6 +58,8 @@ const COMMAND_PREFIXES = [
   "rubocop",
   "kubectl",
   "composer",
+  "php",
+  "run-tests.php",
   "gh",
   "docker",
   "aws",
@@ -122,6 +120,40 @@ const DETECTORS: Detector[] = [
     category: "build",
     commandPatterns: [/^(?:gradle|gradlew|\.\/gradlew)\b/i],
     contentPatterns: [/^> Task :/m, /^BUILD (?:SUCCESSFUL|FAILED)\b/m],
+  },
+  {
+    type: "maven",
+    category: "build",
+    commandPatterns: [/^(?:mvn|mvnw|\.\/mvnw|mvnd)\b/i],
+    contentPatterns: [
+      /^\[INFO\] Scanning for projects\.\.\./m,
+      /^\[INFO\] Building /m,
+      /^\[INFO\] BUILD (?:SUCCESS|FAILURE)\b/m,
+      /^\[ERROR\]/m,
+    ],
+  },
+  {
+    type: "test-ctest",
+    category: "test",
+    commandPatterns: [/^ctest\b/i],
+    contentPatterns: [
+      /^Test project /m,
+      /^\s*\d+\/\d+\s+Test\s+#\d+:/m,
+      /\d+% tests passed, \d+ tests failed out of \d+/m,
+    ],
+  },
+  {
+    type: "test-phpt",
+    category: "test",
+    commandPatterns: [/^(?:php\s+)?run-tests\.php\b/i],
+    contentPatterns: [
+      /^TIME START /m,
+      /^PASS\s+/m,
+      /^FAIL\s+/m,
+      /^XFAIL\s+/m,
+      /^BORK\s+/m,
+      /^=====================================================================/m,
+    ],
   },
   {
     type: "dotnet",
@@ -314,8 +346,8 @@ const DETECTORS: Detector[] = [
     category: "docker",
     commandPatterns: [/^docker\s+logs\b/i, /^docker\s+compose\s+logs\b/i],
     contentPatterns: [
-      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/m,
-      /\b(?:ERROR|WARN|INFO)\b/,
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?\s+(?:\[\w+\]\s+)?(?:ERROR|WARN|INFO)/m,
+      /^\w+[-_]\d+\s+\|\s+(?:ERROR|WARN|INFO)/m,
       /^Attaching to /m,
     ],
   },
@@ -424,12 +456,38 @@ const DETECTORS: Detector[] = [
 ];
 
 export function detectCommandFromText(text: string): string | null {
+  // If text looks like JSON, XML, or timestamped server log lines, do not extract a command from text
+  const trimmed = text.trim();
+  if (trimmed.startsWith("{") || trimmed.startsWith("[") || trimmed.startsWith("<")) {
+    return null;
+  }
+
   const firstLines = text.split(/\r?\n/).slice(0, 4);
   for (const line of firstLines) {
-    const trimmed = line.trim().replace(/^\$\s+/, "");
-    if (!trimmed) continue;
-    if (COMMAND_PREFIX_PATTERN.test(trimmed)) {
-      return lastCommandSegment(trimmed);
+    const rawLine = line.trim();
+    if (!rawLine) continue;
+    // Common log formats: 2026-09-04 12:00:00, [INFO], [2026-..., etc.
+    if (
+      /^(?:\d{4}-\d{2}-\d{2}|\[\d{4}-\d{2}-\d{2}|\[(?:INFO|DEBUG|WARN|ERROR|TRACE)\])/i.test(
+        rawLine
+      )
+    ) {
+      continue;
+    }
+    // Only accept lines explicitly prefixed with $ or > or strictly starting with a known command binary followed by a space/flag
+    if (/^[$>]\s+/.test(rawLine)) {
+      const cmd = rawLine.replace(/^[$>]\s+/, "").trim();
+      if (COMMAND_PREFIX_PATTERN.test(cmd)) {
+        return lastCommandSegment(cmd);
+      }
+    } else if (COMMAND_PREFIX_PATTERN.test(rawLine)) {
+      // Ensure it's not a sentence e.g. "git is a version control system"
+      // Valid command invocations usually have flags (-a, --bar), paths, or subcommands
+      const parts = rawLine.split(/\s+/);
+      const binary = parts[0];
+      if (COMMAND_PREFIXES.includes(binary)) {
+        return lastCommandSegment(rawLine);
+      }
     }
   }
   return null;

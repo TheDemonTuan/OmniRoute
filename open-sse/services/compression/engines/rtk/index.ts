@@ -130,8 +130,7 @@ function mergeRtkConfig(base?: Partial<RtkConfig>, override?: Record<string, unk
         ? Math.max(1, Math.floor(merged.rawOutputMaxFiles))
         : DEFAULT_RTK_CONFIG.rawOutputMaxFiles,
     rawOutputMaxAgeDays:
-      typeof merged.rawOutputMaxAgeDays === "number" &&
-      Number.isFinite(merged.rawOutputMaxAgeDays)
+      typeof merged.rawOutputMaxAgeDays === "number" && Number.isFinite(merged.rawOutputMaxAgeDays)
         ? Math.max(1, Math.floor(merged.rawOutputMaxAgeDays))
         : DEFAULT_RTK_CONFIG.rawOutputMaxAgeDays,
   };
@@ -229,13 +228,28 @@ export function processRtkText(
   text: string,
   options: { command?: string | null; config?: Partial<RtkConfig>; skipFilters?: boolean } = {}
 ): RtkProcessResult {
+  if (typeof text !== "string") {
+    return {
+      text: String(text ?? ""),
+      originalTokens: 0,
+      compressedTokens: 0,
+      tokensSaved: 0,
+      savingsPercent: 0,
+      techniquesUsed: [],
+      rulesApplied: [],
+      rawOutputPointers: [],
+    };
+  }
+
+  const hasBom = text.charCodeAt(0) === 0xfeff;
+  const cleanText = hasBom ? text.slice(1) : text;
+
   const config = mergeRtkConfig(options.config);
   const originalTokens = estimateCompressionTokens(text);
   const techniquesUsed: string[] = [];
   const rulesApplied: string[] = [];
   const rawOutputPointers: RtkRawOutputPointer[] = [];
-  let result = text;
-
+  let result = cleanText;
   const detection = detectCommandType(text, options.command);
   // #4559: A document/file read (e.g. a Read tool returning a ~147-line code/prose
   // file) is NOT repetitive command output, but the generic-output *fallback* filter
@@ -260,7 +274,10 @@ export function processRtkText(
       if (config.enabledFilters.length === 0 || config.enabledFilters.includes(filter.id)) {
         const filtered = applyLineFilter(result, {
           ...filter,
-          maxLines: effectiveMaxLines(filter.maxLines || config.maxLinesPerResult, config.intensity),
+          maxLines: effectiveMaxLines(
+            filter.maxLines || config.maxLinesPerResult,
+            config.intensity
+          ),
         });
         result = filtered.text;
         if (filtered.appliedRules.length > 0) {
@@ -727,7 +744,7 @@ export {
   detectCommandOutput,
   detectCommandType,
 } from "./commandDetector.ts";
-export { runRtkFilterTests } from "./verify.ts";
+export { runRtkFilterTests, verifyRtkFixture, type RtkFixtureAssertion } from "./verify.ts";
 export {
   maybePersistRtkRawOutput,
   readRtkRawOutput,
@@ -737,3 +754,9 @@ export {
 // RTK learn/discover: the sample-source adapter (rawOutput) feeds these pure miners.
 export { discoverRepeatedNoise, type NoiseCandidate, type CommandSample } from "./discover.ts";
 export { suggestFilter, commandToId, type SuggestedFilter } from "./learn.ts";
+export { RTK_UPSTREAM_BASELINE, type RtkUpstreamBaseline } from "./upstream.ts";
+export {
+  RTK_PARITY_MANIFEST,
+  type RtkParityManifest,
+  type RtkParityFilterEntry,
+} from "./parityManifest.ts";

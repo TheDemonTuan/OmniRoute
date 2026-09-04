@@ -1,0 +1,51 @@
+{
+  "id": "maven",
+  "label": "Maven",
+  "description": "Drop repetitive Maven download and plugin noise while keeping project build summaries, failures, and errors.",
+  "category": "build",
+  "priority": 90,
+  "match": {
+    "outputTypes": ["maven"],
+    "commands": ["^(?:mvn|mvnw|\\./mvnw|mvnd)\\b"],
+    "patterns": [
+      "^\\[INFO\\] Scanning for projects\\.\\.\\.",
+      "^\\[INFO\\] BUILD (?:SUCCESS|FAILURE)\\b"
+    ]
+  },
+  "rules": {
+    "stripAnsi": true,
+    "includePatterns": [
+      "^\\[INFO\\] Scanning for projects\\.\\.\\.",
+      "^\\[INFO\\] Building ",
+      "^\\[INFO\\] Reactor Summary",
+      "^\\[INFO\\]   .* (?:SUCCESS|FAILURE|SKIPPED)",
+      "^\\[INFO\\] BUILD (?:SUCCESS|FAILURE)\\b",
+      "^\\[INFO\\] Total time:",
+      "^\\[ERROR\\]"
+    ],
+    "dropPatterns": [
+      "^\\[INFO\\] Downloading from ",
+      "^\\[INFO\\] Downloaded from ",
+      "^\\[INFO\\] --- [a-zA-Z0-9_.-]+:[0-9_.-]+:[a-zA-Z0-9_.-]+ ",
+      "^Progress \\(\\d+\\):",
+      "^\\s*$"
+    ],
+    "collapsePatterns": ["^\\s*at "],
+    "deduplicate": true,
+    "maxLines": 180,
+    "headLines": 40,
+    "tailLines": 70
+  },
+  "preserve": {
+    "errorPatterns": ["^\\[ERROR\\]", "BUILD FAILURE"],
+    "summaryPatterns": ["^\\[INFO\\] BUILD (?:SUCCESS|FAILURE)\\b", "^\\[INFO\\] Total time:"]
+  },
+  "tests": [
+    {
+      "name": "inline sample",
+      "command": "mvn clean test",
+      "input": "[INFO] Scanning for projects...\n[INFO] Building my-app 1.0-SNAPSHOT\n[INFO] --- maven-compiler-plugin:3.8.1:compile (default-compile) ---\n[INFO] Downloading from central: https://repo.maven.apache.org/maven2/foo.jar\n[INFO] Downloaded from central: https://repo.maven.apache.org/maven2/foo.jar (10 kB at 1.2 MB/s)\n[ERROR] /src/App.java:[10,5] cannot find symbol\n[INFO] ------------------------------------------------------------------------\n[INFO] BUILD FAILURE\n[INFO] ------------------------------------------------------------------------\n[INFO] Total time:  1.234 s\n",
+      "expected": "[INFO] Scanning for projects...\n[INFO] Building my-app 1.0-SNAPSHOT\n[ERROR] /src/App.java:[10,5] cannot find symbol\n[INFO] BUILD FAILURE\n[INFO] Total time:  1.234 s"
+    }
+  ]
+}

@@ -7,11 +7,18 @@
   "match": {
     "outputTypes": ["git-diff"],
     "commands": ["^git\\s+(?:diff|show)\\b"],
-    "patterns": ["^diff --git ", "^@@\\s+-\\d+,\\d+\\s+\\+\\d+,\\d+\\s+@@"]
+    "patterns": [
+      "^diff --git (?:\"[^\"]+\"|\\S+)",
+      "^@@\\s+-\\d+(?:,\\d+)?\\s+\\+\\d+(?:,\\d+)?\\s+@@"
+    ]
   },
   "rules": {
     "includePatterns": [],
-    "dropPatterns": ["^index [0-9a-f]+\\.\\.[0-9a-f]+.*$", "^--- a/", "^\\+\\+\\+ b/"],
+    "dropPatterns": [
+      "^index [0-9a-f]+\\.\\.[0-9a-f]+.*$",
+      "^--- (?:a/|\"a/)",
+      "^\\+\\+\\+ (?:b/|\"b/)"
+    ],
     "collapsePatterns": ["^\\s*$"],
     "deduplicate": true,
     "maxLines": 180,

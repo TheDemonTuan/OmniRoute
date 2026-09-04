@@ -20,6 +20,7 @@ const SECRET_PATTERNS: Array<[RegExp, string]> = [
   [/\b(sk-[A-Za-z0-9_-]{16,})\b/g, "[REDACTED_OPENAI_KEY]"],
   [/\b(xox[baprs]-[A-Za-z0-9-]{16,})\b/g, "[REDACTED_SLACK_TOKEN]"],
   [/\b(AKIA[0-9A-Z]{16})\b/g, "[REDACTED_AWS_KEY]"],
+  [/\b(gh[pousr]_[A-Za-z0-9_]{16,})\b/g, "[REDACTED_GITHUB_TOKEN]"],
   // key=value / key: value for common credential field names (flat alternation — no nesting,
   // so no ReDoS). Covers names the bare token/secret/password set misses (private_key, etc).
   [
@@ -67,8 +68,10 @@ export function redactRtkRawOutput(value: string): { text: string; redacted: boo
 }
 
 export function isLikelyFailureOutput(value: string): boolean {
-  return /\b(error|failed|failure|exception|traceback|panic|fatal|critical|TS\d{4}|FAIL)\b/i.test(
-    value
+  return (
+    /\b(error|failed|failure|exception|traceback|panic|fatal|critical|timeout|timed out|TS\d{4}|FAIL|BORK|BUILD FAILURE)\b/i.test(
+      value
+    ) || /\*\*\*(?:Failed|Timeout)\b/i.test(value)
   );
 }
 

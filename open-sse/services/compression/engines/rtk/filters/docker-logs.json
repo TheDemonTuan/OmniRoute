@@ -7,7 +7,7 @@
   "match": {
     "outputTypes": ["docker-logs"],
     "commands": ["^docker\\s+(?:compose\\s+)?logs\\b"],
-    "patterns": ["\\b(?:ERROR|WARN|INFO)\\b", "^Attaching to "]
+    "patterns": ["^Attaching to ", "^\\s*\\w+[-_]\\d+\\s+\\|\\s+"]
   },
   "rules": {
     "stripAnsi": true,

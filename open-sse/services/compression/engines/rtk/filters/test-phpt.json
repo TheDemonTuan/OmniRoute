@@ -1,0 +1,47 @@
+{
+  "id": "test-phpt",
+  "label": "PHPT (run-tests.php)",
+  "description": "Preserve failed PHPT tests, XFAIL/BORK reasons, diffs, and summary counts while collapsing passing tests.",
+  "category": "test",
+  "priority": 90,
+  "match": {
+    "outputTypes": ["test-phpt"],
+    "commands": ["^(?:php\\s+)?run-tests\\.php\\b"],
+    "patterns": [
+      "^TIME START ",
+      "^=====================================================================",
+      "Number of tests :\\s+\\d+"
+    ]
+  },
+  "rules": {
+    "stripAnsi": true,
+    "includePatterns": [
+      "^TIME START ",
+      "^FAIL\\s+",
+      "^XFAIL\\s+",
+      "^BORK\\s+",
+      "^====+.*====+$",
+      "^TEST \\d+/\\d+ \\[",
+      "^Number of tests :",
+      "^Tests (?:passed|failed|skipped|warned)"
+    ],
+    "dropPatterns": ["^PASS\\s+", "^SKIP\\s+", "^\\s*$"],
+    "collapsePatterns": ["^\\s*$"],
+    "deduplicate": true,
+    "maxLines": 180,
+    "headLines": 40,
+    "tailLines": 70
+  },
+  "preserve": {
+    "errorPatterns": ["^FAIL\\s+", "^BORK\\s+", "Tests failed :"],
+    "summaryPatterns": ["^Number of tests :", "^Tests (?:passed|failed|skipped|warned) :"]
+  },
+  "tests": [
+    {
+      "name": "inline sample",
+      "command": "php run-tests.php",
+      "input": "=====================================================================\nTIME START 2026-09-04 12:00:00\n=====================================================================\nPASS Test math [tests/001.phpt]\nFAIL Test string format [tests/002.phpt]\nPASS Test io [tests/003.phpt]\n=====================================================================\nNumber of tests :    3                 3\nTests passed    :    2 ( 66.7%)       ( 66.7%)\nTests failed    :    1 ( 33.3%)       ( 33.3%)\n=====================================================================\n",
+      "expected": "=====================================================================\nTIME START 2026-09-04 12:00:00\n=====================================================================\nFAIL Test string format [tests/002.phpt]\n=====================================================================\nNumber of tests :    3                 3\nTests passed    :    2 ( 66.7%)       ( 66.7%)\nTests failed    :    1 ( 33.3%)       ( 33.3%)\n====================================================================="
+    }
+  ]
+}
