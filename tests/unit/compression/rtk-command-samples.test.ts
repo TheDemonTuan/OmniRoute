@@ -38,17 +38,21 @@ afterEach(() => {
   fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 });
 
-describe("maybePersistRtkRawOutput — command sidecar", () => {
-  it("writes a <base>.meta.json sidecar carrying the full command alongside the .log", () => {
+describe("maybePersistRtkRawOutput — safe command sidecar", () => {
+  it("writes a <base>.meta.json sidecar without raw command argv", () => {
     const ptr = maybePersistRtkRawOutput("error: boom\nline2\n", {
       retention: "always",
+      family: "npm",
       command: "npm run build --workspace=@scope/pkg",
     });
     assert.ok(ptr, "pointer returned");
     const sidecar = ptr!.path.replace(/\.log$/, ".meta.json");
     assert.ok(fs.existsSync(sidecar), "sidecar meta file written");
     const meta = JSON.parse(fs.readFileSync(sidecar, "utf8"));
-    assert.equal(meta.command, "npm run build --workspace=@scope/pkg", "full command preserved");
+    assert.equal(meta.family, "npm");
+    assert.equal(meta.safeSignature, "npm");
+    assert.equal("command" in meta, false, "raw command is never persisted");
+    assert.equal(typeof meta.commandHash, "string");
     assert.equal(typeof meta.timestamp, "number");
   });
 
@@ -74,14 +78,15 @@ describe("listRtkCommandSamples", () => {
     assert.deepEqual(listRtkCommandSamples(), []);
   });
 
-  it("recovers the exact command from the sidecar + output from the .log", () => {
+  it("returns a safe family signature from the sidecar + output from the .log", () => {
     maybePersistRtkRawOutput("Compiling...\nDone in 3s\n", {
       retention: "always",
+      family: "cargo",
       command: "cargo build --release",
     });
     const samples = listRtkCommandSamples();
     assert.equal(samples.length, 1);
-    assert.equal(samples[0].command, "cargo build --release");
+    assert.equal(samples[0].command, "cargo");
     assert.match(samples[0].output, /Compiling/);
   });
 

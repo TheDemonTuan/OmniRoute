@@ -107,6 +107,11 @@ export const phptProcessor: RtkProcessor = {
 
       if (trimmed.startsWith("========DONE========") || trimmed.startsWith("========DONE")) {
         inDiff = false;
+        // A following DIFF belongs to the preceding failing status; retain it for output.
+        if (currentDiffLines.length > 0 && failures.length > 0) {
+          failures[failures.length - 1].diffLines.push(...currentDiffLines);
+        }
+        currentDiffLines = [];
         continue;
       }
 
@@ -115,7 +120,8 @@ export const phptProcessor: RtkProcessor = {
         continue;
       }
 
-      // Supports status anchors at line start or after TEST N/M [path]
+      // PHPT prints DIFF either before or after a failure status. Hold the latest block and
+      // associate it with the next actionable status, or retroactively with the latest one.
       const matchResult =
         /(?:^|\]\s*)(PASS|FAIL|SKIP|BORK|WARN|LEAK|XFAIL|XLEAK)\s+(.*?)(?:\s+\[(.*?)\])?(?:\s+reason:\s+(.*))?$/.exec(
           trimmed
@@ -133,6 +139,8 @@ export const phptProcessor: RtkProcessor = {
             reason,
             diffLines: [...currentDiffLines],
           });
+        } else if (currentDiffLines.length > 0 && failures.length > 0) {
+          failures[failures.length - 1].diffLines.push(...currentDiffLines);
         }
         currentDiffLines = [];
         continue;
@@ -147,7 +155,8 @@ export const phptProcessor: RtkProcessor = {
         trimmed.startsWith("Tests leaked    :") ||
         trimmed.startsWith("Tests borked    :") ||
         trimmed.startsWith("Expected fail   :") ||
-        trimmed.startsWith("Expected leak   :")
+        trimmed.startsWith("Expected leak   :") ||
+        trimmed.startsWith("Time taken      :")
       ) {
         summaryLines.push(line);
       }

@@ -22,6 +22,9 @@ registerRtkProcessor(ctestProcessor);
 registerRtkProcessor(mavenProcessor);
 registerRtkProcessor(gitDiffProcessor);
 registerRtkProcessor(typescriptProcessor);
+export function listRtkProcessorIds(): RtkProcessorId[] {
+  return Object.keys(PROCESSOR_REGISTRY) as RtkProcessorId[];
+}
 
 export function executeRtkProcessor(
   processorId: string,

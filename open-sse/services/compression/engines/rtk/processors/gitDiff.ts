@@ -27,14 +27,18 @@ export const gitDiffProcessor: RtkProcessor = {
       };
     }
 
-    // Guard: must have git diff headers or hunk headers
-    if (!raw.includes("diff --git") && !raw.includes("@@")) {
+    // Metadata-only diffs (renames, binary changes) are valid even without a hunk.
+    const hasRecognizedMetadata =
+      /^(?:diff --git|index |rename (?:from|to) |copy (?:from|to) |similarity index |dissimilarity index |(?:new|deleted|old|new) file mode |Binary files |GIT binary patch)/m.test(
+        raw
+      );
+    if (!raw.includes("diff --git") && !raw.includes("@@") && !hasRecognizedMetadata) {
       return {
         status: "passthrough",
         text: raw,
         processor: "git-diff",
         confidence: 0,
-        reason: "No git diff or hunk headers found",
+        reason: "No git diff hunk or metadata headers found",
         ownsTruncation: false,
       };
     }

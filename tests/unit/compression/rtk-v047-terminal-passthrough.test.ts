@@ -71,13 +71,26 @@ describe("RTK v0.47 Parity Terminal Passthrough & Security Verification", () => 
       assert.ok(!pointer.path.includes("sk-ant-api03"));
       assert.ok(!pointer.path.includes("TOKEN"));
 
-      // Ensure sidecar metadata also redacts the command
       const metaPath = pointer.path.replace(/\.log$/, ".meta.json");
       assert.ok(fs.existsSync(metaPath));
       const metaContent = JSON.parse(fs.readFileSync(metaPath, "utf8"));
-      assert.ok(!metaContent.safeSignature.includes("sk-ant-api03-12345678901234567890"));
-      assert.ok(!metaContent.safeSignature.includes("ghp_SuperSecretPassword12345678901234"));
+      assert.equal(metaContent.safeSignature, "tool-output");
+      assert.equal("command" in metaContent, false);
       assert.ok(metaContent.commandHash !== null);
+    });
+  });
+
+  describe("Stateful processor isolation", () => {
+    it("does not deduplicate repeated git diff addition lines after stateful rendering", () => {
+      const raw = `diff --git a/a.ts b/a.ts
+@@ -1,3 +1,3 @@
++foo
++foo
++foo
+`;
+      const result = processRtkText(raw, { command: "git diff" });
+      assert.equal(result.text.split("\n").filter((line) => line === "+foo").length, 3);
+      assert.ok(!result.text.includes("[rtk:dropped"));
     });
   });
 

@@ -97,6 +97,7 @@ export function maybePersistRtkRawOutput(
   raw: string,
   options: {
     retention: RtkRawOutputRetention;
+    family?: string | null;
     command?: string | null;
     maxBytes?: number;
     failure?: boolean;
@@ -110,14 +111,13 @@ export function maybePersistRtkRawOutput(
   const maxBytes = Math.max(1024, Math.floor(options.maxBytes ?? 1_048_576));
   const redaction = redactRtkRawOutput(safeUtf8Slice(raw, maxBytes));
   const now = Date.now();
-  const safeCommand = options.command ? redactRtkRawOutput(options.command).text : null;
   const commandHash = options.command
     ? crypto.createHash("sha256").update(options.command).digest("hex").slice(0, 16)
     : null;
-  // Never derive filename from raw command argv (which may leak secrets in filename/fs metadata).
-  // Use safe executable name or fallback to "tool-output".
+  // Never derive a path or metadata value from raw command argv: even a redactor cannot
+  // prove coverage of arbitrary secret formats. Callers provide a normalized family instead.
   const familySlug =
-    (options.command ? options.command.trim().split(/\s+/)[0] : "tool-output")
+    (options.family || "tool-output")
       .replace(/[^A-Za-z0-9_-]+/g, "_")
       .replace(/^_+|_+$/g, "")
       .slice(0, 24) || "tool-output";
@@ -150,12 +150,11 @@ export function maybePersistRtkRawOutput(
       tmpMetaPath,
       JSON.stringify({
         family: familySlug,
-        command: safeCommand,
-        safeSignature: safeCommand,
+        safeSignature: familySlug,
         commandHash,
         timestamp: now,
         failure,
-        redacted: redaction.redacted || safeCommand !== options.command,
+        redacted: redaction.redacted,
         bytes: Buffer.byteLength(redaction.text, "utf8"),
       }),
       { mode: 0o600 }

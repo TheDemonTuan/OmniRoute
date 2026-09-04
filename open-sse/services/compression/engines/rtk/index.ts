@@ -253,6 +253,7 @@ export function processRtkText(
   const rulesApplied: string[] = [];
   const rawOutputPointers: RtkRawOutputPointer[] = [];
   let result = cleanText;
+  let statefulProcessorRendered = false;
   let ownsTruncation = false;
   const detection = detectCommandType(text, options.command);
   // #4559: A document/file read (e.g. a Read tool returning a ~147-line code/prose
@@ -294,15 +295,24 @@ export function processRtkText(
 
         // 2. If the filter specifies a dedicated stateful processor, execute it
         if (filter.processor) {
+          const maxLines = effectiveMaxLines(
+            filter.maxLines || config.maxLinesPerResult,
+            config.intensity
+          );
           const procResult = executeRtkProcessor(filter.processor, {
             command: options.command ?? null,
             normalizedCommand: detection.command,
             stdout: result,
-            maxLines: filter.maxLines || config.maxLinesPerResult,
+            maxLines,
+            renderBudget: {
+              maxLines,
+              maxChars: config.maxCharsPerResult,
+            },
             rawRecoveryEnabled: config.rawOutputRetention !== "never",
           });
           if (procResult.status === "compressed") {
             result = procResult.text;
+            statefulProcessorRendered = true;
             ownsTruncation = procResult.ownsTruncation;
             techniquesUsed.push(`rtk-processor:${procResult.processor}`);
             rulesApplied.push(`rtk:processor:${procResult.processor}`);
@@ -339,8 +349,8 @@ export function processRtkText(
     }
   }
 
-  // #10: semantic renderers — opt-in via enableRenderers flag (default OFF), fail-open
-  if (config.enableRenderers) {
+  // Stateful processors own semantic rendering. Never run generic transformations over their output.
+  if (!statefulProcessorRendered && config.enableRenderers) {
     try {
       const rendered = applyRenderer(result, detection, config);
       if (rendered.changed) {
@@ -353,14 +363,12 @@ export function processRtkText(
     }
   }
 
-  if (config.applyToCodeBlocks) {
+  if (!statefulProcessorRendered && config.applyToCodeBlocks) {
     let strippedCodeBlocks = 0;
     result = result.replace(
       /```([A-Za-z0-9_+.-]*)\r?\n([\s\S]*?)```/g,
       (match, languageHint: string, code: string) => {
         const stripped = stripCode(code, normalizeCodeLanguage(languageHint), {
-          // Opt-in comment removal (default off = no silent production change). Docstrings/JSDoc
-          // are preserved unless explicitly disabled.
           removeComments: config.stripCodeComments === true,
           preserveDocstrings: config.preserveDocstrings !== false,
         });
@@ -376,25 +384,23 @@ export function processRtkText(
     }
   }
 
-  const deduped = deduplicateRepeatedLines(result, { threshold: config.deduplicateThreshold });
-  if (deduped.collapsed > 0) {
-    result = deduped.text;
-    techniquesUsed.push("rtk-dedup");
-    rulesApplied.push("rtk:dedup");
-  }
+  if (!statefulProcessorRendered) {
+    const deduped = deduplicateRepeatedLines(result, { threshold: config.deduplicateThreshold });
+    if (deduped.collapsed > 0) {
+      result = deduped.text;
+      techniquesUsed.push("rtk-deduplicate");
+      rulesApplied.push("rtk:deduplicate");
+    }
 
-  // R5: grouping — opt-in via enableGrouping flag (default OFF)
-  if (config.enableGrouping) {
-    const grouped = groupSimilarLines(result, {
-      threshold: config.groupingThreshold,
-    });
-    if (grouped.grouped > 0) {
-      result = grouped.text;
-      techniquesUsed.push("rtk-grouping");
-      rulesApplied.push("rtk:grouping");
+    if (config.enableGrouping) {
+      const grouped = groupSimilarLines(result, { threshold: config.groupingThreshold });
+      if (grouped.grouped > 0) {
+        result = grouped.text;
+        techniquesUsed.push("rtk-grouping");
+        rulesApplied.push("rtk:grouping");
+      }
     }
   }
-
   const defaultPriorityPatterns: RegExp[] = [/error|failed|exception|traceback|TS\d{4}|FAIL|✖/i];
   const filterPriorityPatterns: RegExp[] = matchedFilterPatterns.flatMap((pattern) => {
     try {
@@ -403,7 +409,6 @@ export function processRtkText(
       return [];
     }
   });
-  // #4559: skip the generic line/char hard-cap for document/file reads or when processor owns truncation
   const truncated =
     isDocumentLikeRead || ownsTruncation
       ? { text: result, truncated: false, droppedLines: 0 }
@@ -424,6 +429,7 @@ export function processRtkText(
   if (compressedTokens < originalTokens) {
     const pointer = maybePersistRtkRawOutput(text, {
       retention: config.rawOutputRetention,
+      family: detection.type,
       command: detection.command,
       maxBytes: config.rawOutputMaxBytes,
     });

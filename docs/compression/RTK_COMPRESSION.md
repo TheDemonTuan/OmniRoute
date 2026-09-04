@@ -18,20 +18,15 @@ rtk -> caveman
 
 That order compresses noisy machine output first, then lets Caveman condense remaining prose.
 
-Upstream RTK reports `60-90%` command-output savings. Its README sample session goes from
-`~118,000` standard tokens to `~23,900` RTK tokens, which is `79.7%` saved (`~80%`). OmniRoute uses
-that upstream average for the stacked savings calculation with Caveman input compression:
-
-```txt
-RTK average:    80% saved
-Caveman input: 46% saved
-Stacked:       1 - (1 - 0.80) * (1 - 0.46) = 89.2% saved
-Range:         1 - (1 - 0.60..0.90) * (1 - 0.46) = 78.4-94.6%
-```
+Upstream RTK reports command-specific savings for its own datasets. Those figures are reference
+material only; they are not OmniRoute measurements and must not be multiplied with another
+engine's savings to form a stacked "average". OmniRoute reports savings only from its own RTK
+fixture benchmark corpus, with fidelity and passthrough rates reported alongside token reduction.
 
 ## What It Compresses
 
-The built-in catalog currently ships 49 filters across these categories:
+The built-in catalog is generated from the filter source at documentation build time; do not rely
+on a hard-coded count.
 
 | Category  | Examples                                                      |
 | --------- | ------------------------------------------------------------- |
@@ -425,9 +420,7 @@ Both the **head** and **tail** of each section are preserved; middle content is 
 ```json
 {
   "combo": "my-coding-combo",
-  "routing": {
-    /* ... */
-  },
+  "routing": {/* ... */},
   "compression": {
     "engine": "rtk",
     "intensity": "aggressive"
@@ -716,3 +709,24 @@ if (!result.passed) {
 - [COMPRESSION_ENGINES.md](./COMPRESSION_ENGINES.md) — Engine registry and built-in engines
 - [EXTENDING_COMPRESSION.md](./EXTENDING_COMPRESSION.md) — Custom engines, language packs, stacked pipelines
 - Source: `open-sse/services/compression/engines/rtk/` (63 files, ~70KB)
+
+<!-- RTK_GENERATED_START -->
+
+## RTK v0.47.0 parity status
+
+- **Upstream baseline:** [rtk-ai/rtk v0.47.0](https://github.com/rtk-ai/rtk/releases/tag/v0.47.0)
+- **Parity target:** behavioral-semantic, independent TypeScript implementation.
+- **Built-in filter catalog:** 58 filters, computed dynamically from source.
+- **Measurement policy:** OmniRoute does not claim compounded or upstream-derived savings as local benchmark results. Savings must be measured from OmniRoute's fixture corpus.
+
+| Family     | Filter IDs       | Parity  | Known gaps                                                                        |
+| ---------- | ---------------- | ------- | --------------------------------------------------------------------------------- |
+| ctest      | test-ctest       | partial | forwarded-suites, dashboard-T-modes, repeat-until-pass-interleaving               |
+| maven      | maven            | partial | mvnd-per-module-lanes, ambiguous-raw-line-attribution, full-surefire-cause-chains |
+| phpt       | test-phpt        | partial | standalone-leak-bork-reporting, upstream-show-diff-execution-injection            |
+| git-diff   | git-diff         | partial | multi-parent-combined-diffs                                                       |
+| typescript | build-typescript | partial | global-ambient-declaration-diagnostics                                            |
+| grep       | shell-grep       | partial | ripgrep-type-filtering-preservation                                               |
+| ls         | shell-ls         | partial | structured-columnar-dotfile-grouping                                              |
+
+<!-- RTK_GENERATED_END -->
