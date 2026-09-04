@@ -613,12 +613,13 @@ export async function buildAutoCandidates(
         const quota = await quotaPromises.get(quotaKey)!;
         resetWindowAffinity = calculateResetWindowAffinity(quota, resetWindowConfig);
         if (!quotaCutoffBlocked) {
-          quotaRemaining = quotaRemainingPercentFromQuota(quota);
+          quotaRemaining = quotaRemainingPercentFromQuota(quota, { provider, requestedModel: modelStr });
         }
         if (!quotaCutoffBlocked && quotaCutoffEnabled) {
           const cutoffDecision = evaluateQuotaCutoff(
             quota as QuotaInfo | null,
-            buildAutoQuotaThresholds(provider, connection, resilienceSettings)
+            buildAutoQuotaThresholds(provider, connection, resilienceSettings),
+            { provider, requestedModel: modelStr }
           );
           if (!cutoffDecision.proceed) {
             quotaCutoffBlocked = true;
@@ -1379,7 +1380,7 @@ async function handleComboChatInner({
             resilienceSettings,
             quotaCutoffResetWindowConfig,
             combo.name,
-            log
+            log, modelStr
           );
           if (quotaCutoff.blocked) {
             log.info(
@@ -1660,8 +1661,16 @@ async function handleComboChatInner({
             }
           }
 
-          // Universal handoff: inject existing handoff if model changed
+          // Universal handoff: inject existing handoff if model changed. i === 0
+          // only: a fallback target (i > 0) serves the SAME client request the
+          // failed primary target would have served, with the original messages
+          // already intact -- there's nothing to hand off, since the client never
+          // saw the earlier target fail. Injecting a handoff note there replaces
+          // real context with a context-free note, which weaker fallback models
+          // have been observed treating as license to fabricate content instead
+          // of just answering the actual request (#12227 follow-up).
           if (
+            i === 0 &&
             universalHandoffConfig.enabled &&
             relayOptions?.sessionId &&
             !(body as Record<string, unknown>)?.[SKIP_UNIVERSAL_HANDOFF_FLAG]
@@ -1927,7 +1936,14 @@ async function handleComboChatInner({
                 provider,
                 target.connectionId ?? undefined
               );
-              if (prevModel && prevModel !== modelStr) {
+              // i === 0 only: a same-request fallback target (i > 0) never
+              // needs a summary generated for it -- see the injection-site
+              // comment above. recordSessionModelUsage above stays
+              // unconditional regardless of i: it must reflect whichever
+              // model actually served THIS response, since the next
+              // request's i === 0 comparison depends on that being
+              // accurate even when this response came from a fallback.
+              if (i === 0 && prevModel && prevModel !== modelStr) {
                 const handoffSourceMessages =
                   Array.isArray(body?.messages) && body.messages.length > 0
                     ? body.messages
@@ -4015,8 +4031,5 @@ async function handleRoundRobinCombo({
   }
 
   log.warn("COMBO-RR", `All models failed | ${msg}`);
-  return new Response(JSON.stringify({ error: { message: msg } }), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
+  return new Response(JSON.stringify({ error: { message: msg } }), { status, headers: { "Content-Type": "application/json" } });
 }

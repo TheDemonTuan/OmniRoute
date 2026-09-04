@@ -47,7 +47,12 @@ import {
   hydrateCodexQuotaCacheForRequest,
   isQuotaExhaustedForRequest,
 } from "@/domain/quotaCache";
-import { getQuotaScopeLabelForProvider } from "@omniroute/open-sse/services/antigravityQuotaFamily.ts";
+import {
+  getQuotaScopeLabelForProvider,
+  isAntigravityQuotaProvider,
+} from "@omniroute/open-sse/services/antigravityQuotaFamily.ts";
+import { rehydrateAntigravityFamilyLocksForConnections, persistAntigravityFamilyCooldownIfQuota } from "@omniroute/open-sse/services/antigravityFamilyCooldown.ts";
+import { markQuotaPreflightAccountUnavailable } from "./quotaPreflightUnavailable.ts";
 import { getCreditsMode } from "@omniroute/open-sse/services/antigravityCredits.ts";
 import { preferAntigravityConnectionsWithStoredProject } from "@omniroute/open-sse/services/antigravityProjectPersistence.ts";
 import {
@@ -68,6 +73,7 @@ import {
 } from "@omniroute/open-sse/services/accountFallback.ts";
 import { isLocalProvider } from "@omniroute/open-sse/config/providerRegistry.ts";
 import { COOLDOWN_MS, RateLimitReason } from "@omniroute/open-sse/config/constants.ts";
+import { sanitizeErrorMessage } from "@omniroute/open-sse/utils/errorSanitization.ts";
 import {
   honorsRuleLockScope,
   isEgressBucketedLockScope,
@@ -891,43 +897,6 @@ function buildQuotaPreflightRateLimitedResult(
     lastErrorCode: 429,
   };
 }
-function quotaPreflightUnavailableUntil(resetAt?: string | null): string {
-  const resetMs = parseFutureDateMs(resetAt ?? null);
-  return new Date(resetMs ?? Date.now() + 5 * 60 * 1000).toISOString();
-}
-async function markQuotaPreflightAccountUnavailable(
-  provider: string,
-  connectionId: string,
-  preflight: { quotaPercent?: number; resetAt?: string | null },
-  requestedModel: string | null
-): Promise<string> {
-  const unavailableUntil = quotaPreflightUnavailableUntil(preflight.resetAt ?? null);
-  if (provider === "codex" && requestedModel?.trim()) {
-    await persistCodexChildCooldown({
-      connectionId,
-      model: requestedModel,
-      rateLimitedUntil: unavailableUntil,
-    });
-    return unavailableUntil;
-  }
-
-  const percentLabel = Number.isFinite(preflight.quotaPercent)
-    ? `${Math.round((preflight.quotaPercent as number) * 100)}%`
-    : "exhausted";
-  const modelLabel = requestedModel ? ` for ${requestedModel}` : "";
-
-  await updateProviderConnection(connectionId, {
-    rateLimitedUntil: unavailableUntil,
-    testStatus: "unavailable",
-    lastError: `Quota preflight blocked${modelLabel}: ${percentLabel}`,
-    lastErrorType: "quota_exhausted",
-    lastErrorSource: "quota_preflight",
-    errorCode: 429,
-    lastErrorAt: new Date().toISOString(),
-  });
-
-  return unavailableUntil;
-}
 
 // Provider-scoped mutexes prevent race conditions during account selection without
 // serializing unrelated providers behind a single global lock.
@@ -1326,6 +1295,7 @@ export async function getProviderCredentials(
         );
       }
     }
+    rehydrateAntigravityFamilyLocksForConnections(provider, connections);
     // allowedConnections: restrict to specific connection IDs (from API key policy, #363)
     if (allowedConnections && allowedConnections.length > 0) {
       connections = connections.filter((conn) => allowedConnections.includes(conn.id));
@@ -2405,7 +2375,9 @@ export async function getProviderCredentialsWithQuotaPreflight(
       return defaultThresholdPercent;
     };
     // #6842: openrouter also needs requestedModel, for the :free-window check.
-    const modelAwarePreflight = provider === "codex" || provider === "openrouter";
+    // agy/antigravity need it so Claude weekly cannot cool a Gemini request.
+    const modelAwarePreflight =
+      provider === "codex" || provider === "openrouter" || isAntigravityQuotaProvider(provider);
     const preflightCredentials =
       requestedModel && modelAwarePreflight ? { ...credentials, requestedModel } : credentials;
     let preflight;
@@ -2494,6 +2466,26 @@ export function isAgentrouterConnectionQuotaScope(
     !fallbackResult.permanent &&
     !fallbackResult.creditsExhausted
   );
+}
+
+async function resolveDailyResetForProvider(
+  provider: string | null,
+): Promise<{ timezone?: unknown; hour?: unknown } | null> {
+  if (!provider) return null;
+  try {
+    const nodes = await getCachedProviderNodes();
+    const node = nodes.find((candidate) => {
+      if (!candidate) return false;
+      return candidate.id === provider || candidate.prefix === provider;
+    });
+    if (!node) return null;
+    return {
+      timezone: node.dailyQuotaResetTimezone,
+      hour: node.dailyQuotaResetHour,
+    };
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -2712,7 +2704,10 @@ export async function markAccountUnavailable(
       model,
       provider,
       options.headers ?? null,
-      effectiveProviderProfile
+      effectiveProviderProfile,
+      null,
+      null,
+      await resolveDailyResetForProvider(provider),
     );
 
     // T-PROBE: probe-origin failures (model test-all) must never remove the
@@ -2723,14 +2718,13 @@ export async function markAccountUnavailable(
     // the opt-in setting probeCanDisable restores the historical behavior.
     if (await shouldIsolateProbeFailures()) {
       await updateProviderConnection(connectionId, {
-        // lastError kept RAW (full text) — maximal probe visibility; the
-        // divergence vs the normal path's slice(0,100) is intentional.
+        // Persist safe wording only after classification has consumed the raw provider text.
         // backoffLevel is deliberately NOT written: a positive backoff
         // triggers the selection-time auto-decay (resetConnectionBackoff,
         // auth.ts getProviderCredentials) which wipes lastError back to
         // NULL on the next attempt — silently destroying the probe record.
         // The backoff is also routing state a probe must not touch (#9817).
-        lastError: errorText,
+        lastError: sanitizeErrorMessage(errorText) || "Provider request failed",
         lastErrorType: fallbackResult.reason || null,
         errorCode: status,
         lastErrorAt: new Date().toISOString(),
@@ -2967,6 +2961,7 @@ export async function markAccountUnavailable(
         "AUTH",
         `Model-only lockout for ${provider}:${model} — ${status} ${reason} ${Math.ceil(lockout.cooldownMs / 1000)}s (failureCount=${lockout.failureCount}, connection stays active)`
       );
+      persistAntigravityFamilyCooldownIfQuota({ provider, connectionId, model, cooldownMs: lockout.cooldownMs, reason });
       return { shouldFallback: true, cooldownMs: lockout.cooldownMs };
     }
     const result = fallbackResult;
@@ -3145,8 +3140,8 @@ export async function markAccountUnavailable(
       );
       return { shouldFallback: true, cooldownMs: lockout.cooldownMs };
     }
-
-    const errorMsg = describeUpstreamFailure(errorText);
+    const errorMsg =
+      sanitizeErrorMessage(describeUpstreamFailure(errorText)) || "Provider request failed";
 
     // T09: Codex per-scope lockout (do not block the whole account globally).
     if (
