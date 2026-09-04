@@ -1,0 +1,4 @@
+diff --git a/source.ts b/target.ts
+similarity index 100%
+rename from source.ts
+rename to target.ts

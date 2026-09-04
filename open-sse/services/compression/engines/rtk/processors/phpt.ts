@@ -63,6 +63,10 @@ export const phptProcessor: RtkProcessor = {
     let diffTotal = 0;
     let pendingDiff: PendingDiff | null = null;
 
+    let phpVersion = "";
+    let phpSapi = "";
+    let phpOs = "";
+
     const counts: Record<PhptStatus, number> = {
       PASS: 0,
       FAIL: 0,
@@ -73,6 +77,13 @@ export const phptProcessor: RtkProcessor = {
       XFAIL: 0,
       XLEAK: 0,
     };
+
+    const summaryCounts = {
+      failed: 0,
+      borked: 0,
+      leaked: 0,
+    };
+    let summaryCountsFound = false;
 
     for (const line of lines) {
       const trimmed = line.trim();
@@ -92,13 +103,16 @@ export const phptProcessor: RtkProcessor = {
       }
 
       if (inHeader) {
-        if (
-          trimmed.startsWith("TIME START") ||
-          trimmed.startsWith("PHP ") ||
-          trimmed.startsWith("CWD") ||
-          trimmed.startsWith("OS ") ||
-          trimmed.startsWith("SAPI ")
-        ) {
+        const mVer = /^(?:PHP_VERSION\s*:\s*|PHP\s+)(.+)$/i.exec(trimmed);
+        if (mVer) phpVersion = mVer[1].trim();
+
+        const mSapi = /^(?:PHP_SAPI\s*:\s*|SAPI\s+)(.+)$/i.exec(trimmed);
+        if (mSapi) phpSapi = mSapi[1].trim();
+
+        const mOs = /^(?:PHP_OS\s*:\s*|OS\s+)(.+)$/i.exec(trimmed);
+        if (mOs) phpOs = mOs[1].trim();
+
+        if (trimmed.startsWith("TIME START") || trimmed.startsWith("CWD")) {
           headerLines.push(line);
         }
         continue;
@@ -143,6 +157,22 @@ export const phptProcessor: RtkProcessor = {
         continue;
       }
 
+      const mFailed = /^Tests failed\s*:\s*(\d+)/i.exec(trimmed);
+      if (mFailed) {
+        summaryCounts.failed = parseInt(mFailed[1], 10);
+        summaryCountsFound = true;
+      }
+      const mBorked = /^Tests borked\s*:\s*(\d+)/i.exec(trimmed);
+      if (mBorked) {
+        summaryCounts.borked = parseInt(mBorked[1], 10);
+        summaryCountsFound = true;
+      }
+      const mLeaked = /^Tests leaked\s*:\s*(\d+)/i.exec(trimmed);
+      if (mLeaked) {
+        summaryCounts.leaked = parseInt(mLeaked[1], 10);
+        summaryCountsFound = true;
+      }
+
       if (
         trimmed.startsWith("Number of tests :") ||
         trimmed.startsWith("Tests passed    :") ||
@@ -162,28 +192,39 @@ export const phptProcessor: RtkProcessor = {
     const writer = new RtkBudgetWriter(ctx.renderBudget);
     for (const line of headerLines) writer.push(line);
 
+    if (phpVersion || phpSapi || phpOs) {
+      writer.push(
+        `PHP ${phpVersion || "unknown"} SAPI ${phpSapi || "unknown"} OS ${phpOs || "unknown"}`
+      );
+    }
+
     const maxShown = Math.min(MAX_FAILURES_SHOWN, failures.length);
     for (const failure of failures.slice(0, maxShown)) {
       writer.pushRequired(
         `${failure.status} ${failure.testName} [${failure.testPath}]${failure.reason ? ` reason: ${failure.reason}` : ""}`
       );
       if (failure.diff) {
-        writer.pushRequired("========DIFF========");
-        for (const line of failure.diff.lines) writer.pushRequired(line);
+        writer.pushImportant("========DIFF========");
+        for (const line of failure.diff.lines) writer.pushImportant(line);
         if (failure.diff.totalLines > failure.diff.lines.length) {
-          writer.pushRequired(
+          writer.pushImportant(
             `... +${failure.diff.totalLines - failure.diff.lines.length} more diff lines`
           );
         }
-        writer.pushRequired("========DONE========");
+        writer.pushImportant("========DONE========");
       }
     }
-    if (failures.length > maxShown)
+    if (failures.length > maxShown) {
       writer.pushRequired(`... +${failures.length - maxShown} more failures`);
+    }
 
-    if (counts.FAIL + counts.BORK + counts.LEAK > 0 && failures.length === 0) {
+    const totalExpectedFailures = summaryCountsFound
+      ? summaryCounts.failed + summaryCounts.borked + summaryCounts.leaked
+      : counts.FAIL + counts.BORK + counts.LEAK;
+
+    if (totalExpectedFailures > 0 && failures.length === 0) {
       writer.pushRequired(
-        `FAILURES (${counts.FAIL + counts.BORK + counts.LEAK}): per-test details unavailable — output truncated`
+        `FAILURES (${totalExpectedFailures}): per-test details unavailable — output truncated`
       );
     }
 

@@ -1,0 +1,18 @@
+[INFO] Scanning for projects...
+[INFO] ------------------------------------------------------------------------
+[INFO] Reactor Build Order:
+[INFO]   parent-pom
+[INFO]   module-api
+[INFO]   module-service
+[INFO] 
+[INFO] ----------------------< com.example:module-api >-----------------------
+[INFO] Building module-api 1.0.0
+[INFO] ------------------------------------------------------------------------
+[INFO] Reactor Summary for root 1.0.0:
+[INFO] 
+[INFO] parent-pom ......................................... SUCCESS [  0.100 s]
+[INFO] module-api ......................................... FAILURE [  0.500 s]
+[INFO] module-service ..................................... SKIPPED
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] Total time:  0.800 s

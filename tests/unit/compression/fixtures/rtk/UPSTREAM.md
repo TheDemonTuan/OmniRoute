@@ -8,5 +8,8 @@ Fixtures in this directory are OmniRoute-owned recreations of semantic behaviors
 | `maven`       | v0.47.0           | `774465e379a4b723b1239ec0ea1b04c413ed0f10` | Independently recreated semantic cases | Apache-2.0 upstream reference |
 | `phpt`        | v0.47.0           | `e8541d1e1180f7ef4c736322cedc8e834f2f8f77` | Independently recreated semantic cases | Apache-2.0 upstream reference |
 | `git-diff`    | v0.47.0           | release regression fixes                   | Independently recreated semantic cases | Apache-2.0 upstream reference |
+| `typescript`  | v0.47.0           | release diagnostic formatting fixes        | Independently recreated semantic cases | Apache-2.0 upstream reference |
+| `shell-grep`  | v0.47.0           | release flag mode passthrough fixes        | Independently recreated semantic cases | Apache-2.0 upstream reference |
+| `shell-ls`    | v0.47.0           | release omission hint and dotfile fixes    | Independently recreated semantic cases | Apache-2.0 upstream reference |
 
 No upstream fixture text is copied verbatim unless this table is updated with file-level attribution.

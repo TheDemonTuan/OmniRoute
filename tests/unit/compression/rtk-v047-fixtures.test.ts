@@ -60,6 +60,28 @@ Tests failed    :    1
     assert.ok(result.text.includes("001- expected output"));
     assert.ok(result.text.includes("001+ actual output"));
   });
+  it("parses upstream-formatted PHP_VERSION, PHP_SAPI, PHP_OS and detects truncated per-test failures", () => {
+    const raw = `=====================================================================
+TIME START 2026-09-04 12:00:00
+PHP_VERSION : 8.4.20
+PHP_SAPI    : cli
+PHP_OS      : Linux
+=====================================================================
+PASS Pass case [tests/pass.phpt]
+=====================================================================
+Number of tests :    4                 4
+Tests passed    :    1 ( 25.0%)       ( 25.0%)
+Tests failed    :    3 ( 75.0%)       ( 75.0%)
+Time taken      :    0.200 seconds
+=====================================================================
+`;
+    const result = processRtkText(raw, { command: "php run-tests.php" });
+    assert.ok(result.text.includes("PHP 8.4.20 SAPI cli OS Linux"));
+    assert.ok(
+      result.text.includes("FAILURES (3): per-test details unavailable — output truncated")
+    );
+    assert.ok(result.text.includes("Tests failed    :    3"));
+  });
 
   it("preserves PHPT status counts, environment, time, and capped DIFF details", () => {
     const diff = Array.from({ length: 8 }, (_, i) => `diff-${i}`).join("\n");
@@ -171,6 +193,81 @@ Found 2 errors.
       assert.ok(result.text.includes("src"));
       assert.ok(result.text.includes("package.json"));
       assert.ok(result.text.includes("README.md"));
+    });
+
+    it("compresses ctest/timeout.txt correctly", () => {
+      const raw = fs.readFileSync(path.join(fixturesRoot, "ctest", "timeout.txt"), "utf8");
+      const result = processRtkText(raw, { command: "ctest" });
+      assert.ok(result.text.includes("Test #2: test_slow ...***Timeout"));
+      assert.ok(result.text.includes("2 - test_slow (Timeout)"));
+    });
+
+    it("compresses maven/surefire-fail.txt correctly", () => {
+      const raw = fs.readFileSync(path.join(fixturesRoot, "maven", "surefire-fail.txt"), "utf8");
+      const result = processRtkText(raw, { command: "mvn test" });
+      assert.ok(result.text.includes("AssertionError"));
+      assert.ok(result.text.includes("BUILD FAILURE"));
+    });
+
+    it("compresses maven/multi-module.txt correctly", () => {
+      const raw = fs.readFileSync(path.join(fixturesRoot, "maven", "multi-module.txt"), "utf8");
+      const result = processRtkText(raw, { command: "mvn package" });
+      assert.ok(result.text.includes("Reactor Summary"));
+      assert.ok(result.text.includes("BUILD FAILURE"));
+    });
+
+    it("compresses phpt/bork.txt correctly", () => {
+      const raw = fs.readFileSync(path.join(fixturesRoot, "phpt", "bork.txt"), "utf8");
+      const result = processRtkText(raw, { command: "php run-tests.php" });
+      assert.ok(result.text.includes("BORK Invalid section test"));
+      assert.ok(result.text.includes("Tests borked    :    1"));
+    });
+
+    it("compresses phpt/leak.txt correctly", () => {
+      const raw = fs.readFileSync(path.join(fixturesRoot, "phpt", "leak.txt"), "utf8");
+      const result = processRtkText(raw, { command: "php run-tests.php" });
+      assert.ok(result.text.includes("LEAK Memory leak test"));
+      assert.ok(result.text.includes("Tests leaked    :    1"));
+    });
+
+    it("compresses git-diff/rename.txt correctly", () => {
+      const raw = fs.readFileSync(path.join(fixturesRoot, "git-diff", "rename.txt"), "utf8");
+      const result = processRtkText(raw, { command: "git diff" });
+      assert.ok(result.text.includes("rename from source.ts"));
+      assert.ok(result.text.includes("rename to target.ts"));
+    });
+
+    it("compresses git-diff/binary.txt correctly", () => {
+      const raw = fs.readFileSync(path.join(fixturesRoot, "git-diff", "binary.txt"), "utf8");
+      const result = processRtkText(raw, { command: "git diff" });
+      assert.ok(result.text.includes("Binary files a/icon.png and b/icon.png differ"));
+    });
+
+    it("preserves word-diff as passthrough", () => {
+      const raw = fs.readFileSync(path.join(fixturesRoot, "git-diff", "word-diff.txt"), "utf8");
+      const result = processRtkText(raw, { command: "git diff --word-diff" });
+      assert.equal(result.text, raw);
+    });
+
+    it("compresses typescript/pretty-multiline.txt correctly", () => {
+      const raw = fs.readFileSync(
+        path.join(fixturesRoot, "typescript", "pretty-multiline.txt"),
+        "utf8"
+      );
+      const result = processRtkText(raw, { command: "tsc" });
+      assert.ok(result.text.includes("error TS2345"));
+      assert.ok(result.text.includes("verifyToken(token)"));
+      assert.ok(result.text.includes("~~~~~"));
+    });
+
+    it("compresses typescript/global-error.txt correctly", () => {
+      const raw = fs.readFileSync(
+        path.join(fixturesRoot, "typescript", "global-error.txt"),
+        "utf8"
+      );
+      const result = processRtkText(raw, { command: "tsc" });
+      assert.ok(result.text.includes("error TS18003"));
+      assert.ok(result.text.includes("Found 1 error."));
     });
   });
 });

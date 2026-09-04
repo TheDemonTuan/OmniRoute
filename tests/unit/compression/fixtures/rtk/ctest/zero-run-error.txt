@@ -1,0 +1,4 @@
+Test project /workspace/build
+No tests were found!!!
+CMake Error at CMakeLists.txt:20 (message):
+  Required test configuration missing
