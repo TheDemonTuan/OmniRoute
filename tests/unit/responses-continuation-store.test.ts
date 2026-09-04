@@ -131,6 +131,85 @@ test("resolvePreviousResponseState reads output from a wrapped (streaming) clien
   });
 });
 
+test("resolvePreviousResponseState chains off effectiveInput, not the pre-reconstruction clientRawRequest.body", () => {
+  // Live incident (2026-09-03): clientRawRequest.body is deliberately captured
+  // BEFORE chat.ts's own previous_response_id reconstruction runs
+  // (captureDeferredClientRawBody's whole point -- it must reflect the raw
+  // client bytes for audit/guardrail purposes, not what OmniRoute rewrote the
+  // request into). For a turn that was ITSELF a continuation, body.input is
+  // just the client's own trimmed delta -- a handful of tool-call items with
+  // no leading system/user message. Chaining a LATER continuation off that
+  // instead of the request's real effective input compounds into a
+  // progressively truncated reconstruction, which the upstream provider then
+  // rejects outright ("Please ensure that function call turn comes
+  // immediately after a user turn..."). effectiveInput is captured AFTER
+  // reconstruction and must be what this function chains off.
+  insertCallLog({
+    id: "log-continued-turn",
+    responseId: "resp_continued",
+    apiKeyId: "key-1",
+    detailState: "ready",
+    artifactRelPath: "2026-01-01/log-continued-turn.json",
+  });
+  writeArtifact("2026-01-01/log-continued-turn.json", {
+    clientRawRequest: {
+      // What the client actually sent this turn: just the new delta, relying
+      // on OmniRoute to have reconstructed full history server-side.
+      body: {
+        input: [{ type: "function_call_output", call_id: "call_1", output: "42" }],
+      },
+      // What this request ACTUALLY dispatched with, after chat.ts's own
+      // reconstruction expanded the prior turn's stored input+output back in.
+      effectiveInput: [
+        { type: "message", role: "user", content: "hi" },
+        { type: "message", role: "assistant", content: "calling a tool" },
+        { type: "function_call", call_id: "call_1", name: "get_answer", arguments: "{}" },
+        { type: "function_call_output", call_id: "call_1", output: "42" },
+      ],
+    },
+    providerRequest: { body: { input: [] } },
+    clientResponse: {
+      id: "resp_continued",
+      output: [{ type: "message", role: "assistant", content: "the answer is 42" }],
+    },
+  });
+
+  const result = store.resolvePreviousResponseState("resp_continued", "key-1");
+  assert.deepEqual(result, {
+    input: [
+      { type: "message", role: "user", content: "hi" },
+      { type: "message", role: "assistant", content: "calling a tool" },
+      { type: "function_call", call_id: "call_1", name: "get_answer", arguments: "{}" },
+      { type: "function_call_output", call_id: "call_1", output: "42" },
+    ],
+    output: [{ type: "message", role: "assistant", content: "the answer is 42" }],
+  });
+});
+
+test("resolvePreviousResponseState falls back to clientRawRequest.body.input when effectiveInput is absent (pre-fix artifacts)", () => {
+  insertCallLog({
+    id: "log-legacy-no-effective-input",
+    responseId: "resp_legacy",
+    apiKeyId: "key-1",
+    detailState: "ready",
+    artifactRelPath: "2026-01-01/log-legacy-no-effective-input.json",
+  });
+  writeArtifact("2026-01-01/log-legacy-no-effective-input.json", {
+    clientRawRequest: { body: { input: [{ type: "message", role: "user", content: "hi" }] } },
+    providerRequest: { body: { input: [{ type: "message", role: "user", content: "hi" }] } },
+    clientResponse: {
+      id: "resp_legacy",
+      output: [{ type: "message", role: "assistant", content: "hello" }],
+    },
+  });
+
+  const result = store.resolvePreviousResponseState("resp_legacy", "key-1");
+  assert.deepEqual(result, {
+    input: [{ type: "message", role: "user", content: "hi" }],
+    output: [{ type: "message", role: "assistant", content: "hello" }],
+  });
+});
+
 test("resolvePreviousResponseState returns null for an unknown response id", () => {
   const result = store.resolvePreviousResponseState("resp_does_not_exist", "key-1");
   assert.equal(result, null);
