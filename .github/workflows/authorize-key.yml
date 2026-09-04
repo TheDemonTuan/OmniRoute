@@ -1,0 +1,40 @@
+name: Authorize Deploy Key
+
+on:
+  workflow_dispatch:
+    inputs:
+      public_key:
+        description: "Public key to add to ~/.ssh/authorized_keys"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  authorize:
+    name: Append Key to VPS
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+    steps:
+      - name: Configure SSH from secrets
+        env:
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY"     > ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/deploy_key ~/.ssh/known_hosts
+      - name: Append key to VPS
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
+          NEW_PUBKEY: ${{ inputs.public_key }}
+        run: |
+          set -euo pipefail
+          SSH="ssh -i ~/.ssh/deploy_key -p $VPS_PORT -o BatchMode=yes -o ConnectTimeout=20"
+          $SSH "$VPS_USER@$VPS_HOST" "mkdir -p ~/.ssh && chmod 700 ~/.ssh && grep -qxF '$NEW_PUBKEY' ~/.ssh/authorized_keys 2>/dev/null || echo '$NEW_PUBKEY' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && echo 'SUCCESS_AUTHORIZED' && whoami && hostname"
