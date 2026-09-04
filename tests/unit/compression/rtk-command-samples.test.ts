@@ -50,7 +50,7 @@ describe("maybePersistRtkRawOutput — safe command sidecar", () => {
     assert.ok(fs.existsSync(sidecar), "sidecar meta file written");
     const meta = JSON.parse(fs.readFileSync(sidecar, "utf8"));
     assert.equal(meta.family, "npm");
-    assert.equal(meta.safeSignature, "npm");
+    assert.equal(meta.safeSignature, "npm run");
     assert.equal("command" in meta, false, "raw command is never persisted");
     assert.equal(typeof meta.commandHash, "string");
     assert.equal(typeof meta.timestamp, "number");
@@ -86,7 +86,7 @@ describe("listRtkCommandSamples", () => {
     });
     const samples = listRtkCommandSamples();
     assert.equal(samples.length, 1);
-    assert.equal(samples[0].command, "cargo");
+    assert.equal(samples[0].command, "cargo build");
     assert.match(samples[0].output, /Compiling/);
   });
 

@@ -5,6 +5,7 @@ import os from "node:os";
 import crypto from "node:crypto";
 
 import type { CommandSample } from "./discover.ts";
+import { buildSafeCommandSignature } from "./safeCommandSignature.ts";
 
 export type RtkRawOutputRetention = "never" | "failures" | "always";
 
@@ -121,6 +122,7 @@ export function maybePersistRtkRawOutput(
       .replace(/[^A-Za-z0-9_-]+/g, "_")
       .replace(/^_+|_+$/g, "")
       .slice(0, 24) || "tool-output";
+  const safeSignature = buildSafeCommandSignature(options.command, familySlug);
   const id = safeId(`${now}:${familySlug}:${raw.length}:${redaction.text}`);
   const dir = bucketDir(id);
   const fileName = `${now}-${familySlug}-${id}.log`;
@@ -150,7 +152,7 @@ export function maybePersistRtkRawOutput(
       tmpMetaPath,
       JSON.stringify({
         family: familySlug,
-        safeSignature: familySlug,
+        safeSignature,
         commandHash,
         timestamp: now,
         failure,
@@ -292,8 +294,10 @@ export function listRtkCommandSamples(opts: { limit?: number } = {}): CommandSam
     let command = "";
     try {
       const metaRaw = fs.readFileSync(fullPath.replace(/\.log$/, ".meta.json"), "utf8");
-      const meta = JSON.parse(metaRaw) as { command?: unknown };
-      if (typeof meta.command === "string" && meta.command.trim()) command = meta.command.trim();
+      const meta = JSON.parse(metaRaw) as { safeSignature?: unknown };
+      if (typeof meta.safeSignature === "string" && meta.safeSignature.trim()) {
+        command = meta.safeSignature.trim();
+      }
     } catch {
       // No/!invalid sidecar → fall back to the filename slug below.
     }

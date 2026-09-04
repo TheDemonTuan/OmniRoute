@@ -1,4 +1,5 @@
 import { stripAnsiCodes } from "../normalize.ts";
+import { RtkBudgetWriter } from "./budget.ts";
 import type { RtkProcessor, RtkProcessorContext, RtkProcessorResult } from "./types.ts";
 
 const PASSTHROUGH_PATTERNS = [
@@ -31,24 +32,16 @@ export const ctestProcessor: RtkProcessor = {
         ownsTruncation: false,
       };
     }
-
-    // Check passthrough flags in command if present
-    if (ctx.command) {
-      for (const pattern of PASSTHROUGH_PATTERNS) {
-        if (pattern.test(ctx.command)) {
-          return {
-            status: "passthrough",
-            text: raw,
-            processor: "ctest",
-            confidence: 1,
-            reason: `Passthrough command flag detected in '${ctx.command}'`,
-            ownsTruncation: false,
-          };
-        }
-      }
+    if (ctx.command && PASSTHROUGH_PATTERNS.some((pattern) => pattern.test(ctx.command!))) {
+      return {
+        status: "passthrough",
+        text: raw,
+        processor: "ctest",
+        confidence: 1,
+        reason: "Verbose, listing, help, or version mode",
+        ownsTruncation: false,
+      };
     }
-
-    // Fail-open for zero test runs with cmake errors or non-CTest output
     if (!raw.includes("Test project") && !raw.includes("tests passed") && !raw.includes("Test #")) {
       return {
         status: "passthrough",
@@ -60,79 +53,57 @@ export const ctestProcessor: RtkProcessor = {
       };
     }
 
-    const normalized = stripAnsiCodes(raw);
-    const lines = normalized.split("\n");
-
+    const lines = stripAnsiCodes(raw).split("\n");
     const headerLines: string[] = [];
     const seenTests = new Map<string, CTestFailure>();
     const summaryLines: string[] = [];
     const trailerFailedLines: string[] = [];
     let currentFailure: CTestFailure | null = null;
     let inFailedTrailer = false;
-
     const maxLinesPerFailure = 25;
-    const maxTotalFailures = ctx.renderBudget?.maxLines
-      ? Math.max(5, Math.floor(ctx.renderBudget.maxLines / 10))
-      : 50;
 
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
+    for (const line of lines) {
       const trimmed = line.trim();
-
       if (trimmed.startsWith("Test project")) {
         headerLines.push(line);
         continue;
       }
-
       if (trimmed.startsWith("The following tests FAILED:")) {
         inFailedTrailer = true;
         trailerFailedLines.push(line);
         continue;
       }
-
       if (inFailedTrailer) {
-        if (/^\d+\s+-\s+/.test(trimmed)) {
-          trailerFailedLines.push(line);
-        } else if (trimmed.length > 0) {
-          trailerFailedLines.push(line);
-        }
+        if (trimmed) trailerFailedLines.push(line);
         continue;
       }
-
       const resultMatch =
         /^\s*(\d+)\/\d+\s+Test\s+#(\d+):\s+(.*?)\s+\.{3,}\s*\*{3}(Failed|Timeout|Killed)(?:\s+([\d.]+\s+sec))?/.exec(
           trimmed
         );
       if (resultMatch) {
         const [, , testNumStr, testName, status, duration] = resultMatch;
-        const testIndex = parseInt(testNumStr, 10);
-        const dedupeKey = `${testIndex}:${testName}`;
         currentFailure = {
-          testIndex,
+          testIndex: parseInt(testNumStr, 10),
           testName,
           duration,
-          status: status as "Failed" | "Timeout" | "Killed",
+          status: status as CTestFailure["status"],
           diagnosticLines: [],
         };
-        seenTests.set(dedupeKey, currentFailure);
+        seenTests.set(`${currentFailure.testIndex}:${currentFailure.testName}`, currentFailure);
         continue;
       }
-
-      const passMatch = /^\s*\d+\/\d+\s+Test\s+#\d+:\s+.*?\s+\.{3,}\s*Passed/.exec(trimmed);
-      if (passMatch) {
+      if (/^\s*\d+\/\d+\s+Test\s+#\d+:\s+.*?\s+\.{3,}\s*Passed/.test(trimmed)) {
         currentFailure = null;
         continue;
       }
-
       if (currentFailure && !trimmed.startsWith("Start ") && !trimmed.includes("% tests passed")) {
-        if (currentFailure.diagnosticLines.length < maxLinesPerFailure) {
+        if (currentFailure.diagnosticLines.length < maxLinesPerFailure)
           currentFailure.diagnosticLines.push(line);
-        } else if (currentFailure.diagnosticLines.length === maxLinesPerFailure) {
+        else if (currentFailure.diagnosticLines.length === maxLinesPerFailure)
           currentFailure.diagnosticLines.push("... [failure diagnostics truncated]");
-        }
         continue;
       }
-
       if (
         /\d+%\s+tests passed(?:,\s+\d+\s+tests failed out of\s+\d+)?/.test(trimmed) ||
         trimmed.startsWith("Errors were encountered")
@@ -142,44 +113,27 @@ export const ctestProcessor: RtkProcessor = {
       }
     }
 
-    const outputLines: string[] = [];
-    if (headerLines.length > 0) {
-      outputLines.push(...headerLines);
-    }
-
-    let count = 0;
-    for (const [, failure] of seenTests) {
-      if (count >= maxTotalFailures) {
-        outputLines.push(`... +${seenTests.size - count} more failed tests omitted`);
+    const writer = new RtkBudgetWriter(ctx.renderBudget);
+    for (const line of headerLines) writer.push(line);
+    let emitted = 0;
+    for (const failure of seenTests.values()) {
+      if (writer.remainingLines < 3) {
+        writer.pushRequired(`... +${seenTests.size - emitted} more failed tests omitted`);
         break;
       }
-      count++;
-      const dur = failure.duration ? `    ${failure.duration}` : "";
-      outputLines.push(
-        `Test #${failure.testIndex}: ${failure.testName} ...***${failure.status}${dur}`
+      emitted++;
+      writer.pushRequired(
+        `Test #${failure.testIndex}: ${failure.testName} ...***${failure.status}${failure.duration ? `    ${failure.duration}` : ""}`
       );
-      if (failure.diagnosticLines.length > 0) {
-        outputLines.push(...failure.diagnosticLines);
-      }
+      for (const line of failure.diagnosticLines) writer.pushRequired(line);
     }
-
-    if (summaryLines.length > 0) {
-      outputLines.push(...summaryLines);
-    }
-
-    if (trailerFailedLines.length > 0) {
-      outputLines.push(...trailerFailedLines);
-    }
-
     return {
       status: "compressed",
-      text: outputLines.join("\n"),
+      text: writer.finish([...summaryLines, ...trailerFailedLines]),
       processor: "ctest",
       confidence: 0.95,
       ownsTruncation: true,
-      stats: {
-        failuresFound: seenTests.size,
-      },
+      stats: { failuresFound: seenTests.size },
     };
   },
 };

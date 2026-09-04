@@ -1,11 +1,12 @@
 import { stripAnsiCodes } from "../normalize.ts";
+import { RtkBudgetWriter } from "./budget.ts";
 import type { RtkProcessor, RtkProcessorContext, RtkProcessorResult } from "./types.ts";
 
 export const typescriptProcessor: RtkProcessor = {
   id: "typescript",
   process(ctx: RtkProcessorContext): RtkProcessorResult {
     const raw = ctx.stdout;
-    if (!raw || typeof raw !== "string") {
+    if (!raw || typeof raw !== "string")
       return {
         status: "passthrough",
         text: raw ?? "",
@@ -13,9 +14,6 @@ export const typescriptProcessor: RtkProcessor = {
         confidence: 0,
         ownsTruncation: false,
       };
-    }
-
-    // Guard: must contain TS error codes or diagnostic markers
     if (
       !raw.includes("TS") &&
       !raw.includes("error TS") &&
@@ -32,57 +30,43 @@ export const typescriptProcessor: RtkProcessor = {
       };
     }
 
-    const normalized = stripAnsiCodes(raw);
-    const lines = normalized.split("\n");
-
-    const kept: string[] = [];
+    const writer = new RtkBudgetWriter(ctx.renderBudget);
     let inPrettyBlock = false;
+    const summaries: string[] = [];
 
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
+    for (const line of stripAnsiCodes(raw).split("\n")) {
       const trimmed = line.trim();
-
-      // Standard diagnostic header: file.ts(10,5): error TS2322: ...
-      // or file.ts:10:5 - error TS2322: ...
-      // or error TS6053: ...
       if (
         /^[\w./-]+\.(?:ts|tsx|js|jsx)(?:\(\d+,\d+\)|:\d+:\d+)?\s*(?:-\s*)?error\s+TS\d+:/i.test(
           trimmed
         ) ||
         /^error\s+TS\d+:/i.test(trimmed)
       ) {
-        kept.push(line);
+        writer.pushRequired(line);
         inPrettyBlock = true;
         continue;
       }
-
-      // Pretty diagnostic code snippet / caret indicator line
       if (inPrettyBlock) {
-        if (!trimmed) {
-          // Blank line within pretty diagnostic: continue tracking
-          continue;
-        }
+        if (!trimmed) continue;
         if (
           /^\d+\s+/.test(trimmed) ||
           /^\s*~+\s*$/.test(trimmed) ||
           /^\s*\^+\s*$/.test(trimmed) ||
           /^\s*\|/.test(trimmed)
         ) {
-          kept.push(line);
+          writer.pushRequired(line);
           continue;
         }
       }
-
-      // Summary lines: Found 3 errors in 2 files.
       if (/^Found \d+ errors?(?: in \d+ files?)?/i.test(trimmed)) {
-        kept.push(line);
+        summaries.push(line);
         inPrettyBlock = false;
-        continue;
       }
     }
+
     return {
       status: "compressed",
-      text: kept.join("\n"),
+      text: writer.finish(summaries),
       processor: "typescript",
       confidence: 0.95,
       ownsTruncation: true,

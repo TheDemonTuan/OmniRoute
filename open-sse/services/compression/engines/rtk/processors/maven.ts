@@ -1,4 +1,5 @@
 import { stripAnsiCodes } from "../normalize.ts";
+import { RtkBudgetWriter } from "./budget.ts";
 import type { RtkProcessor, RtkProcessorContext, RtkProcessorResult } from "./types.ts";
 
 const PASSTHROUGH_GOALS = [
@@ -7,14 +8,13 @@ const PASSTHROUGH_GOALS = [
   /(?:^|\s)-X(?:\s|$)/,
   /(?:^|\s)--debug(?:\s|$)/,
 ];
-
 const MAX_STACKTRACE_FRAMES = 15;
 
 export const mavenProcessor: RtkProcessor = {
   id: "maven",
   process(ctx: RtkProcessorContext): RtkProcessorResult {
     const raw = ctx.stdout;
-    if (!raw || typeof raw !== "string") {
+    if (!raw || typeof raw !== "string")
       return {
         status: "passthrough",
         text: raw ?? "",
@@ -22,24 +22,16 @@ export const mavenProcessor: RtkProcessor = {
         confidence: 0,
         ownsTruncation: false,
       };
+    if (ctx.command && PASSTHROUGH_GOALS.some((pattern) => pattern.test(ctx.command!))) {
+      return {
+        status: "passthrough",
+        text: raw,
+        processor: "maven",
+        confidence: 1,
+        reason: "Dependency, help, or debug command mode",
+        ownsTruncation: false,
+      };
     }
-
-    if (ctx.command) {
-      for (const pattern of PASSTHROUGH_GOALS) {
-        if (pattern.test(ctx.command)) {
-          return {
-            status: "passthrough",
-            text: raw,
-            processor: "maven",
-            confidence: 1,
-            reason: `Passthrough Maven goal detected in '${ctx.command}'`,
-            ownsTruncation: false,
-          };
-        }
-      }
-    }
-
-    // Fail-open if output does not have basic Maven markers
     if (
       !raw.includes("[INFO]") &&
       !raw.includes("[ERROR]") &&
@@ -56,37 +48,27 @@ export const mavenProcessor: RtkProcessor = {
       };
     }
 
-    const normalized = stripAnsiCodes(raw);
-    const lines = normalized.split("\n");
-
-    const kept: string[] = [];
+    const writer = new RtkBudgetWriter(ctx.renderBudget);
     let inReactorSummary = false;
     let inStackTrace = false;
     let stackTraceFrameCount = 0;
-    let inCompileErrorContinuation = false;
+    let inCompileContinuation = false;
 
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
+    for (const line of stripAnsiCodes(raw).split("\n")) {
       const trimmed = line.trim();
-
       if (!trimmed) {
         inStackTrace = false;
+        inCompileContinuation = false;
         stackTraceFrameCount = 0;
-        inCompileErrorContinuation = false;
         continue;
       }
-
-      // Drop download noise
       if (
         trimmed.startsWith("[INFO] Downloading from ") ||
         trimmed.startsWith("[INFO] Downloaded from ") ||
         trimmed.startsWith("Progress (") ||
         trimmed.startsWith("Download ")
-      ) {
+      )
         continue;
-      }
-
-      // Preserved Headers & Milestones
       if (
         trimmed.startsWith("[INFO] Scanning for projects...") ||
         trimmed.startsWith("[INFO] Building ") ||
@@ -98,57 +80,39 @@ export const mavenProcessor: RtkProcessor = {
         trimmed.startsWith("[INFO] Total time:") ||
         trimmed.startsWith("[INFO] Finished at:")
       ) {
-        kept.push(line);
+        writer.pushRequired(line);
         continue;
       }
-
-      // Reactor Summary
       if (
         trimmed.startsWith("[INFO] Reactor Summary") ||
         trimmed.startsWith("[INFO] Reactor Build Order:")
       ) {
         inReactorSummary = true;
-        kept.push(line);
+        writer.pushRequired(line);
         continue;
       }
-
-      if (inReactorSummary) {
-        if (
-          trimmed.startsWith("[INFO]") &&
-          (trimmed.includes("SUCCESS") ||
-            trimmed.includes("FAILURE") ||
-            trimmed.includes("SKIPPED") ||
-            trimmed.includes("---"))
-        ) {
-          kept.push(line);
-          continue;
-        } else if (trimmed.startsWith("[INFO] ---")) {
-          inReactorSummary = false;
-        }
+      if (
+        inReactorSummary &&
+        trimmed.startsWith("[INFO]") &&
+        (trimmed.includes("SUCCESS") ||
+          trimmed.includes("FAILURE") ||
+          trimmed.includes("SKIPPED") ||
+          trimmed.includes("---"))
+      ) {
+        writer.pushRequired(line);
+        continue;
       }
-
-      // Compilation & Runtime Errors
       if (trimmed.startsWith("[ERROR]")) {
-        kept.push(line);
-        inCompileErrorContinuation = true;
+        writer.pushRequired(line);
+        inCompileContinuation = true;
         inStackTrace = true;
         stackTraceFrameCount = 0;
         continue;
       }
-
-      // Multi-line compile continuation (symbol:, location:)
-      if (
-        inCompileErrorContinuation &&
-        (trimmed.startsWith("[INFO]   location:") ||
-          trimmed.startsWith("[INFO]   symbol:") ||
-          trimmed.startsWith("location:") ||
-          trimmed.startsWith("symbol:"))
-      ) {
-        kept.push(line);
+      if (inCompileContinuation && /^(?:\[INFO\]\s+)?(?:symbol:|location:)/.test(trimmed)) {
+        writer.pushRequired(line);
         continue;
       }
-
-      // Surefire / Failsafe Test Failures & Stack traces
       if (
         trimmed.startsWith("[INFO] Results:") ||
         trimmed.startsWith("[INFO] Tests run:") ||
@@ -157,45 +121,37 @@ export const mavenProcessor: RtkProcessor = {
         trimmed.startsWith("Failed tests:") ||
         trimmed.startsWith("Tests in error:")
       ) {
-        kept.push(line);
+        writer.pushRequired(line);
         inStackTrace = true;
         stackTraceFrameCount = 0;
         continue;
       }
-
-      // Stacktrace frames under active failure (bounded by MAX_STACKTRACE_FRAMES)
       if (
         inStackTrace &&
         (trimmed.startsWith("at ") ||
           trimmed.startsWith("Caused by:") ||
           /^[a-zA-Z0-9_.]+(?:Exception|Error):/.test(trimmed))
       ) {
-        if (stackTraceFrameCount < MAX_STACKTRACE_FRAMES) {
-          kept.push(line);
-          stackTraceFrameCount++;
-        } else if (stackTraceFrameCount === MAX_STACKTRACE_FRAMES) {
-          kept.push("    ... [stack trace truncated]");
-          stackTraceFrameCount++;
-        }
+        if (stackTraceFrameCount < MAX_STACKTRACE_FRAMES) writer.pushRequired(line);
+        else if (stackTraceFrameCount === MAX_STACKTRACE_FRAMES)
+          writer.pushRequired("    ... [stack trace truncated]");
+        stackTraceFrameCount++;
         continue;
       }
-
-      // Resume multi-module project hint
       if (
-        trimmed.startsWith("[ERROR] To see the full stack trace of the errors") ||
+        trimmed.startsWith("[ERROR] To see the full stack trace") ||
         trimmed.startsWith("[ERROR] Re-run Maven using the -X switch") ||
         trimmed.startsWith(
           "[ERROR] After correcting the problems, you can resume the build with the command"
         )
       ) {
-        kept.push(line);
-        continue;
+        writer.pushRequired(line);
       }
     }
 
     return {
       status: "compressed",
-      text: kept.join("\n"),
+      text: writer.finish(),
       processor: "maven",
       confidence: 0.95,
       ownsTruncation: true,

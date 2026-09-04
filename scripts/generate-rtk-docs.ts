@@ -17,7 +17,7 @@ const familyRows = RTK_PARITY_MANIFEST.families
   .join("\n");
 
 const generated = `<!-- RTK_GENERATED_START -->
-## RTK v0.47.0 parity status
+## RTK ${RTK_UPSTREAM_BASELINE.stableTag} parity status
 
 - **Upstream baseline:** [${RTK_UPSTREAM_BASELINE.project} ${RTK_UPSTREAM_BASELINE.stableTag}](https://github.com/${RTK_UPSTREAM_BASELINE.project}/releases/tag/${RTK_UPSTREAM_BASELINE.stableTag})
 - **Parity target:** behavioral-semantic, independent TypeScript implementation.

@@ -91,6 +91,12 @@ function checkFilters(): void {
           `Family '${family.family}' references missing fixture group '${fixtureGroup}'.`
         );
       }
+      const fixtureFiles = fs.readdirSync(fixturePath).filter((f) => !f.startsWith("."));
+      if (fixtureFiles.length === 0) {
+        throw new Error(
+          `Family '${family.family}' fixture group '${fixtureGroup}' must contain real fixture files.`
+        );
+      }
     }
     for (const filterId of family.filterIds) {
       const filter = filters.find((entry) => entry.id === filterId);

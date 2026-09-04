@@ -1,4 +1,5 @@
 import { stripAnsiCodes, normalizeProgressCr } from "../normalize.ts";
+import { RtkBudgetWriter } from "./budget.ts";
 import type { RtkProcessor, RtkProcessorContext, RtkProcessorResult } from "./types.ts";
 
 const MAX_FAILURES_SHOWN = 20;
@@ -6,12 +7,17 @@ const MAX_DIFF_LINES_PER_FAILURE = 6;
 
 type PhptStatus = "PASS" | "FAIL" | "SKIP" | "BORK" | "WARN" | "LEAK" | "XFAIL" | "XLEAK";
 
+interface PendingDiff {
+  lines: string[];
+  totalLines: number;
+}
+
 interface PhptFailure {
   status: PhptStatus;
   testName: string;
   testPath: string;
   reason?: string;
-  diffLines: string[];
+  diff?: PendingDiff;
 }
 
 export const phptProcessor: RtkProcessor = {
@@ -28,7 +34,6 @@ export const phptProcessor: RtkProcessor = {
       };
     }
 
-    // Fail-open for startup failures or non-PHPT executions
     if (
       raw.includes("Could not open input file: run-tests.php") ||
       raw.includes("PHP Fatal error:") ||
@@ -49,13 +54,14 @@ export const phptProcessor: RtkProcessor = {
 
     const normalized = normalizeProgressCr(stripAnsiCodes(raw));
     const lines = normalized.split("\n");
-
     const headerLines: string[] = [];
     const failures: PhptFailure[] = [];
     const summaryLines: string[] = [];
     let inHeader = false;
     let inDiff = false;
-    let currentDiffLines: string[] = [];
+    let diffBuffer: string[] = [];
+    let diffTotal = 0;
+    let pendingDiff: PendingDiff | null = null;
 
     const counts: Record<PhptStatus, number> = {
       PASS: 0,
@@ -68,10 +74,8 @@ export const phptProcessor: RtkProcessor = {
       XLEAK: 0,
     };
 
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
+    for (const line of lines) {
       const trimmed = line.trim();
-
       if (
         trimmed.startsWith("=====================================================================")
       ) {
@@ -79,7 +83,8 @@ export const phptProcessor: RtkProcessor = {
           inHeader = true;
           headerLines.push(line);
           continue;
-        } else if (inHeader) {
+        }
+        if (inHeader) {
           headerLines.push(line);
           inHeader = false;
           continue;
@@ -99,29 +104,23 @@ export const phptProcessor: RtkProcessor = {
         continue;
       }
 
-      if (trimmed.startsWith("========DIFF========") || trimmed.startsWith("========DIFF")) {
+      if (trimmed.startsWith("========DIFF")) {
         inDiff = true;
-        currentDiffLines = [];
+        diffBuffer = [];
+        diffTotal = 0;
         continue;
       }
-
-      if (trimmed.startsWith("========DONE========") || trimmed.startsWith("========DONE")) {
+      if (trimmed.startsWith("========DONE")) {
         inDiff = false;
-        // A following DIFF belongs to the preceding failing status; retain it for output.
-        if (currentDiffLines.length > 0 && failures.length > 0) {
-          failures[failures.length - 1].diffLines.push(...currentDiffLines);
-        }
-        currentDiffLines = [];
+        pendingDiff = { lines: diffBuffer, totalLines: diffTotal };
         continue;
       }
-
       if (inDiff) {
-        currentDiffLines.push(line);
+        diffTotal++;
+        if (diffBuffer.length < MAX_DIFF_LINES_PER_FAILURE) diffBuffer.push(line);
         continue;
       }
 
-      // PHPT prints DIFF either before or after a failure status. Hold the latest block and
-      // associate it with the next actionable status, or retroactively with the latest one.
       const matchResult =
         /(?:^|\]\s*)(PASS|FAIL|SKIP|BORK|WARN|LEAK|XFAIL|XLEAK)\s+(.*?)(?:\s+\[(.*?)\])?(?:\s+reason:\s+(.*))?$/.exec(
           trimmed
@@ -129,20 +128,18 @@ export const phptProcessor: RtkProcessor = {
       if (matchResult) {
         const [, statusStr, testName, testPath, reason] = matchResult;
         const status = statusStr as PhptStatus;
-        counts[status] = (counts[status] || 0) + 1;
-
+        counts[status]++;
         if (status === "FAIL" || status === "BORK" || status === "LEAK") {
           failures.push({
             status,
             testName,
             testPath: testPath || "unknown",
             reason,
-            diffLines: [...currentDiffLines],
+            diff: pendingDiff ?? undefined,
           });
-        } else if (currentDiffLines.length > 0 && failures.length > 0) {
-          failures[failures.length - 1].diffLines.push(...currentDiffLines);
         }
-        currentDiffLines = [];
+        // Any test status consumes a pending DIFF. It can never bleed to later tests.
+        pendingDiff = null;
         continue;
       }
 
@@ -162,53 +159,45 @@ export const phptProcessor: RtkProcessor = {
       }
     }
 
-    const outputLines: string[] = [];
-    if (headerLines.length > 0) {
-      outputLines.push(...headerLines);
-    }
+    const writer = new RtkBudgetWriter(ctx.renderBudget);
+    for (const line of headerLines) writer.push(line);
 
-    const maxShown = ctx.renderBudget?.maxLines
-      ? Math.min(MAX_FAILURES_SHOWN, Math.floor(ctx.renderBudget.maxLines / 4))
-      : MAX_FAILURES_SHOWN;
-    const shownFailures = failures.slice(0, maxShown);
-    for (const f of shownFailures) {
-      outputLines.push(
-        `${f.status} ${f.testName} [${f.testPath}]${f.reason ? ` reason: ${f.reason}` : ""}`
+    const maxShown = Math.min(MAX_FAILURES_SHOWN, failures.length);
+    for (const failure of failures.slice(0, maxShown)) {
+      writer.pushRequired(
+        `${failure.status} ${failure.testName} [${failure.testPath}]${failure.reason ? ` reason: ${failure.reason}` : ""}`
       );
-      if (f.diffLines.length > 0) {
-        outputLines.push("========DIFF========");
-        const shownDiff = f.diffLines.slice(0, MAX_DIFF_LINES_PER_FAILURE);
-        outputLines.push(...shownDiff);
-        if (f.diffLines.length > MAX_DIFF_LINES_PER_FAILURE) {
-          const omitted = f.diffLines.length - MAX_DIFF_LINES_PER_FAILURE;
-          outputLines.push(`... +${omitted} more diff lines`);
+      if (failure.diff) {
+        writer.pushRequired("========DIFF========");
+        for (const line of failure.diff.lines) writer.pushRequired(line);
+        if (failure.diff.totalLines > failure.diff.lines.length) {
+          writer.pushRequired(
+            `... +${failure.diff.totalLines - failure.diff.lines.length} more diff lines`
+          );
         }
-        outputLines.push("========DONE========");
+        writer.pushRequired("========DONE========");
       }
     }
+    if (failures.length > maxShown)
+      writer.pushRequired(`... +${failures.length - maxShown} more failures`);
 
-    if (failures.length > shownFailures.length) {
-      const omittedFailures = failures.length - shownFailures.length;
-      outputLines.push(`... +${omittedFailures} more failures`);
+    if (counts.FAIL + counts.BORK + counts.LEAK > 0 && failures.length === 0) {
+      writer.pushRequired(
+        `FAILURES (${counts.FAIL + counts.BORK + counts.LEAK}): per-test details unavailable — output truncated`
+      );
     }
 
-    if (summaryLines.length > 0) {
-      outputLines.push("=====================================================================");
-      outputLines.push(...summaryLines);
-      outputLines.push("=====================================================================");
-    }
-
-    const resultText = outputLines.join("\n");
+    writer.pushRequired("=====================================================================");
     return {
       status: "compressed",
-      text: resultText,
+      text: writer.finish([
+        ...summaryLines,
+        "=====================================================================",
+      ]),
       processor: "phpt",
       confidence: 0.95,
       ownsTruncation: true,
-      stats: {
-        ...counts,
-        shownFailures: shownFailures.length,
-      },
+      stats: { ...counts, shownFailures: maxShown },
     };
   },
 };

@@ -1,7 +1,12 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { processRtkText } from "../../../open-sse/services/compression/index.ts";
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const fixturesRoot = path.join(__dirname, "fixtures", "rtk");
 describe("RTK v0.47 Stateful Fixture Semantics", () => {
   it("bounds CTest failure detail while preserving trailer summary", () => {
     const diagnostic = Array.from({ length: 30 }, (_, i) => `detail-${i}`).join("\n");
@@ -40,6 +45,22 @@ ${frames}
     assert.ok(result.text.includes("BUILD FAILURE"));
   });
 
+  it("associates an upstream-shaped DIFF block with the following failure", () => {
+    const raw = `TIME START 2026-09-04 12:00:00
+========DIFF========
+001- expected output
+001+ actual output
+========DONE========
+FAIL Bug #123 reproduces [tests/bug-123.phpt]
+Number of tests :    1
+Tests failed    :    1
+`;
+    const result = processRtkText(raw, { command: "php run-tests.php" });
+    assert.ok(result.text.includes("FAIL Bug #123 reproduces [tests/bug-123.phpt]"));
+    assert.ok(result.text.includes("001- expected output"));
+    assert.ok(result.text.includes("001+ actual output"));
+  });
+
   it("preserves PHPT status counts, environment, time, and capped DIFF details", () => {
     const diff = Array.from({ length: 8 }, (_, i) => `diff-${i}`).join("\n");
     const raw = `=====================================================================
@@ -51,10 +72,10 @@ OS Linux
 PASS Pass case [tests/pass.phpt]
 XFAIL Expected failure [tests/xfail.phpt]
 WARN Warning case [tests/warn.phpt]
-FAIL Actual failure [tests/fail.phpt]
 ========DIFF========
 ${diff}
 ========DONE========
+FAIL Actual failure [tests/fail.phpt]
 =====================================================================
 Number of tests :    4                 4
 Tests passed    :    1
@@ -92,5 +113,64 @@ Found 2 errors.
     assert.ok(result.text.includes("const amount: number"));
     assert.ok(result.text.includes("~~~~~~"));
     assert.ok(result.text.includes("Found 2 errors."));
+  });
+
+  describe("Disk fixture group samples", () => {
+    it("compresses ctest/sample.txt correctly", () => {
+      const raw = fs.readFileSync(path.join(fixturesRoot, "ctest", "sample.txt"), "utf8");
+      const result = processRtkText(raw, { command: "ctest" });
+      assert.ok(result.text.includes("Test #2: test_algo ...***Failed"));
+      assert.ok(result.text.includes("The following tests FAILED:"));
+      assert.ok(!result.text.includes("test_math ....................   Passed"));
+    });
+
+    it("compresses maven/sample.txt correctly", () => {
+      const raw = fs.readFileSync(path.join(fixturesRoot, "maven", "sample.txt"), "utf8");
+      const result = processRtkText(raw, { command: "mvn test" });
+      assert.ok(result.text.includes("cannot find symbol"));
+      assert.ok(result.text.includes("symbol:   class MissingType"));
+      assert.ok(result.text.includes("BUILD FAILURE"));
+      assert.ok(!result.text.includes("Downloading from central:"));
+    });
+
+    it("compresses phpt/sample.txt correctly", () => {
+      const raw = fs.readFileSync(path.join(fixturesRoot, "phpt", "sample.txt"), "utf8");
+      const result = processRtkText(raw, { command: "php run-tests.php" });
+      assert.ok(result.text.includes("FAIL Test string format [tests/002.phpt]"));
+      assert.ok(result.text.includes("001+ string format output"));
+      assert.ok(result.text.includes("Tests failed    :    1"));
+      assert.ok(!result.text.includes("PASS Test math"));
+    });
+
+    it("compresses git-diff/sample.txt correctly", () => {
+      const raw = fs.readFileSync(path.join(fixturesRoot, "git-diff", "sample.txt"), "utf8");
+      const result = processRtkText(raw, { command: "git diff" });
+      assert.ok(result.text.includes("diff --git"));
+      assert.ok(result.text.includes("+new line"));
+      assert.ok(result.text.includes("-old line"));
+    });
+
+    it("compresses typescript/sample.txt correctly", () => {
+      const raw = fs.readFileSync(path.join(fixturesRoot, "typescript", "sample.txt"), "utf8");
+      const result = processRtkText(raw, { command: "tsc" });
+      assert.ok(result.text.includes("error TS2322"));
+      assert.ok(result.text.includes("const value: number"));
+      assert.ok(result.text.includes("~~~~~"));
+    });
+
+    it("compresses shell-grep/sample.txt correctly", () => {
+      const raw = fs.readFileSync(path.join(fixturesRoot, "shell-grep", "sample.txt"), "utf8");
+      const result = processRtkText(raw, { command: "grep run src/app.ts" });
+      assert.ok(result.text.includes("src/app.ts:10:export function run()"));
+      assert.ok(result.text.includes("src/index.ts:5:run();"));
+    });
+
+    it("compresses shell-ls/sample.txt correctly", () => {
+      const raw = fs.readFileSync(path.join(fixturesRoot, "shell-ls", "sample.txt"), "utf8");
+      const result = processRtkText(raw, { command: "ls -la" });
+      assert.ok(result.text.includes("src"));
+      assert.ok(result.text.includes("package.json"));
+      assert.ok(result.text.includes("README.md"));
+    });
   });
 });
