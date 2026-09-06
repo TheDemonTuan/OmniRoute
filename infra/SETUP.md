@@ -369,7 +369,7 @@ Rule chấp nhận Bearer key, Anthropic/OpenAI-style `x-api-key`, Gemini
 4. Name: `OmniRoute API block unknown routes`; Action: `Block`
 
 Chặn mọi path khác trên API hostname ngay tại WAF, ngoại trừ model routes,
-`/api/monitoring/health`, `/tg-ops/*` và `/__edge-control/*`. Caddy và Worker vẫn
+`/api/monitoring/health` và `/__edge-control/*`. Caddy và Worker vẫn
 giữ cùng policy ở lớp sau để defense-in-depth. Đây là custom rule thứ 4/5 của
 gói Free.
 
@@ -415,13 +415,6 @@ Settings → Secrets and variables → Actions → tab **Variables**.
 | `DEPLOY_PLATFORM` | `linux/amd64`   | đặt `linux/arm64` nếu bước 3.1 ra `aarch64`                                                                       |
 | `BUILD_RUNNER`    | `ubuntu-latest` | đặt `ubuntu-24.04-arm` nếu bước 3.1 ra `aarch64` — **luôn đi kèm** `DEPLOY_PLATFORM`                              |
 | `IMAGE_TARGET`    | `runner-base`   | đặt `runner-web` nếu cần provider web-cookie (gemini-web, claude-web, claude-turnstile) — image nặng thêm ~300 MB |
-
-### 6.3 Telegram Ops Bot (tùy chọn)
-
-Bot quản trị chạy bằng systemd trên VPS và dùng BotFather token/GitHub App riêng. Làm theo
-[`docs/ops/TELEGRAM_OPS_BOT.md`](../docs/ops/TELEGRAM_OPS_BOT.md) để tạo credential, lấy Telegram
-user/chat ID, tạo PIN hash và điền `/etc/omniroute/ops-bot.env`. Production deploy chỉ cài/cập nhật
-mã bot; service không được bật nếu file cấu hình chưa hợp lệ.
 
 ---
 

@@ -13,7 +13,6 @@ upstream bị sửa, nên việc merge code mới từ upstream gần như khôn
 > **Ngồi vào một máy dev mới?** → [DEV-MACHINE.md](./DEV-MACHINE.md).
 > File này là phần giải thích kiến trúc và tra cứu khi vận hành.
 >
-> Quản trị riêng qua Telegram: xem [`docs/ops/TELEGRAM_OPS_BOT.md`](../docs/ops/TELEGRAM_OPS_BOT.md).
 > Cloudflare WAF, rate limit và split-domain hardening: xem
 > [`SETUP.md` mục 5](./SETUP.md#5-cloudflare-tunnel--split-domain-setup-).
 
@@ -112,8 +111,7 @@ infra/
 └── app.env.example        # template cho .app.env
 
 .github/workflows/
-├── prod-deploy.yml        # push prod → build → GHCR → SSH deploy
-└── ops-bot-sync.yml       # manual sync ops-bot to VPS
+└── prod-deploy.yml        # push prod → build → GHCR → SSH deploy
 ```
 
 Trên VPS:
@@ -221,11 +219,11 @@ ssh-keygen -t ed25519 -C "omniroute-ci" -f ~/.ssh/omniroute_ci
 
 Fork thừa hưởng ~25 workflow của upstream. Đáng chú ý `build.yml` trigger trên
 `push: branches: ["**"]` — tức là mỗi lần push `prod` nó cũng chạy một build nặng
-vô ích. Tắt hết, chỉ để lại hai workflow của fork:
+vô ích. Tắt hết, chỉ để lại workflow của fork:
 
 ```bash
 gh workflow list --repo TheDemonTuan/OmniRoute --all
-# tắt từng cái không phải prod-deploy.yml / ops-bot-sync.yml
+# tắt từng cái không phải prod-deploy.yml
 gh workflow disable build.yml --repo TheDemonTuan/OmniRoute
 gh workflow disable ci.yml    --repo TheDemonTuan/OmniRoute
 # ...
