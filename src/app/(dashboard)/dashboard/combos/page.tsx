@@ -811,8 +811,9 @@ function CombosPageContent() {
   // real stored value -- exactly the kind of source React's hydration
   // mismatch check is built to catch, and in dev mode a mismatch forces a
   // full client-only re-render of this tree, discarding whatever the fetch
-  // effects below had already populated. Start with the SSR-safe default on
-  // both passes and correct it client-only, after hydration, in an effect.
+  // effects below had already populated. useSyncExternalStore renders the
+  // SSR-safe default on both passes and switches to the stored value at
+  // hydration, without a second commit — see the store helpers above.
   const usageGuideNotDismissed = useSyncExternalStore(
     subscribeUsageGuide,
     getUsageGuideSnapshot,

@@ -12993,7 +12993,7 @@
         "description": "Sau khi đồng bộ mô hình nhà cung cấp, tạo lại các hồ sơ ~/.codex/*.config.toml từ danh mục trực tiếp. Không bao giờ thay đổi cấu hình Codex đang hoạt động hoặc cấu hình mặc định. Tính năng này mặc định tắt."
       },
       "OMNIROUTE_AUTO_SYNC_CLAUDE_PROFILES": {
-        "description": "Sau khi đồng bộ mô hình nhà cung cấp, tạo lại các hồ sơ Claude Code tại ~/.claude/profiles/<name>/settings.json từ danh mục trực tiếp. Không bao giờ thay đổi cấu hình Claude đang hoạt động hoặc cấu hình mặc định. Tính năng này mặc định tắt."
+        "description": "Sau khi đồng bộ mô hình nhà cung cấp, tạo lại các hồ sơ Claude Code tại ~/.claude/profiles/'<name>'/settings.json từ danh mục trực tiếp. Không bao giờ thay đổi cấu hình Claude đang hoạt động hoặc cấu hình mặc định. Tính năng này mặc định tắt."
       },
       "OMNIROUTE_DISABLE_LOCAL_HEALTHCHECK": {
         "description": "Tắt endpoint kiểm tra tình trạng của phiên bản cục bộ."
@@ -13144,6 +13144,7 @@
     "segmentHint": "Mỗi đoạn là một nhóm miễn phí · đã khử trùng lặp theo nhóm, đếm đúng thực tế (không thổi phồng trần giới hạn tốc độ).",
     "boost": "Mở khóa thêm khoảng {tokens}/tháng bằng một lần nạp $10 vào OpenRouter (50 → 1000 yêu cầu/ngày)",
     "uncapped": "Miễn phí vĩnh viễn, không công bố giới hạn (bị giới hạn tốc độ) — quyền truy cập thực, không tính vào tổng nổi bật:",
+    "gated": "~{tokens}/tháng nữa nằm sau bước xác minh danh tính theo khu vực (ví dụ: xác thực tên thật ở Trung Quốc đại lục) — hạn mức thật, không tính vào con số chính:",
     "tosRestricted": "{count, plural, one {# model} other {# models}} flagged as ToS-restricted — you decide",
     "provider": "Nhà cung cấp",
     "model": "Mô hình",

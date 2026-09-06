@@ -12993,7 +12993,7 @@
         "description": "Após a sincronização de modelos do provedor, regenera os perfis ~/.codex/*.config.toml a partir do catálogo ativo. Isso nunca altera a configuração ativa ou padrão do Codex e está desativado por padrão."
       },
       "OMNIROUTE_AUTO_SYNC_CLAUDE_PROFILES": {
-        "description": "Após a sincronização de modelos do provedor, regenera os perfis ~/.claude/profiles/<name>/settings.json a partir do catálogo ativo. Isso nunca altera a configuração ativa ou padrão do Claude e está desativado por padrão."
+        "description": "Após a sincronização de modelos do provedor, regenera os perfis ~/.claude/profiles/'<name>'/settings.json a partir do catálogo ativo. Isso nunca altera a configuração ativa ou padrão do Claude e está desativado por padrão."
       },
       "OMNIROUTE_DISABLE_LOCAL_HEALTHCHECK": {
         "description": "Desativa o endpoint de verificação de saúde da instância local."
@@ -13144,6 +13144,7 @@
     "segmentHint": "Cada segmento = um pool gratuito · deduplicado por pool, contagem honesta (sem tetos de limite de taxa inflados).",
     "boost": "Desbloqueie ~{tokens} a mais/mês com uma recarga única de $10 na OpenRouter (50 → 1000 solicitações/dia)",
     "uncapped": "Permanentemente gratuito, sem teto publicado (limitado por taxa) — acesso real, não contabilizado no total principal:",
+    "gated": "~{tokens}/mês a mais atrás de verificação de identidade regional (ex.: real-name da China continental) — quota real, fora do headline:",
     "tosRestricted": "{count, plural, one {# modelo} other {# modelos}} sinalizado(s) como restrito(s) pelos Termos de Serviço — você decide",
     "provider": "Provedor",
     "model": "Modelo",

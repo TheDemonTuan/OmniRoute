@@ -12982,7 +12982,7 @@
         "description": "Genereer na provider-modelsynchronisatie ~/.codex/*.config.toml-profielen opnieuw vanuit de live catalogus. Dit wijzigt nooit de actieve of standaard Codex-configuratie en is standaard uitgeschakeld."
       },
       "OMNIROUTE_AUTO_SYNC_CLAUDE_PROFILES": {
-        "description": "Genereer na provider-modelsynchronisatie ~/.claude/profiles/<name>/settings.json-profielen opnieuw vanuit de live catalogus. Dit wijzigt nooit de actieve of standaard Claude-configuratie en is standaard uitgeschakeld."
+        "description": "Genereer na provider-modelsynchronisatie ~/.claude/profiles/'<name>'/settings.json-profielen opnieuw vanuit de live catalogus. Dit wijzigt nooit de actieve of standaard Claude-configuratie en is standaard uitgeschakeld."
       },
       "OMNIROUTE_DISABLE_LOCAL_HEALTHCHECK": {
         "description": "Schakel het health-check-eindpunt van de lokale instantie uit."
@@ -13133,6 +13133,7 @@
     "segmentHint": "Elk segment = één gratis pool · pool-ontdubbeld, eerlijke telling (geen opgeblazen rate-limit-plafonds).",
     "boost": "Ontgrendel ~{tokens} extra/mnd met een eenmalige OpenRouter-opwaardering van $10 (50 → 1000 req/dag)",
     "uncapped": "Permanent gratis, geen gepubliceerde limiet (rate-limited) — echte toegang, niet meegeteld in de kop:",
+    "gated": "__MISSING__:~{tokens}/mo more behind a regional identity check (e.g. mainland-China real-name verification) — real quota, not counted in the headline:",
     "tosRestricted": "{count, plural, one {# model} other {# modellen}} gemarkeerd als ToS-beperkt — jij bepaalt",
     "provider": "Provider",
     "model": "Model",

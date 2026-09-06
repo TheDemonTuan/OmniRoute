@@ -12982,7 +12982,7 @@
         "description": "提供者-模型同步后，从实时目录重新生成 ~/.codex/*.config.toml 配置文件。这绝不会更改活动或默认的 Codex 配置，并且默认关闭。"
       },
       "OMNIROUTE_AUTO_SYNC_CLAUDE_PROFILES": {
-        "description": "提供者-模型同步后，从实时目录重新生成 ~/.claude/profiles/<name>/settings.json 配置文件。这绝不会更改活动或默认的 Claude 配置，并且默认关闭。"
+        "description": "提供者-模型同步后，从实时目录重新生成 ~/.claude/profiles/'<name>'/settings.json 配置文件。这绝不会更改活动或默认的 Claude 配置，并且默认关闭。"
       },
       "OMNIROUTE_DISABLE_LOCAL_HEALTHCHECK": {
         "description": "禁用本地实例健康检查端点。"
@@ -13133,6 +13133,7 @@
     "segmentHint": "每个分段 = 一个免费池 · 池去重，真实统计（无虚高的速率限制上限）。",
     "boost": "一次性充值 $10 OpenRouter 即可每月多解锁约 ~{tokens}（50 → 1000 次请求/天）",
     "uncapped": "永久免费，无公开上限（受速率限制）— 实际可用，未计入总览：",
+    "gated": "__MISSING__:~{tokens}/mo more behind a regional identity check (e.g. mainland-China real-name verification) — real quota, not counted in the headline:",
     "tosRestricted": "{count, plural, one {# 个模型} other {# 个模型}}被标记为受 ToS 限制 — 由您决定",
     "provider": "提供者",
     "model": "模型",

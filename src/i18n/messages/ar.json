@@ -12982,7 +12982,7 @@
         "description": "بعد مزامنة المزود والنموذج، أعد إنشاء ملفات التعريف ~/.codex/*.config.toml من الكتالوج المباشر. لا يغير هذا أبداً تكوين Codex النشط أو الافتراضي ويكون معطلاً بشكل افتراضي."
       },
       "OMNIROUTE_AUTO_SYNC_CLAUDE_PROFILES": {
-        "description": "بعد مزامنة المزود والنموذج، أعد إنشاء ملفات التعريف ~/.claude/profiles/<name>/settings.json من الكتالوج المباشر. لا يغير هذا أبداً تكوين Claude النشط أو الافتراضي ويكون معطلاً بشكل افتراضي."
+        "description": "بعد مزامنة المزود والنموذج، أعد إنشاء ملفات التعريف ~/.claude/profiles/'<name>'/settings.json من الكتالوج المباشر. لا يغير هذا أبداً تكوين Claude النشط أو الافتراضي ويكون معطلاً بشكل افتراضي."
       },
       "OMNIROUTE_DISABLE_LOCAL_HEALTHCHECK": {
         "description": "تعطيل نقطة نهاية فحص صحة المثيل المحلي."
@@ -13133,6 +13133,7 @@
     "segmentHint": "كل شريحة = مجمع مجاني واحد · مجمع مفرود من التكرار، عدّ صادق (بدون حدود قصوى مضخمة لمعدل الطلبات).",
     "boost": "افتح حوالي {tokens} إضافية/شهرياً بشحن رصيد OpenRouter لمرة واحدة بقيمة 10$ (50 ← 1000 طلب/يوم)",
     "uncapped": "مجاني بشكل دائم، بدون حد أقصى معلن (محدود بمعدل الطلبات) — وصول حقيقي، لا يُحتسب في العنوان الرئيسي:",
+    "gated": "__MISSING__:~{tokens}/mo more behind a regional identity check (e.g. mainland-China real-name verification) — real quota, not counted in the headline:",
     "tosRestricted": "{count, plural, one {# نموذج تم وضع علامة عليه كمقيد بشروط الخدمة} other {# نماذج تم وضع علامة عليها كمقيدة بشروط الخدمة}} — القرار لك",
     "provider": "المزود",
     "model": "النموذج",

@@ -1097,6 +1097,10 @@ export async function handleChatCore({
       // #12150 P1b surface 1: undefined for every non-video request (byte-identical
       // to before this param existed) — see applyVideoBridgeLogRedaction.
       videoBridgeLogRedaction: (videoBridgeLog as VideoBridgeLogParam | undefined)?.redaction,
+      // #12150 P2 surface 2: mark the persisted call_logs row so
+      // resolvePreviousResponseState refuses to rehydrate a snapshot whose video
+      // transcript was redacted. false for every non-video request.
+      videoContentRemoved: videoBridgeObserved,
     });
 
   // Primary path: merge client model id + alias target so config on either key applies; resolved
@@ -1352,9 +1356,18 @@ export async function handleChatCore({
     const compressionSettings: CompressionConfig | null = compressionSettingsResult.settings;
     // #8034 — operator-named model/endpoint exclusions bypass the whole pipeline, exactly
     // like compression being globally disabled, so the body is provably byte-identical.
-    const compressionExcluded =
-      nativeCodexPassthrough ||
-      isCompressionExcluded({ provider, model: effectiveModel }, compressionSettings?.exclusions);
+    // Native Codex passthrough is deliberately NOT part of this exclusion: prompt
+    // compression runs through adaptBodyForCompression() (Responses input[] → messages
+    // → restore) with codex tool-output eligibility guards, so native contexts still
+    // compress (regression: #8933 introduced the passthrough bypass, landed on release
+    // via #11088, silencing codex analytics to skip_reason='excluded'). Reactive
+    // compaction + combo overflow fail-fast below still bypass native passthrough —
+    // intentionally left for follow-up. Operators who want byte-identical passthrough
+    // can add `codex/*` to the exclusions list.
+    const compressionExcluded = isCompressionExcluded(
+      { provider, model: effectiveModel },
+      compressionSettings?.exclusions
+    );
     // A per-key opt-out is a request-scoped hard kill for prompt compression. It
     // deliberately does not disable the independent reactive context-fit safety
     // passes, matching the existing x-omniroute-compression: off contract.
