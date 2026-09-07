@@ -29,6 +29,43 @@ export const codexProvider: RegistryEntry = {
   },
   models: [
     {
+      id: "gpt-6-astra",
+      name: "GPT-6 Astra",
+      ...GPT_5_6_CODEX_CAPABILITIES,
+    },
+    {
+      id: "gpt-6-astra-ultra",
+      name: "GPT-6 Astra (Ultra)",
+      ...GPT_5_6_CODEX_CAPABILITIES,
+    },
+    {
+      id: "gpt-6-astra-max",
+      name: "GPT-6 Astra (Max)",
+      ...GPT_5_6_CODEX_CAPABILITIES,
+    },
+    {
+      id: "gpt-6-astra-xhigh",
+      name: "GPT-6 Astra (xHigh)",
+      ...GPT_5_6_CODEX_CAPABILITIES,
+      timeoutMs: 1200000,
+    },
+    {
+      id: "gpt-6-astra-high",
+      name: "GPT-6 Astra (High)",
+      ...GPT_5_6_CODEX_CAPABILITIES,
+      timeoutMs: 1200000,
+    },
+    {
+      id: "gpt-6-astra-medium",
+      name: "GPT-6 Astra (Medium)",
+      ...GPT_5_6_CODEX_CAPABILITIES,
+    },
+    {
+      id: "gpt-6-astra-low",
+      name: "GPT-6 Astra (Low)",
+      ...GPT_5_6_CODEX_CAPABILITIES,
+    },
+    {
       id: "gpt-5.6-sol",
       name: "GPT 5.6 Sol",
       ...GPT_5_6_CODEX_CAPABILITIES,
