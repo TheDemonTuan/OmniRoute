@@ -62,32 +62,61 @@ export async function validateChatGptWebCodexProvider({
         error: "Tunnel-ID und Runtime-Key müssen gemeinsam gültig konfiguriert werden.",
       };
     }
-    const cdpEndpoint = process.env.CHATGPT_WEB_CODEX_CDP_URL?.trim();
-    const { detectChromeExecutable } =
-      await import("@omniroute/open-sse/executors/chatgpt-web-codex.ts");
-    const chromeExecutablePath = detectChromeExecutable(
-      typeof providerSpecificData.chromeExecutablePath === "string"
-        ? providerSpecificData.chromeExecutablePath
-        : undefined
-    );
-    if (!chromeExecutablePath && !cdpEndpoint) {
-      return {
-        valid: false,
-        error:
-          "Kein unterstütztes Chrome oder Chromium gefunden. Installiere Chromium oder konfiguriere den Browserpfad.",
-      };
-    }
     const validationId = `validation-${randomBytes(12).toString("hex")}`;
     const paths = connectionRuntimePaths(validationId);
     const freshCookie = Boolean(secrets.cookie);
-    if (secrets.cookie) ensureConnectionStorageState(validationId, secrets.cookie);
-    else ensureConnectionStorageStateFromCredential(validationId, secrets);
+    try {
+      if (secrets.cookie) ensureConnectionStorageState(validationId, secrets.cookie);
+      else ensureConnectionStorageStateFromCredential(validationId, secrets);
+    } catch (storageError) {
+      rmSync(paths.root, { recursive: true, force: true });
+      return {
+        valid: false,
+        error: sanitizeErrorMessage(
+          storageError instanceof Error ? storageError.message : storageError
+        ),
+      };
+    }
+
+    const { resolveChatGptWebCodexBrowserRuntime } =
+      await import("@omniroute/open-sse/services/chatgptWebCodexAdmin.ts");
+    const runtime = resolveChatGptWebCodexBrowserRuntime(providerSpecificData);
+
+    if (!runtime.available) {
+      return {
+        valid: true,
+        error: null,
+        pendingBrowserVerification: true,
+        method: "structural-validation",
+        capabilities: {
+          browser: "unavailable",
+          storageState: "pending",
+          login: "pending",
+          temporaryChats: "pending",
+          solAvailable: true,
+          proAvailable: false,
+        },
+        providerSpecificData: {
+          browserVerified: false,
+          pendingBrowserVerification: true,
+          connectorName,
+          ...(runtimeKey ? { runtimeKey } : {}),
+          ...(tunnelId ? { tunnelId } : {}),
+          ...(freshCookie ? { validationId } : {}),
+        },
+        runtime: {
+          available: false,
+          reason: "browser_unavailable",
+        },
+      };
+    }
+
     let capabilities;
     try {
       capabilities = await inspectBrowserLoginCapabilities({
         appName: connectorName,
-        ...(chromeExecutablePath ? { chromeExecutablePath } : {}),
-        ...(cdpEndpoint ? { cdpEndpoint } : {}),
+        ...(runtime.chromeExecutablePath ? { chromeExecutablePath: runtime.chromeExecutablePath } : {}),
+        ...(runtime.cdpEndpoint ? { cdpEndpoint: runtime.cdpEndpoint } : {}),
         storageStatePath: paths.storageStatePath,
         headed: false,
         proAvailable: false,
@@ -101,6 +130,7 @@ export async function validateChatGptWebCodexProvider({
     return {
       valid: true,
       error: null,
+      pendingBrowserVerification: false,
       method: "headless-browser",
       capabilities: {
         browser: "ready",
@@ -114,13 +144,17 @@ export async function validateChatGptWebCodexProvider({
         solAvailable: capabilities.solAvailable,
         proAvailable: capabilities.proAvailable,
         browserVerified: true,
+        pendingBrowserVerification: false,
         connectorName,
-        ...(chromeExecutablePath ? { chromeExecutablePath } : {}),
-        ...(typeof providerSpecificData.tunnelId === "string" &&
-        providerSpecificData.tunnelId.trim()
-          ? { tunnelId: providerSpecificData.tunnelId.trim() }
-          : {}),
+        ...(runtime.chromeExecutablePath ? { chromeExecutablePath: runtime.chromeExecutablePath } : {}),
+        ...(runtime.cdpEndpoint ? { browserCdpEndpoint: runtime.cdpEndpoint } : {}),
+        ...(runtimeKey ? { runtimeKey } : {}),
+        ...(tunnelId ? { tunnelId } : {}),
         ...(freshCookie ? { validationId } : {}),
+      },
+      runtime: {
+        available: true,
+        mode: runtime.mode,
       },
     };
   } catch (error) {

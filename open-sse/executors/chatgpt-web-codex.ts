@@ -1,5 +1,3 @@
-import { existsSync } from "node:fs";
-
 import {
   CHATGPT_WEB_CODEX_CONNECTOR_NAME,
   CHATGPT_WEB_CODEX_RUNTIME_HEADED,
@@ -97,21 +95,17 @@ function configuredString(data: Record<string, unknown>, ...keys: string[]): str
   return undefined;
 }
 
-export function detectChromeExecutable(explicit?: string): string | undefined {
-  const candidates = [
-    explicit,
-    process.env.CHATGPT_WEB_CODEX_CHROME_PATH,
-    process.env.CHROME_PATH,
-    "/usr/bin/google-chrome",
-    "/usr/bin/google-chrome-stable",
-    "/usr/bin/chromium",
-    "/usr/bin/chromium-browser",
-    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-  ];
-  return candidates.find((candidate): candidate is string =>
-    Boolean(candidate && existsSync(candidate))
-  );
-}
+import {
+  ChatGptWebCodexRuntimeError,
+  detectChromeExecutable,
+  resolveChatGptWebCodexBrowserRuntime,
+} from "./chatgpt-web-codex/browserRuntime.ts";
+
+export {
+  ChatGptWebCodexRuntimeError,
+  detectChromeExecutable,
+  resolveChatGptWebCodexBrowserRuntime,
+};
 
 function responseStateNamespace(connectionId: string, parsed: CodexParsedRequest): string {
   const identity = extractChatGptTurnIdentity(parsed);
@@ -175,14 +169,16 @@ function buildProviderConfig(
   const data = record(input.credentials.providerSpecificData);
   const route = requireChatGptWebCodexRoute(input.model);
   const paths = connectionRuntimePaths(connectionId);
-  const cdpEndpoint =
-    configuredString(data, "browserCdpEndpoint") ?? process.env.CHATGPT_WEB_CODEX_CDP_URL;
-  const chromeExecutablePath = detectChromeExecutable(
-    configuredString(data, "chromeExecutablePath")
-  );
-  if (!chromeExecutablePath && !cdpEndpoint) {
-    throw new Error("No supported Chrome or Chromium executable was found");
+  const browserRuntime = resolveChatGptWebCodexBrowserRuntime(data);
+  if (!browserRuntime.available) {
+    throw new ChatGptWebCodexRuntimeError(
+      "chatgpt_web_codex_browser_unavailable",
+      "ChatGPT Web (Codex) browser runtime is unavailable",
+      503
+    );
   }
+  const cdpEndpoint = browserRuntime.cdpEndpoint;
+  const chromeExecutablePath = browserRuntime.chromeExecutablePath;
 
   const solAvailable = data.solAvailable !== false;
   const proAvailable = data.proAvailable === true;
@@ -321,15 +317,16 @@ export class ChatGptWebCodexExecutor extends BaseExecutor {
 
       const storageStatePath = ensureConnectionStorageStateFromCredential(connectionId, secrets);
       const providerData = record(input.credentials.providerSpecificData);
-      const cdpEndpoint =
-        configuredString(providerData, "browserCdpEndpoint") ??
-        process.env.CHATGPT_WEB_CODEX_CDP_URL;
-      const chromeExecutablePath = detectChromeExecutable(
-        configuredString(providerData, "chromeExecutablePath")
-      );
-      if (!chromeExecutablePath && !cdpEndpoint) {
-        throw new Error("No supported Chrome or Chromium executable was found");
+      const browserRuntime = resolveChatGptWebCodexBrowserRuntime(providerData);
+      if (!browserRuntime.available) {
+        throw new ChatGptWebCodexRuntimeError(
+          "chatgpt_web_codex_browser_unavailable",
+          "ChatGPT Web (Codex) browser runtime is unavailable",
+          503
+        );
       }
+      const cdpEndpoint = browserRuntime.cdpEndpoint;
+      const chromeExecutablePath = browserRuntime.chromeExecutablePath;
       const runtimePaths = connectionRuntimePaths(connectionId);
       const loginConfig = {
         mode: "browser-only" as const,
@@ -467,6 +464,12 @@ export class ChatGptWebCodexExecutor extends BaseExecutor {
         "CHATGPT_WEB_CODEX",
         sanitizeErrorMessage(error instanceof Error ? error.message : error)
       );
+      if (error instanceof ChatGptWebCodexRuntimeError) {
+        return wrapped(
+          errorResponse(error.statusCode, error.message, error.code),
+          input.body
+        );
+      }
       return wrapped(
         errorResponse(400, error instanceof Error ? error.message : error),
         input.body

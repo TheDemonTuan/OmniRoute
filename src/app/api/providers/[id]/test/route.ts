@@ -861,6 +861,20 @@ async function testApiKeyConnection(connection: any) {
     };
   }
 
+  if (connection.provider === "chatgpt-web-codex" && (result as any).pendingBrowserVerification) {
+    const error = null;
+    const diagnosis = makeDiagnosis(
+      "runtime_error",
+      "local",
+      "Browser verification pending",
+      "browser_unavailable"
+    );
+    return {
+      ...buildApiKeyConnectionTestResult(result, error, diagnosis),
+      pendingBrowserVerification: true,
+    };
+  }
+
   const error = result.valid ? null : result.error || "Invalid API key";
   const diagnosis = result.valid
     ? makeDiagnosis("ok", "upstream", null, null)
@@ -1029,8 +1043,23 @@ export async function testSingleConnection(connectionId: string, validationModel
   );
   const lastErrorType = result.valid ? connection.lastErrorType : diagnosis.type;
 
+  const isPendingVerification = Boolean(
+    (result as any).pendingBrowserVerification ||
+      (connection.provider === "chatgpt-web-codex" &&
+        ((result as any).capabilities?.browser === "unavailable" ||
+          (result as any).pendingBrowserVerification))
+  );
+
   const updateData: Record<string, any> = {
-    testStatus: clearErrorState ? "active" : result.valid ? connection.testStatus : "error",
+    testStatus: clearErrorState
+      ? "active"
+      : isPendingVerification
+        ? "pending"
+        : result.valid
+          ? connection.testStatus === "pending"
+            ? "active"
+            : connection.testStatus
+          : "error",
     // A passing test is the sole activation signal under the "only advertise
     // tested-working connections" default — see POST /api/providers, which
     // now creates connections isActive:false. Only ever flips ON here: a
@@ -1038,8 +1067,14 @@ export async function testSingleConnection(connectionId: string, validationModel
     // failure on an already-active, already-working connection must not take
     // it out of rotation — that's what the cooldown/rateLimitedUntil below is
     // for), so this never deactivates anything.
-    ...(result.valid ? { isActive: true } : {}),
-    lastError: clearErrorState ? null : result.valid ? connection.lastError : result.error,
+    ...(result.valid && !isPendingVerification ? { isActive: true } : {}),
+    lastError: clearErrorState
+      ? null
+      : isPendingVerification
+        ? null
+        : result.valid
+          ? connection.lastError
+          : result.error,
     lastErrorAt: clearErrorState ? null : result.valid ? connection.lastErrorAt : now,
     lastTested: now,
     lastErrorType: clearErrorState ? null : lastErrorType,

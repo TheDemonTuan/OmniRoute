@@ -20,11 +20,11 @@ export function connectionRuntimePaths(connectionId: string) {
   };
 }
 
-function cookieHeaderValue(raw: string): string {
+export function cookieHeaderValue(raw: string): string {
   return raw.trim().replace(/^cookie\s*:\s*/i, "");
 }
 
-function parseCookies(raw: string): Array<Record<string, unknown>> {
+export function parseCookies(raw: string): Array<Record<string, unknown>> {
   const header = cookieHeaderValue(raw);
   const pairs = header
     .split(/;\s*/)
@@ -156,32 +156,77 @@ export function ensureConnectionStorageStateFromCredential(
 
 export function finalizeValidatedChatGptWebCodexSecrets(
   encodedCredential: string,
-  validationId: string
-): { encodedCredential: string; storageState: Record<string, unknown> } {
+  validationId?: string
+): {
+  encodedCredential: string;
+  storageState?: Record<string, unknown>;
+  pendingBrowserVerification?: boolean;
+} {
   const parsed = JSON.parse(encodedCredential) as Record<string, unknown>;
   const rawCookie = typeof parsed.cookie === "string" ? cookieHeaderValue(parsed.cookie) : "";
-  if (!rawCookie) throw new Error("A fresh ChatGPT Cookie is required for browser validation");
-  if (!/^validation-[a-f0-9]{24}$/.test(validationId)) {
-    throw new Error("ChatGPT browser validation reference is invalid");
-  }
-  const paths = connectionRuntimePaths(validationId);
-  const markerPath = loginVerificationMarkerPath(paths.storageStatePath);
-  const marker = JSON.parse(readFileSync(markerPath, "utf8")) as Record<string, unknown>;
-  if (
-    marker.version !== 1 ||
-    marker.authenticated !== true ||
-    marker.pendingBrowserVerification === true ||
-    marker.cookieFingerprint !== cookieFingerprint(rawCookie)
-  ) {
-    throw new Error("ChatGPT browser validation does not match the supplied Cookie");
-  }
-  const storageState = readConnectionStorageState(paths.storageStatePath);
   const runtimeKey = typeof parsed.runtimeKey === "string" ? parsed.runtimeKey.trim() : "";
+
+  if (parsed.storageState && typeof parsed.storageState === "object") {
+    return {
+      encodedCredential: JSON.stringify({
+        version: 2,
+        storageState: parsed.storageState,
+        ...(runtimeKey ? { runtimeKey } : {}),
+      }),
+      storageState: parsed.storageState as Record<string, unknown>,
+      pendingBrowserVerification: false,
+    };
+  }
+
+  if (!rawCookie) throw new Error("A fresh ChatGPT Cookie is required for browser validation");
+
+  // Validate cookie structure (throws if __Secure-next-auth.session-token is missing)
+  parseCookies(rawCookie);
+
+  if (validationId && /^validation-[a-f0-9]{24}$/.test(validationId)) {
+    const paths = connectionRuntimePaths(validationId);
+    const markerPath = loginVerificationMarkerPath(paths.storageStatePath);
+    if (existsSync(markerPath)) {
+      try {
+        const marker = JSON.parse(readFileSync(markerPath, "utf8")) as Record<string, unknown>;
+        if (
+          marker.version === 1 &&
+          marker.authenticated === true &&
+          marker.cookieFingerprint === cookieFingerprint(rawCookie)
+        ) {
+          if (marker.pendingBrowserVerification === true) {
+            rmSync(paths.root, { recursive: true, force: true });
+            return {
+              encodedCredential: JSON.stringify({
+                version: 2,
+                cookie: rawCookie,
+                ...(runtimeKey ? { runtimeKey } : {}),
+              }),
+              pendingBrowserVerification: true,
+            };
+          }
+
+          if (existsSync(paths.storageStatePath)) {
+            const storageState = readConnectionStorageState(paths.storageStatePath);
+            const next = JSON.stringify({
+              version: 2,
+              storageState,
+              ...(runtimeKey ? { runtimeKey } : {}),
+            });
+            rmSync(paths.root, { recursive: true, force: true });
+            return { encodedCredential: next, storageState, pendingBrowserVerification: false };
+          }
+        }
+      } catch {
+        // Marker inspection failed; fall through to pending credential
+      }
+    }
+  }
+
   const next = JSON.stringify({
     version: 2,
-    storageState,
+    cookie: rawCookie,
     ...(runtimeKey ? { runtimeKey } : {}),
   });
-  rmSync(paths.root, { recursive: true, force: true });
-  return { encodedCredential: next, storageState };
+  return { encodedCredential: next, pendingBrowserVerification: true };
 }

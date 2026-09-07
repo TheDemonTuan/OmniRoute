@@ -223,6 +223,7 @@ export default function ConnectionsListPanel({
   const STATUS_FILTER_OPTIONS = [
     { value: "all", label: t("filterAll", "All") },
     { value: "active", label: t("filterActive", "Active") },
+    { value: "pending", label: t("filterPending", "Pending") },
     { value: "error", label: t("filterError", "Error") },
     { value: "banned", label: t("filterBanned", "Banned") },
     {
@@ -235,9 +236,13 @@ export default function ConnectionsListPanel({
       ? sorted
       : sorted.filter((c) => {
           if (healthFilter === "active") return isHealthy(c);
+          if (healthFilter === "pending") return c.testStatus === "pending";
           if (healthFilter === "error")
             return (
-              !isHealthy(c) && c.testStatus !== "banned" && c.testStatus !== "credits_exhausted"
+              !isHealthy(c) &&
+              c.testStatus !== "banned" &&
+              c.testStatus !== "credits_exhausted" &&
+              c.testStatus !== "pending"
             );
           return c.testStatus === healthFilter;
         });

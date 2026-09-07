@@ -269,7 +269,8 @@ export default function AddApiKeyModal({
       const data = await res.json();
       const ok = !!data.valid;
       const unsupported = !!data.unsupported;
-      setValidationResult(ok ? "success" : unsupported ? "unsupported" : "failed");
+      const isPending = Boolean(data.pendingBrowserVerification);
+      setValidationResult(isPending ? "pending" : ok ? "success" : unsupported ? "unsupported" : "failed");
       setValidationCapabilities(
         ok && data.capabilities && typeof data.capabilities === "object" ? data.capabilities : null
       );
@@ -366,7 +367,8 @@ export default function AddApiKeyModal({
           ) {
             validatedProviderSpecificData = data.providerSpecificData;
           }
-          setValidationResult(isValid ? "success" : isUnsupported ? "unsupported" : "failed");
+          const isPending = Boolean(data.pendingBrowserVerification);
+          setValidationResult(isPending ? "pending" : isValid ? "success" : isUnsupported ? "unsupported" : "failed");
         } catch {
           setValidationResult("failed");
         } finally {

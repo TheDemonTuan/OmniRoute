@@ -519,7 +519,8 @@ export default function EditConnectionModal({
         }),
       });
       const data = await res.json();
-      setValidationResult(data.valid ? "success" : "failed");
+      const isPending = Boolean(data.pendingBrowserVerification);
+      setValidationResult(isPending ? "pending" : data.valid ? "success" : "failed");
       if (
         data.valid &&
         data.providerSpecificData &&
@@ -632,7 +633,8 @@ export default function EditConnectionModal({
             });
             const data = await res.json();
             isValid = !!data.valid;
-            setValidationResult(isValid ? "success" : "failed");
+            const isPending = Boolean(data.pendingBrowserVerification);
+            setValidationResult(isPending ? "pending" : isValid ? "success" : "failed");
             if (
               isValid &&
               data.providerSpecificData &&
@@ -648,6 +650,7 @@ export default function EditConnectionModal({
           }
         }
         if (isValid) {
+          const isPending = Boolean(validationPsd?.pendingBrowserVerification);
           updates.apiKey = isChatGptWebCodex
             ? JSON.stringify({
                 version: 1,
@@ -655,7 +658,7 @@ export default function EditConnectionModal({
                 ...(formData.runtimeKey.trim() ? { runtimeKey: formData.runtimeKey.trim() } : {}),
               })
             : formData.apiKey;
-          updates.testStatus = "active";
+          updates.testStatus = isPending ? "pending" : "active";
           updates.lastError = null;
           updates.lastErrorAt = null;
           updates.lastErrorType = null;

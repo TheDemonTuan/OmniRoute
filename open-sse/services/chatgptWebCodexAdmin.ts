@@ -10,9 +10,19 @@
  * encode/decode, storage-state finalization, connection health status).
  */
 export { getChatGptWebCodexDoctorStatus } from "../executors/chatgpt-web-codex/doctor.ts";
-export { finalizeValidatedChatGptWebCodexSecrets } from "../executors/chatgpt-web-codex/storageState.ts";
+export {
+  finalizeValidatedChatGptWebCodexSecrets,
+  cookieHeaderValue,
+  parseCookies,
+} from "../executors/chatgpt-web-codex/storageState.ts";
 export {
   decodeChatGptWebCodexSecrets,
   encodeChatGptWebCodexSecrets,
   type ChatGptWebCodexSecrets,
 } from "../executors/chatgpt-web-codex/credentials.ts";
+export {
+  detectChromeExecutable,
+  resolveChatGptWebCodexBrowserRuntime,
+  ChatGptWebCodexRuntimeError,
+  type ChatGptWebCodexBrowserRuntime,
+} from "../executors/chatgpt-web-codex/browserRuntime.ts";

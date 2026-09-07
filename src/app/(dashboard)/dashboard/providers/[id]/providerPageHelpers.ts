@@ -117,11 +117,13 @@ export function targetFormatBadgeI18nKey(value: string): string | null {
 
 /** #5442 — badge for add-credential validation; unsupported → neutral N/A (not red Invalid). */
 export function validationBadgeProps(result: string): {
-  variant: "success" | "error" | "info";
+  variant: "success" | "error" | "info" | "warning";
   labelKey: string;
   fallback: string;
 } {
   if (result === "success") return { variant: "success", labelKey: "valid", fallback: "Valid" };
+  if (result === "pending")
+    return { variant: "warning", labelKey: "pendingVerification", fallback: "Pending Verification" };
   if (result === "unsupported")
     return { variant: "info", labelKey: "notApplicable", fallback: "N/A" };
   return { variant: "error", labelKey: "invalid", fallback: "Invalid" };
@@ -870,6 +872,7 @@ export const ERROR_TYPE_LABELS: Record<
   string,
   { labelKey: string; variant: "error" | "default" | "warning" | "success" | "info" | "primary" }
 > = {
+  pending_verification: { labelKey: "pendingVerification", variant: "warning" },
   runtime_error: { labelKey: "errorTypeRuntime", variant: "warning" },
   upstream_auth_error: { labelKey: "errorTypeUpstreamAuth", variant: "error" },
   account_deactivated: { labelKey: "Account Deactivated", variant: "error" },

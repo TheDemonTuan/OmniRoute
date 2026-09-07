@@ -216,8 +216,16 @@ export async function POST(request: Request) {
           await import("@omniroute/open-sse/services/chatgptWebCodexAdmin.ts");
         const finalized = finalizeValidatedChatGptWebCodexSecrets(apiKey || "", validationId);
         persistedApiKey = finalized.encodedCredential;
-        providerSpecificData = { ...(providerSpecificData || {}) };
+        providerSpecificData = {
+          ...(providerSpecificData || {}),
+          ...(finalized.pendingBrowserVerification
+            ? { pendingBrowserVerification: true, browserVerified: false }
+            : { pendingBrowserVerification: false, browserVerified: true }),
+        };
         delete providerSpecificData.validationId;
+        if (finalized.pendingBrowserVerification) {
+          testStatus = "pending";
+        }
       } catch (error) {
         return NextResponse.json(
           {
