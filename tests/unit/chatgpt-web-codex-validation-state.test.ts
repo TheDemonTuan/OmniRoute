@@ -22,7 +22,10 @@ import {
 } from "../../open-sse/executors/chatgpt-web-codex/storageState.ts";
 import { validateChatGptWebCodexProvider } from "../../src/lib/providers/validation/chatgptWebCodex.ts";
 import { classifyFailure } from "../../src/app/api/providers/[id]/test/publicErrorBoundary.ts";
-import { validationBadgeProps } from "../../src/app/(dashboard)/dashboard/providers/[id]/providerPageHelpers.ts";
+import {
+  ERROR_TYPE_LABELS,
+  validationBadgeProps,
+} from "../../src/app/(dashboard)/dashboard/providers/[id]/providerPageHelpers.ts";
 
 const VALID_COOKIE =
   "__Secure-next-auth.session-token=mock-valid-session-token-abc123xyz; path=/; domain=.chatgpt.com";
@@ -156,8 +159,7 @@ test("Test C — browser runtime detection via CDP or Chrome", () => {
     assert.equal(cdp.mode, "internal-cdp");
     assert.equal(cdp.cdpEndpoint, "http://chatgpt-web-codex-browser:9223");
   } finally {
-    if (prevDefault !== undefined)
-      process.env.CHATGPT_WEB_CODEX_DEFAULT_CHROME_PATHS = prevDefault;
+    if (prevDefault !== undefined) process.env.CHATGPT_WEB_CODEX_DEFAULT_CHROME_PATHS = prevDefault;
     else delete process.env.CHATGPT_WEB_CODEX_DEFAULT_CHROME_PATHS;
     if (prevCdp !== undefined) process.env.CHATGPT_WEB_CODEX_CDP_URL = prevCdp;
     else delete process.env.CHATGPT_WEB_CODEX_CDP_URL;
@@ -243,8 +245,7 @@ test("Test E — executor returns 503 chatgpt_web_codex_browser_unavailable when
     else delete process.env.CHATGPT_WEB_CODEX_CHROME_PATH;
     if (prevPath !== undefined) process.env.CHROME_PATH = prevPath;
     else delete process.env.CHROME_PATH;
-    if (prevDefault !== undefined)
-      process.env.CHATGPT_WEB_CODEX_DEFAULT_CHROME_PATHS = prevDefault;
+    if (prevDefault !== undefined) process.env.CHATGPT_WEB_CODEX_DEFAULT_CHROME_PATHS = prevDefault;
     else delete process.env.CHATGPT_WEB_CODEX_DEFAULT_CHROME_PATHS;
   }
 });
@@ -253,6 +254,7 @@ test("Test F — UI validation badge maps pending to warning Pending Verificatio
   const pendingBadge = validationBadgeProps("pending");
   assert.equal(pendingBadge.variant, "warning");
   assert.equal(pendingBadge.fallback, "Pending Verification");
+  assert.equal(ERROR_TYPE_LABELS.pending_verification.fallback, "Pending Verification");
 
   const successBadge = validationBadgeProps("success");
   assert.equal(successBadge.variant, "success");

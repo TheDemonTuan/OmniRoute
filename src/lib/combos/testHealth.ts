@@ -182,6 +182,13 @@ function extractStreamPayload(payload: string): ComboTestStreamResult | undefine
     const collected: string[] = [];
     const direct = extractComboTestResponseText(body);
     if (direct) collected.push(direct);
+    if (
+      body.type === "response.output_text.delta" &&
+      typeof body.delta === "string" &&
+      body.delta
+    ) {
+      collected.push(body.delta);
+    }
     for (const choice of Array.isArray(body?.choices) ? body.choices : []) {
       const delta = asRecord(choice?.delta);
       const content = extractTextFromContent(delta.content);
