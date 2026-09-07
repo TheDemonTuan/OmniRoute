@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createProviderConnection } from "@/lib/db/providers";
 import {
+  buildInternalChatGptWebCodexRequest,
   classifyModelTestOutput,
   createModelTestTimeoutError,
   parseRetryAfterHeader,
@@ -19,6 +20,32 @@ import {
   RATE_LIMIT_EXECUTION_TIMEOUT_CODE,
   RATE_LIMIT_QUEUE_WEDGED_CODE,
 } from "@omniroute/open-sse/services/rateLimitManager/errors.ts";
+
+test("ChatGPT Web model tests use a verified native Responses request", async () => {
+  const request = buildInternalChatGptWebCodexRequest(
+    {
+      model: "chatgpt-web-codex/high",
+      messages: [{ role: "user", content: "Calculate 1+1" }],
+      max_tokens: 64,
+      stream: true,
+    },
+    new AbortController().signal,
+    "connection-1"
+  );
+  const body = await request.json();
+  const turnMetadata = JSON.parse(body.client_metadata["x-codex-turn-metadata"]);
+
+  assert.equal(new URL(request.url).pathname, "/v1/responses");
+  assert.equal(request.headers.get("originator"), "codex_cli_rs");
+  assert.equal(request.headers.get("X-OmniRoute-Connection"), "connection-1");
+  assert.equal(body.input[0].role, "user");
+  assert.equal(body.input[0].content[0].type, "input_text");
+  assert.equal(body.input[0].content[0].text, "Calculate 1+1");
+  assert.equal(body.max_output_tokens, 64);
+  assert.equal(body.stream, true);
+  assert.match(turnMetadata.thread_id, /^model-test-/);
+  assert.match(turnMetadata.turn_id, /^model-test-/);
+});
 
 // ---------------------------------------------------------------------------
 // parseRetryAfterHeader — Retry-After is either delta-seconds or an HTTP-date.

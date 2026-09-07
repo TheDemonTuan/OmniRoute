@@ -44,6 +44,14 @@ test("combo test helper ignores keepalives and extracts streamed model content",
   assert.equal(text, "OK");
 });
 
+test("combo test helper extracts native Responses API deltas", () => {
+  const text = extractComboTestStreamText(
+    'event: response.output_text.delta\ndata: {"type":"response.output_text.delta","delta":"O"}\n\n' +
+      'event: response.output_text.delta\ndata: {"type":"response.output_text.delta","delta":"K"}\n\n'
+  );
+  assert.equal(text, "OK");
+});
+
 test("combo test helper preserves streamed upstream errors", () => {
   const result = extractComboTestStreamResult(
     'data: {"error":{"message":"Rate limit exceeded","code":"429"}}\n\n'

@@ -223,7 +223,8 @@ function getStatusPresentation(
     (connection.provider === "chatgpt-web-codex" &&
       connection.providerSpecificData &&
       typeof connection.providerSpecificData === "object" &&
-      (connection.providerSpecificData as Record<string, unknown>).pendingBrowserVerification === true);
+      (connection.providerSpecificData as Record<string, unknown>).pendingBrowserVerification ===
+        true);
 
   if (isPendingVerification) {
     return {
@@ -436,8 +437,7 @@ export default function ConnectionRow({
   // #11497: cookie rows with a decodable JWT credential carry a persisted
   // cookieExpiresAt — feed it into the same countdown badge OAuth rows use.
   const cookieExpiresAt = readCookieExpiresAt(connection.providerSpecificData);
-  const effectiveExpiresAt =
-    connection.tokenExpiresAt || connection.expiresAt || cookieExpiresAt;
+  const effectiveExpiresAt = connection.tokenExpiresAt || connection.expiresAt || cookieExpiresAt;
   const hasExpirySource = isOAuth || Boolean(cookieExpiresAt);
   const getTokenMinsLeft = () => {
     if (!hasExpirySource || !effectiveExpiresAt) return null;
@@ -621,7 +621,13 @@ export default function ConnectionRow({
             )}
             {statusPresentation.errorBadge && connection.isActive !== false && (
               <Badge variant={statusPresentation.errorBadge.variant} size="sm">
-                {t(statusPresentation.errorBadge.labelKey)}
+                {statusPresentation.errorBadge.fallback
+                  ? providerText(
+                      t,
+                      statusPresentation.errorBadge.labelKey,
+                      statusPresentation.errorBadge.fallback
+                    )
+                  : t(statusPresentation.errorBadge.labelKey)}
               </Badge>
             )}
             {shouldShowConnectionLastError(connection) && (

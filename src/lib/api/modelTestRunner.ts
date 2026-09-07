@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { POST as postChatCompletion } from "@/app/api/v1/chat/completions/route";
+import { POST as postResponses } from "@/app/api/v1/responses/route";
 import { POST as postAudioTranscription } from "@/app/api/v1/audio/transcriptions/route";
 import { handleValidatedEmbeddingRequestBody } from "@/app/api/v1/embeddings/route";
 import { POST as postRerank } from "@/app/api/v1/rerank/route";
@@ -152,6 +153,20 @@ async function findProviderNodeApiType(providerId: string): Promise<string | und
   }
 }
 
+function internalModelTestHeaders(connectionId?: string): Record<string, string> {
+  return {
+    "Content-Type": "application/json",
+    // Reuse the existing strict-mode internal bypass for live health checks.
+    "X-Internal-Test": "combo-health-check",
+    "X-OmniRoute-No-Cache": "true",
+    // #6240: a connection test must be clean — never let the operator's globally-enabled
+    // Output Styles (e.g. "Ultra terse") leak a system prompt into a test-model call.
+    "X-OmniRoute-Compression": "off",
+    "X-Request-Id": `model-test-${randomUUID()}`,
+    ...(connectionId ? { "X-OmniRoute-Connection": connectionId } : {}),
+  };
+}
+
 export function buildInternalChatRequest(
   testBody: Record<string, unknown>,
   signal: AbortSignal,
@@ -159,18 +174,47 @@ export function buildInternalChatRequest(
 ) {
   return new Request(`${INTERNAL_ORIGIN}/v1/chat/completions`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      // Reuse the existing strict-mode internal bypass for live health checks.
-      "X-Internal-Test": "combo-health-check",
-      "X-OmniRoute-No-Cache": "true",
-      // #6240: a connection test must be clean — never let the operator's globally-enabled
-      // Output Styles (e.g. "Ultra terse") leak a system prompt into a test-model call.
-      "X-OmniRoute-Compression": "off",
-      "X-Request-Id": `model-test-${randomUUID()}`,
-      ...(connectionId ? { "X-OmniRoute-Connection": connectionId } : {}),
-    },
+    headers: internalModelTestHeaders(connectionId),
     body: JSON.stringify(testBody),
+    signal,
+  });
+}
+
+export function buildInternalChatGptWebCodexRequest(
+  testBody: Record<string, unknown>,
+  signal: AbortSignal,
+  connectionId?: string
+) {
+  const turnId = `model-test-${randomUUID()}`;
+  const messages = Array.isArray(testBody.messages) ? testBody.messages : [];
+  const input = messages.map((message) => {
+    const value = asRecord(message);
+    const content = typeof value.content === "string" ? value.content : "";
+    return {
+      type: "message",
+      role: typeof value.role === "string" ? value.role : "user",
+      content: [{ type: "input_text", text: content }],
+    };
+  });
+
+  return new Request(`${INTERNAL_ORIGIN}/v1/responses`, {
+    method: "POST",
+    headers: {
+      ...internalModelTestHeaders(connectionId),
+      originator: "codex_cli_rs",
+    },
+    body: JSON.stringify({
+      model: testBody.model,
+      input,
+      max_output_tokens: testBody.max_tokens,
+      stream: testBody.stream,
+      client_metadata: {
+        "x-codex-turn-metadata": JSON.stringify({
+          thread_id: `model-test-${randomUUID()}`,
+          turn_id: turnId,
+        }),
+      },
+    }),
     signal,
   });
 }
@@ -472,6 +516,9 @@ export async function runSingleModelTest(
       return postAudioTranscription(
         buildInternalAudioTranscriptionRequest(fullModelStr, signal, connectionId)
       );
+    }
+    if (providerId === "chatgpt-web-codex") {
+      return postResponses(buildInternalChatGptWebCodexRequest(testBody, signal, connectionId));
     }
     return postChatCompletion(buildInternalChatRequest(testBody, signal, connectionId));
   };

@@ -1608,7 +1608,11 @@ export default function EditConnectionModal({
                   {testResult.valid ? t("valid") : t("failed")}
                 </Badge>
                 {testErrorMeta && (
-                  <Badge variant={testErrorMeta.variant}>{t(testErrorMeta.labelKey)}</Badge>
+                  <Badge variant={testErrorMeta.variant}>
+                    {testErrorMeta.fallback
+                      ? providerText(t, testErrorMeta.labelKey, testErrorMeta.fallback)
+                      : t(testErrorMeta.labelKey)}
+                  </Badge>
                 )}
               </>
             )}

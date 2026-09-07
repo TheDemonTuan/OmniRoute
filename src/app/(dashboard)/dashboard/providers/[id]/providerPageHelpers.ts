@@ -123,7 +123,11 @@ export function validationBadgeProps(result: string): {
 } {
   if (result === "success") return { variant: "success", labelKey: "valid", fallback: "Valid" };
   if (result === "pending")
-    return { variant: "warning", labelKey: "pendingVerification", fallback: "Pending Verification" };
+    return {
+      variant: "warning",
+      labelKey: "pendingVerification",
+      fallback: "Pending Verification",
+    };
   if (result === "unsupported")
     return { variant: "info", labelKey: "notApplicable", fallback: "N/A" };
   return { variant: "error", labelKey: "invalid", fallback: "Invalid" };
@@ -870,9 +874,17 @@ export function shouldSwitchToVisibleFilter(opts: {
 // ---------------------------------------------------------------------------
 export const ERROR_TYPE_LABELS: Record<
   string,
-  { labelKey: string; variant: "error" | "default" | "warning" | "success" | "info" | "primary" }
+  {
+    labelKey: string;
+    variant: "error" | "default" | "warning" | "success" | "info" | "primary";
+    fallback?: string;
+  }
 > = {
-  pending_verification: { labelKey: "pendingVerification", variant: "warning" },
+  pending_verification: {
+    labelKey: "pendingVerification",
+    variant: "warning",
+    fallback: "Pending Verification",
+  },
   runtime_error: { labelKey: "errorTypeRuntime", variant: "warning" },
   upstream_auth_error: { labelKey: "errorTypeUpstreamAuth", variant: "error" },
   account_deactivated: { labelKey: "Account Deactivated", variant: "error" },
