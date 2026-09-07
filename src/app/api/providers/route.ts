@@ -180,9 +180,10 @@ export async function POST(request: Request) {
       priority,
       globalPriority,
       defaultModel,
-      testStatus,
+      testStatus: incomingTestStatus,
       providerSpecificData: incomingPsd,
     } = validation.data;
+    let testStatus = incomingTestStatus;
     const provider = resolveProviderId(requestedProvider);
     const retirementResponse =
       rejectRetiredCommonChatGptWebProvider(requestedProvider) ??
