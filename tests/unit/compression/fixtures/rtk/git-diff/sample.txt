@@ -1,0 +1,9 @@
+diff --git "a/src/file 1.ts" "b/src/file 1.ts"
+index 1234567..89abcdef 100644
+--- "a/src/file 1.ts"
++++ "b/src/file 1.ts"
+@@ -1,4 +1,4 @@
+ context line
+-old line
++new line
+ remaining line

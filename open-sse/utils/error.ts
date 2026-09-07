@@ -68,6 +68,7 @@ const SAFE_PUBLIC_ERROR_IDENTIFIERS = new Set([
   "cf_mitigated_challenge",
   "chat_admission_busy",
   "chat_history_too_large",
+  "chatgpt_web_codex_browser_unavailable",
   "chatgpt_web_codex_error",
   "chatgpt_web_codex_turn_failed",
   "chatgpt_session_expired",

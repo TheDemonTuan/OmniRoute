@@ -218,6 +218,26 @@ function getStatusPresentation(
   isCooldown: boolean,
   t: TFn
 ) {
+  const isPendingVerification =
+    connection.testStatus === "pending" ||
+    (connection.provider === "chatgpt-web-codex" &&
+      connection.providerSpecificData &&
+      typeof connection.providerSpecificData === "object" &&
+      (connection.providerSpecificData as Record<string, unknown>).pendingBrowserVerification === true);
+
+  if (isPendingVerification) {
+    return {
+      statusVariant: "warning",
+      statusLabel: providerText(t, "statusPendingVerification", "Pending Verification"),
+      errorType: "pending_verification",
+      errorBadge: ERROR_TYPE_LABELS["pending_verification"] || {
+        labelKey: "pendingVerification",
+        variant: "warning",
+      },
+      errorTextClass: "text-yellow-600 dark:text-yellow-400",
+    };
+  }
+
   if (connection.isActive === false) {
     return {
       statusVariant: "default",

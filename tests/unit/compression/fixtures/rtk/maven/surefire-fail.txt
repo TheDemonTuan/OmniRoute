@@ -1,0 +1,16 @@
+[INFO] Scanning for projects...
+[INFO] Building core-lib 2.0.0
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+[INFO] Running com.example.CoreTest
+[ERROR] Tests run: 2, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 0.123 s <<< FAILURE! - in com.example.CoreTest
+[ERROR] testPayloadValidation(com.example.CoreTest)  Time elapsed: 0.05 s  <<< FAILURE!
+java.lang.AssertionError: expected:<200> but was:<500>
+	at org.junit.Assert.fail(Assert.java:89)
+	at com.example.CoreTest.testPayloadValidation(CoreTest.java:45)
+[INFO] Results:
+[ERROR] Failures: 
+[ERROR]   CoreTest.testPayloadValidation:45 expected:<200> but was:<500>
+[INFO] Tests run: 2, Failures: 1, Errors: 0, Skipped: 0
+[INFO] BUILD FAILURE

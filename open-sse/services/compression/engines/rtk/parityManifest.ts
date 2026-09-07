@@ -1,0 +1,536 @@
+import { RTK_UPSTREAM_BASELINE } from "./upstream.ts";
+
+export type RtkParityLevel =
+  "full" | "semantic" | "partial" | "passthrough" | "not-supported" | "not-applicable";
+
+export interface RtkParityEntry {
+  family: string;
+  filterIds: string[];
+  localStatus: "active" | "planned" | "deprecated";
+  parity: RtkParityLevel;
+  upstreamSince?: string;
+  auditedAgainst: string;
+  gaps: string[];
+  fixtureGroups: string[];
+  notes?: string;
+}
+
+export interface RtkParityManifest {
+  upstreamTag: string;
+  auditedAt: string;
+  parityScope: "behavioral-semantic";
+  families: RtkParityEntry[];
+  filters: Array<{
+    id: string;
+    family: string;
+    category: string;
+    upstreamVersionIntroduced: string;
+    status: "active" | "planned" | "deprecated";
+    notes?: string;
+  }>;
+}
+
+export const RTK_PARITY_MANIFEST: RtkParityManifest = {
+  upstreamTag: RTK_UPSTREAM_BASELINE.stableTag,
+  auditedAt: RTK_UPSTREAM_BASELINE.auditedAt,
+  parityScope: "behavioral-semantic",
+  families: [
+    {
+      family: "ctest",
+      filterIds: ["test-ctest"],
+      localStatus: "active",
+      parity: "partial",
+      upstreamSince: "v0.47.0",
+      auditedAgainst: "v0.47.0",
+      gaps: ["forwarded-suites", "dashboard-T-modes", "repeat-until-pass-interleaving"],
+      fixtureGroups: ["ctest"],
+      notes: "Stateful processor with retry deduplication, failure tracking, and passthrough flags",
+    },
+    {
+      family: "maven",
+      filterIds: ["maven"],
+      localStatus: "active",
+      parity: "partial",
+      upstreamSince: "v0.47.0",
+      auditedAgainst: "v0.47.0",
+      gaps: [
+        "mvnd-per-module-lanes",
+        "ambiguous-raw-line-attribution",
+        "full-surefire-cause-chains",
+      ],
+      fixtureGroups: ["maven"],
+      notes:
+        "Stateful processor for mvn/mvnw/mvnd with bounded stack traces, compile continuations, and dependency:tree passthrough",
+    },
+    {
+      family: "phpt",
+      filterIds: ["test-phpt"],
+      localStatus: "active",
+      parity: "partial",
+      upstreamSince: "v0.47.0",
+      auditedAgainst: "v0.47.0",
+      gaps: ["standalone-leak-bork-reporting", "upstream-show-diff-execution-injection"],
+      fixtureGroups: ["phpt"],
+      notes:
+        "Stateful processor for run-tests.php with diff block preservation, status counting, and failure caps",
+    },
+    {
+      family: "git-diff",
+      filterIds: ["git-diff"],
+      localStatus: "active",
+      parity: "partial",
+      upstreamSince: "v0.1.0",
+      auditedAgainst: "v0.47.0",
+      gaps: ["multi-parent-combined-diffs"],
+      fixtureGroups: ["git-diff"],
+      notes:
+        "Stateful processor preserving hunk headers, declared lengths, rename/copy/mode/binary metadata, and word-diff passthrough",
+    },
+    {
+      family: "typescript",
+      filterIds: ["build-typescript"],
+      localStatus: "active",
+      parity: "partial",
+      upstreamSince: "v0.1.0",
+      auditedAgainst: "v0.47.0",
+      gaps: ["global-ambient-declaration-diagnostics"],
+      fixtureGroups: ["typescript"],
+      notes:
+        "Stateful processor preserving multiline pretty diagnostics, caret underlines, and error counts",
+    },
+    {
+      family: "grep",
+      filterIds: ["shell-grep"],
+      localStatus: "active",
+      parity: "partial",
+      upstreamSince: "v0.1.0",
+      auditedAgainst: "v0.47.0",
+      gaps: ["ripgrep-type-filtering-preservation"],
+      fixtureGroups: ["shell-grep"],
+      notes: "Command-aware passthrough for format-altering flags (-c, -l, -L, -o, -Z, --json)",
+    },
+    {
+      family: "ls",
+      filterIds: ["shell-ls"],
+      localStatus: "active",
+      parity: "partial",
+      upstreamSince: "v0.1.0",
+      auditedAgainst: "v0.47.0",
+      gaps: ["structured-columnar-dotfile-grouping"],
+      fixtureGroups: ["shell-ls"],
+      notes: "Generic listing filtering with line capping",
+    },
+  ],
+  filters: [
+    {
+      id: "aws",
+      family: "cloud",
+      category: "cloud",
+      upstreamVersionIntroduced: "v0.1.0",
+      status: "active",
+    },
+    {
+      id: "biome",
+      family: "linter",
+      category: "linter",
+      upstreamVersionIntroduced: "v0.2.0",
+      status: "active",
+    },
+    {
+      id: "build-eslint",
+      family: "linter",
+      category: "linter",
+      upstreamVersionIntroduced: "v0.1.0",
+      status: "active",
+    },
+    {
+      id: "build-typescript",
+      family: "build",
+      category: "build",
+      upstreamVersionIntroduced: "v0.1.0",
+      status: "active",
+    },
+    {
+      id: "build-vite",
+      family: "build",
+      category: "build",
+      upstreamVersionIntroduced: "v0.3.0",
+      status: "active",
+    },
+    {
+      id: "build-webpack",
+      family: "build",
+      category: "build",
+      upstreamVersionIntroduced: "v0.1.0",
+      status: "active",
+    },
+    {
+      id: "bundle-install",
+      family: "package-manager",
+      category: "package-manager",
+      upstreamVersionIntroduced: "v0.4.0",
+      status: "active",
+    },
+    {
+      id: "composer",
+      family: "package-manager",
+      category: "package-manager",
+      upstreamVersionIntroduced: "v0.4.0",
+      status: "active",
+    },
+    {
+      id: "curl",
+      family: "network",
+      category: "network",
+      upstreamVersionIntroduced: "v0.1.0",
+      status: "active",
+    },
+    {
+      id: "df",
+      family: "system",
+      category: "system",
+      upstreamVersionIntroduced: "v0.1.0",
+      status: "active",
+    },
+    {
+      id: "docker-build",
+      family: "container",
+      category: "container",
+      upstreamVersionIntroduced: "v0.1.0",
+      status: "active",
+    },
+    {
+      id: "docker-logs",
+      family: "container",
+      category: "container",
+      upstreamVersionIntroduced: "v0.1.0",
+      status: "active",
+    },
+    {
+      id: "docker-ps",
+      family: "container",
+      category: "container",
+      upstreamVersionIntroduced: "v0.1.0",
+      status: "active",
+    },
+    {
+      id: "dotnet",
+      family: "build",
+      category: "build",
+      upstreamVersionIntroduced: "v0.5.0",
+      status: "active",
+    },
+    {
+      id: "du",
+      family: "system",
+      category: "system",
+      upstreamVersionIntroduced: "v0.1.0",
+      status: "active",
+    },
+    {
+      id: "error-stacktrace",
+      family: "generic",
+      category: "generic",
+      upstreamVersionIntroduced: "v0.1.0",
+      status: "active",
+    },
+    {
+      id: "gcloud",
+      family: "cloud",
+      category: "cloud",
+      upstreamVersionIntroduced: "v0.2.0",
+      status: "active",
+    },
+    {
+      id: "generic-output",
+      family: "generic",
+      category: "generic",
+      upstreamVersionIntroduced: "v0.1.0",
+      status: "active",
+    },
+    {
+      id: "gh",
+      family: "vcs",
+      category: "vcs",
+      upstreamVersionIntroduced: "v0.3.0",
+      status: "active",
+    },
+    {
+      id: "git-branch",
+      family: "vcs",
+      category: "vcs",
+      upstreamVersionIntroduced: "v0.1.0",
+      status: "active",
+    },
+    {
+      id: "git-diff",
+      family: "vcs",
+      category: "vcs",
+      upstreamVersionIntroduced: "v0.1.0",
+      status: "active",
+      notes: "Hardened for quotes, declared lengths, metadata and word-diff in v0.47.0",
+    },
+    {
+      id: "git-log",
+      family: "vcs",
+      category: "vcs",
+      upstreamVersionIntroduced: "v0.1.0",
+      status: "active",
+    },
+    {
+      id: "git-status",
+      family: "vcs",
+      category: "vcs",
+      upstreamVersionIntroduced: "v0.1.0",
+      status: "active",
+    },
+    {
+      id: "golangci-lint",
+      family: "linter",
+      category: "linter",
+      upstreamVersionIntroduced: "v0.2.0",
+      status: "active",
+    },
+    {
+      id: "gradle",
+      family: "build",
+      category: "build",
+      upstreamVersionIntroduced: "v0.3.0",
+      status: "active",
+    },
+    {
+      id: "json-output",
+      family: "generic",
+      category: "generic",
+      upstreamVersionIntroduced: "v0.1.0",
+      status: "active",
+    },
+    {
+      id: "kubectl",
+      family: "container",
+      category: "container",
+      upstreamVersionIntroduced: "v0.2.0",
+      status: "active",
+    },
+    {
+      id: "make",
+      family: "build",
+      category: "build",
+      upstreamVersionIntroduced: "v0.1.0",
+      status: "active",
+    },
+    {
+      id: "maven",
+      family: "build",
+      category: "build",
+      upstreamVersionIntroduced: "v0.47.0",
+      status: "active",
+      notes: "Upstream v0.47.0 addition for mvn/mvnw/mvnd",
+    },
+    {
+      id: "mypy",
+      family: "linter",
+      category: "linter",
+      upstreamVersionIntroduced: "v0.2.0",
+      status: "active",
+    },
+    {
+      id: "npm-audit",
+      family: "package-manager",
+      category: "package-manager",
+      upstreamVersionIntroduced: "v0.1.0",
+      status: "active",
+    },
+    {
+      id: "npm-install",
+      family: "package-manager",
+      category: "package-manager",
+      upstreamVersionIntroduced: "v0.1.0",
+      status: "active",
+    },
+    {
+      id: "nx",
+      family: "build",
+      category: "build",
+      upstreamVersionIntroduced: "v0.4.0",
+      status: "active",
+    },
+    {
+      id: "pip",
+      family: "package-manager",
+      category: "package-manager",
+      upstreamVersionIntroduced: "v0.1.0",
+      status: "active",
+    },
+    {
+      id: "playwright",
+      family: "test",
+      category: "test",
+      upstreamVersionIntroduced: "v0.6.0",
+      status: "active",
+    },
+    {
+      id: "poetry-install",
+      family: "package-manager",
+      category: "package-manager",
+      upstreamVersionIntroduced: "v0.3.0",
+      status: "active",
+    },
+    {
+      id: "prettier",
+      family: "linter",
+      category: "linter",
+      upstreamVersionIntroduced: "v0.1.0",
+      status: "active",
+    },
+    {
+      id: "ps",
+      family: "system",
+      category: "system",
+      upstreamVersionIntroduced: "v0.1.0",
+      status: "active",
+    },
+    {
+      id: "rsync",
+      family: "system",
+      category: "system",
+      upstreamVersionIntroduced: "v0.4.0",
+      status: "active",
+    },
+    {
+      id: "rubocop",
+      family: "linter",
+      category: "linter",
+      upstreamVersionIntroduced: "v0.4.0",
+      status: "active",
+    },
+    {
+      id: "ruff",
+      family: "linter",
+      category: "linter",
+      upstreamVersionIntroduced: "v0.5.0",
+      status: "active",
+    },
+    {
+      id: "shell-find",
+      family: "system",
+      category: "system",
+      upstreamVersionIntroduced: "v0.1.0",
+      status: "active",
+    },
+    {
+      id: "shell-grep",
+      family: "system",
+      category: "system",
+      upstreamVersionIntroduced: "v0.1.0",
+      status: "active",
+    },
+    {
+      id: "shell-ls",
+      family: "system",
+      category: "system",
+      upstreamVersionIntroduced: "v0.1.0",
+      status: "active",
+    },
+    {
+      id: "ssh",
+      family: "network",
+      category: "network",
+      upstreamVersionIntroduced: "v0.2.0",
+      status: "active",
+    },
+    {
+      id: "systemctl-status",
+      family: "system",
+      category: "system",
+      upstreamVersionIntroduced: "v0.3.0",
+      status: "active",
+    },
+    {
+      id: "terraform-plan",
+      family: "iac",
+      category: "iac",
+      upstreamVersionIntroduced: "v0.3.0",
+      status: "active",
+    },
+    {
+      id: "test-cargo",
+      family: "test",
+      category: "test",
+      upstreamVersionIntroduced: "v0.1.0",
+      status: "active",
+    },
+    {
+      id: "test-ctest",
+      family: "test",
+      category: "test",
+      upstreamVersionIntroduced: "v0.47.0",
+      status: "active",
+      notes: "Upstream v0.47.0 addition for ctest",
+    },
+    {
+      id: "test-go",
+      family: "test",
+      category: "test",
+      upstreamVersionIntroduced: "v0.1.0",
+      status: "active",
+    },
+    {
+      id: "test-jest",
+      family: "test",
+      category: "test",
+      upstreamVersionIntroduced: "v0.1.0",
+      status: "active",
+    },
+    {
+      id: "test-phpt",
+      family: "test",
+      category: "test",
+      upstreamVersionIntroduced: "v0.47.0",
+      status: "active",
+      notes: "Upstream v0.47.0 addition for run-tests.php",
+    },
+    {
+      id: "test-pytest",
+      family: "test",
+      category: "test",
+      upstreamVersionIntroduced: "v0.1.0",
+      status: "active",
+    },
+    {
+      id: "test-vitest",
+      family: "test",
+      category: "test",
+      upstreamVersionIntroduced: "v0.2.0",
+      status: "active",
+    },
+    {
+      id: "tofu-plan",
+      family: "iac",
+      category: "iac",
+      upstreamVersionIntroduced: "v0.4.0",
+      status: "active",
+    },
+    {
+      id: "turbo",
+      family: "build",
+      category: "build",
+      upstreamVersionIntroduced: "v0.4.0",
+      status: "active",
+    },
+    {
+      id: "uv-sync",
+      family: "package-manager",
+      category: "package-manager",
+      upstreamVersionIntroduced: "v0.7.0",
+      status: "active",
+    },
+    {
+      id: "wget",
+      family: "network",
+      category: "network",
+      upstreamVersionIntroduced: "v0.1.0",
+      status: "active",
+    },
+  ],
+};

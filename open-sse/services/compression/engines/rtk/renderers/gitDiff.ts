@@ -13,21 +13,25 @@ import { NO_RENDER } from "./types.ts";
  * If no hunk header is found, returns no-op (input is not a real diff).
  */
 export function renderGitDiff(text: string, _detection: CommandDetectionResult): RenderResult {
-  // Guard: must have at least one hunk header
-  if (!text.includes("@@ ")) {
+  // Guard: must have at least one hunk header or git diff header
+  if (!text.includes("@@") || !text.includes("diff --git")) {
+    return NO_RENDER(text);
+  }
+
+  // Word diffs (e.g. [-old-] {+new+}) or other non-unified formats shouldn't be mangled by unified hunk extractor
+  if ((text.includes("[-") && text.includes("+}")) || text.includes("@@@")) {
     return NO_RENDER(text);
   }
 
   const kept: string[] = [];
   for (const line of text.split("\n")) {
-    if (
-      line.startsWith("diff --git ") ||
-      line.startsWith("@@ ")
-    ) {
+    if (line.startsWith("diff --git ") || /^@@\s+-\d+(?:,\d+)?\s+\+\d+(?:,\d+)?\s+@@/.test(line)) {
       kept.push(line);
-    } else if (/^[+-](?![+-])/.test(line)) {
-      // change line (+foo or -foo) but NOT +++ or ---
-      kept.push(line);
+    } else if (/^[+-](?![+-]{2})/.test(line)) {
+      // change line (+foo, ++bar or -foo, --baz) but NOT file header (+++ b/ or --- a/)
+      if (!line.startsWith("+++ ") && !line.startsWith("--- ")) {
+        kept.push(line);
+      }
     }
     // drop: context lines (space), index lines, --- a/, +++ b/, mode lines, etc.
   }

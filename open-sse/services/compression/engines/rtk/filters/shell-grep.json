@@ -4,6 +4,12 @@
   "description": "Deduplicate grep output while preserving matches.",
   "category": "shell",
   "priority": 82,
+  "commandPolicy": {
+    "passthroughPatterns": [
+      "(?:^|\\s)-(?:c|l|L|o|Z)(?:\\s|$)",
+      "(?:^|\\s)--(?:count|files-with-matches|files-without-match|only-matching|null|json)(?:\\s|$)"
+    ]
+  },
   "match": {
     "outputTypes": ["shell-grep"],
     "commands": ["^(?:grep|rg|ag)\\b"],

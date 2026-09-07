@@ -2,11 +2,12 @@ import { existsSync, readFileSync } from "node:fs";
 
 import { browserLoginStateExists } from "../../vendor/codex-chatgpt-web/browser-login.ts";
 import { sanitizeErrorMessage } from "../../utils/error.ts";
-import { detectChromeExecutable } from "../chatgpt-web-codex.ts";
+import { resolveChatGptWebCodexBrowserRuntime } from "./browserRuntime.ts";
 import { decodeChatGptWebCodexSecrets } from "./credentials.ts";
 import { getChatGptWebCodexRuntimeCounts } from "./runtime.ts";
 import {
   connectionRuntimePaths,
+  ensureConnectionStorageState,
   ensureConnectionStorageStateFromCredential,
 } from "./storageState.ts";
 import {
@@ -31,26 +32,34 @@ export async function getChatGptWebCodexDoctorStatus(connection: {
   const data = record(connection.providerSpecificData);
   const paths = connectionRuntimePaths(connectionId);
   const tunnelPaths = tunnelClientPaths();
-  const cdpConfigured = Boolean(process.env.CHATGPT_WEB_CODEX_CDP_URL?.trim());
-  const chrome = detectChromeExecutable(
-    typeof data.chromeExecutablePath === "string" ? data.chromeExecutablePath : undefined
-  );
+  const browserRuntime = resolveChatGptWebCodexBrowserRuntime(data);
   let storageState = false;
   let login = false;
   let solAvailable = data.solAvailable !== false;
   let proAvailable = data.proAvailable === true;
   let credential = false;
+  let hasStorageState = false;
+  let hasCookie = false;
+  let pendingBrowserVerification = false;
   try {
     const secrets = decodeChatGptWebCodexSecrets(String(connection.apiKey || ""));
-    credential = Boolean(secrets.storageState);
-    if (credential) ensureConnectionStorageStateFromCredential(connectionId, secrets);
+    hasStorageState = Boolean(secrets.storageState);
+    hasCookie = Boolean(secrets.cookie);
+    credential = hasStorageState || hasCookie;
+    if (hasStorageState) {
+      ensureConnectionStorageStateFromCredential(connectionId, secrets);
+    } else if (hasCookie && secrets.cookie) {
+      ensureConnectionStorageState(connectionId, secrets.cookie);
+    }
     storageState = existsSync(paths.storageStatePath);
     login = browserLoginStateExists({ storageStatePath: paths.storageStatePath });
-    if (login) {
+    const markerPath = `${paths.storageStatePath}.verified.json`;
+    if (existsSync(markerPath)) {
       try {
         const marker = JSON.parse(
-          readFileSync(`${paths.storageStatePath}.verified.json`, "utf8")
+          readFileSync(markerPath, "utf8")
         ) as Record<string, unknown>;
+        pendingBrowserVerification = marker.pendingBrowserVerification === true;
         if (typeof marker.solAvailable === "boolean") solAvailable = marker.solAvailable;
         if (typeof marker.proAvailable === "boolean") proAvailable = marker.proAvailable;
       } catch {
@@ -78,12 +87,20 @@ export async function getChatGptWebCodexDoctorStatus(connection: {
   const lease = tunnelSupervisorLeaseStatus();
   return {
     browser: {
-      ready: Boolean(chrome || cdpConfigured),
-      mode: cdpConfigured ? "internal-cdp" : chrome ? "local-chromium" : "unavailable",
+      ready: browserRuntime.available,
+      mode: browserRuntime.mode,
+    },
+    credential: {
+      ready: credential,
+      kind: hasStorageState ? "storage_state" : hasCookie ? "cookie" : "none",
+    },
+    verification: {
+      pending: pendingBrowserVerification,
+      verified: login && !pendingBrowserVerification,
     },
     storageState: { ready: storageState && credential },
-    login: { ready: login },
-    temporaryChats: { ready: login },
+    login: { ready: login && !pendingBrowserVerification },
+    temporaryChats: { ready: login && !pendingBrowserVerification },
     tunnelBinary: { ready: existsSync(tunnelPaths.binary) },
     tunnel: {
       ready: tunnel.ok,

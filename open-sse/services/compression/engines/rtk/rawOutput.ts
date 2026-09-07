@@ -5,6 +5,7 @@ import os from "node:os";
 import crypto from "node:crypto";
 
 import type { CommandSample } from "./discover.ts";
+import { buildSafeCommandSignature } from "./safeCommandSignature.ts";
 
 export type RtkRawOutputRetention = "never" | "failures" | "always";
 
@@ -20,6 +21,7 @@ const SECRET_PATTERNS: Array<[RegExp, string]> = [
   [/\b(sk-[A-Za-z0-9_-]{16,})\b/g, "[REDACTED_OPENAI_KEY]"],
   [/\b(xox[baprs]-[A-Za-z0-9-]{16,})\b/g, "[REDACTED_SLACK_TOKEN]"],
   [/\b(AKIA[0-9A-Z]{16})\b/g, "[REDACTED_AWS_KEY]"],
+  [/\b(gh[pousr]_[A-Za-z0-9_]{16,})\b/g, "[REDACTED_GITHUB_TOKEN]"],
   // key=value / key: value for common credential field names (flat alternation — no nesting,
   // so no ReDoS). Covers names the bare token/secret/password set misses (private_key, etc).
   [
@@ -67,8 +69,10 @@ export function redactRtkRawOutput(value: string): { text: string; redacted: boo
 }
 
 export function isLikelyFailureOutput(value: string): boolean {
-  return /\b(error|failed|failure|exception|traceback|panic|fatal|critical|TS\d{4}|FAIL)\b/i.test(
-    value
+  return (
+    /\b(error|failed|failure|exception|traceback|panic|fatal|critical|timeout|timed out|TS\d{4}|FAIL|BORK|BUILD FAILURE)\b/i.test(
+      value
+    ) || /\*\*\*(?:Failed|Timeout)\b/i.test(value)
   );
 }
 
@@ -94,6 +98,7 @@ export function maybePersistRtkRawOutput(
   raw: string,
   options: {
     retention: RtkRawOutputRetention;
+    family?: string | null;
     command?: string | null;
     maxBytes?: number;
     failure?: boolean;
@@ -107,44 +112,59 @@ export function maybePersistRtkRawOutput(
   const maxBytes = Math.max(1024, Math.floor(options.maxBytes ?? 1_048_576));
   const redaction = redactRtkRawOutput(safeUtf8Slice(raw, maxBytes));
   const now = Date.now();
-  const commandSlug = (options.command || "tool-output")
-    .replace(/[^A-Za-z0-9_-]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .slice(0, 48);
-  const id = safeId(`${now}:${commandSlug}:${raw.length}:${redaction.text}`);
+  const commandHash = options.command
+    ? crypto.createHash("sha256").update(options.command).digest("hex").slice(0, 16)
+    : null;
+  // Never derive a path or metadata value from raw command argv: even a redactor cannot
+  // prove coverage of arbitrary secret formats. Callers provide a normalized family instead.
+  const familySlug =
+    (options.family || "tool-output")
+      .replace(/[^A-Za-z0-9_-]+/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .slice(0, 24) || "tool-output";
+  const safeSignature = buildSafeCommandSignature(options.command, familySlug);
+  const id = safeId(`${now}:${familySlug}:${raw.length}:${redaction.text}`);
   const dir = bucketDir(id);
-  const fileName = `${now}-${commandSlug || "tool-output"}-${id}.log`;
+  const fileName = `${now}-${familySlug}-${id}.log`;
   const filePath = path.join(dir, fileName);
+  const tmpFilePath = path.join(dir, `.${fileName}.tmp-${crypto.randomBytes(4).toString("hex")}`);
   try {
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(filePath, redaction.text);
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(tmpFilePath, redaction.text, { mode: 0o600 });
+    fs.renameSync(tmpFilePath, filePath);
   } catch {
-    // Best-effort capture: a disk error (ENOSPC / EACCES / read-only DATA_DIR) must NEVER
-    // fail the compression pipeline. Skip the capture, exactly like retention "never".
+    try {
+      if (fs.existsSync(tmpFilePath)) fs.unlinkSync(tmpFilePath);
+    } catch {
+      // ignore cleanup error
+    }
     return null;
   }
 
-  // Sidecar metadata: the .log filename only carries a lossy command SLUG, so persist
-  // the FULL command (and timestamp/flags) next to it. Keeps the .log pure output (the
-  // raw-output recovery route still returns it verbatim) while letting the RTK
-  // learn/discover sample source recover the exact command. Best-effort: a sidecar
-  // write failure never fails the capture.
+  // Sidecar metadata: redact command and write atomically with 0600 permissions
   try {
     const metaPath = filePath.replace(/\.log$/, ".meta.json");
+    const tmpMetaPath = path.join(
+      dir,
+      `.${fileName}.meta.tmp-${crypto.randomBytes(4).toString("hex")}`
+    );
     fs.writeFileSync(
-      metaPath,
+      tmpMetaPath,
       JSON.stringify({
-        command: options.command ?? null,
+        family: familySlug,
+        safeSignature,
+        commandHash,
         timestamp: now,
         failure,
         redacted: redaction.redacted,
         bytes: Buffer.byteLength(redaction.text, "utf8"),
-      })
+      }),
+      { mode: 0o600 }
     );
+    fs.renameSync(tmpMetaPath, metaPath);
   } catch {
     // Sidecar is an optimisation for learn/discover; the .log (with slug) still works.
   }
-
   return {
     id,
     path: filePath,
@@ -274,8 +294,10 @@ export function listRtkCommandSamples(opts: { limit?: number } = {}): CommandSam
     let command = "";
     try {
       const metaRaw = fs.readFileSync(fullPath.replace(/\.log$/, ".meta.json"), "utf8");
-      const meta = JSON.parse(metaRaw) as { command?: unknown };
-      if (typeof meta.command === "string" && meta.command.trim()) command = meta.command.trim();
+      const meta = JSON.parse(metaRaw) as { safeSignature?: unknown };
+      if (typeof meta.safeSignature === "string" && meta.safeSignature.trim()) {
+        command = meta.safeSignature.trim();
+      }
     } catch {
       // No/!invalid sidecar → fall back to the filename slug below.
     }

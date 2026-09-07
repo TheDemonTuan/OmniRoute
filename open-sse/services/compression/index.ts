@@ -132,7 +132,18 @@ export {
   matchRtkFilter,
   getRtkFilterLoadDiagnostics,
 } from "./engines/rtk/filterLoader.ts";
-export { runRtkFilterTests } from "./engines/rtk/verify.ts";
+export {
+  runRtkFilterTests,
+  verifyRtkFixture,
+  type RtkFixtureAssertion,
+} from "./engines/rtk/verify.ts";
+export { applyRenderer } from "./engines/rtk/renderers/index.ts";
+export { RTK_UPSTREAM_BASELINE, type RtkUpstreamBaseline } from "./engines/rtk/upstream.ts";
+export {
+  RTK_PARITY_MANIFEST,
+  type RtkParityManifest,
+  type RtkParityFilterEntry,
+} from "./engines/rtk/parityManifest.ts";
 export {
   maybePersistRtkRawOutput,
   readRtkRawOutput,

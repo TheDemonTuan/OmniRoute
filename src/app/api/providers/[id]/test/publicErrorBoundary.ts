@@ -38,6 +38,14 @@ export function classifyFailure({
     return makeDiagnosis("unsupported", "validation", message, "unsupported");
   }
 
+  if (
+    normalized.includes("browser runtime") ||
+    normalized.includes("no supported chrome") ||
+    normalized.includes("browser_unavailable")
+  ) {
+    return makeDiagnosis("runtime_error", "local", message, "browser_unavailable");
+  }
+
   if (refreshFailed || normalized.includes("refresh failed")) {
     return makeDiagnosis("token_refresh_failed", "oauth", message, "refresh_failed");
   }

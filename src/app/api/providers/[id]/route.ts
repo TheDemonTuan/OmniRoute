@@ -182,12 +182,28 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
           const existingSecrets = decodeChatGptWebCodexSecrets(existing.apiKey || "");
           const encoded = encodeChatGptWebCodexSecrets({
             cookie: incomingSecrets.cookie,
+            storageState: incomingSecrets.storageState,
             runtimeKey: incomingSecrets.runtimeKey || existingSecrets.runtimeKey,
           });
-          updateData.apiKey = finalizeValidatedChatGptWebCodexSecrets(
+          const finalized = finalizeValidatedChatGptWebCodexSecrets(
             encoded,
             validationId
-          ).encodedCredential;
+          );
+          updateData.apiKey = finalized.encodedCredential;
+          if (finalized.pendingBrowserVerification) {
+            updateData.testStatus = "pending";
+            updateData.providerSpecificData = {
+              ...(incomingPsd || existing.providerSpecificData || {}),
+              pendingBrowserVerification: true,
+              browserVerified: false,
+            };
+          } else {
+            updateData.providerSpecificData = {
+              ...(incomingPsd || existing.providerSpecificData || {}),
+              pendingBrowserVerification: false,
+              browserVerified: true,
+            };
+          }
         } catch (error) {
           return NextResponse.json(
             {

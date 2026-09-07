@@ -1,0 +1,10 @@
+[INFO] Scanning for projects...
+[INFO] Building sample-app 1.0.0
+[INFO] --- maven-resources-plugin:3.2.0:resources (default-resources) ---
+[INFO] Downloading from central: https://repo.maven.apache.org/maven2/foo.jar
+[INFO] Downloaded from central: https://repo.maven.apache.org/maven2/foo.jar (10 kB at 1.2 MB/s)
+[ERROR] /src/App.java:[10,5] cannot find symbol
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  1.234 s

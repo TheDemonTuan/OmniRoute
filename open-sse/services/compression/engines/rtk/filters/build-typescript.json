@@ -4,6 +4,7 @@
   "description": "Keep TypeScript diagnostics and file locations.",
   "category": "build",
   "priority": 93,
+  "processor": "typescript",
   "match": {
     "outputTypes": ["build-typescript"],
     "commands": ["^(?:tsc|npm\\s+run\\s+typecheck)\\b"],

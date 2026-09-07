@@ -213,13 +213,16 @@ export function applyLineFilter(text: string, filter: RtkFilterDefinition): Line
     preserveTail: filter.preserveTail,
     priorityPatterns,
   });
-  if (truncated.truncated) appliedRules.push(`${filter.id}:truncate`);
-  const output =
-    truncated.text.trim().length === 0 && filter.onEmpty ? filter.onEmpty : truncated.text;
-
+  let output = truncated.text;
+  if (truncated.truncated && filter.id === "shell-ls") {
+    const noun = truncated.droppedLines === 1 ? "entry" : "entries";
+    output = `${output}\n... ${truncated.droppedLines} ${noun} omitted; raw output available if retention is enabled`;
+    appliedRules.push("shell-ls:omission-hint");
+  }
+  const finalOutput = output.trim().length === 0 && filter.onEmpty ? filter.onEmpty : output;
   return {
-    text: output,
-    strippedLines: Math.max(0, originalLineCount - output.split(/\r?\n/).length),
+    text: finalOutput,
+    strippedLines: Math.max(0, originalLineCount - finalOutput.split(/\r?\n/).length),
     keptByRule: keepPatterns.length > 0,
     appliedRules,
   };

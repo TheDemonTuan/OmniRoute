@@ -1,0 +1,7 @@
+[INFO] Scanning for projects...
+[INFO] --- maven-dependency-plugin:3.1.2:tree (default-cli) @ my-service ---
+[INFO] com.example:my-service:jar:1.0.0
+[INFO] +- org.springframework.boot:spring-boot-starter:jar:2.7.0:compile
+[INFO] |  \- org.yaml:snakeyaml:jar:1.30:compile
+[INFO] \- junit:junit:jar:4.13.2:test
+[INFO] BUILD SUCCESS
