@@ -15,19 +15,21 @@ export interface RtkParityEntry {
   notes?: string;
 }
 
+export type RtkParityFilterEntry = {
+  id: string;
+  family: string;
+  category: string;
+  upstreamVersionIntroduced: string;
+  status: "active" | "planned" | "deprecated";
+  notes?: string;
+};
+
 export interface RtkParityManifest {
   upstreamTag: string;
   auditedAt: string;
   parityScope: "behavioral-semantic";
   families: RtkParityEntry[];
-  filters: Array<{
-    id: string;
-    family: string;
-    category: string;
-    upstreamVersionIntroduced: string;
-    status: "active" | "planned" | "deprecated";
-    notes?: string;
-  }>;
+  filters: RtkParityFilterEntry[];
 }
 
 export const RTK_PARITY_MANIFEST: RtkParityManifest = {

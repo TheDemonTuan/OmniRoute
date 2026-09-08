@@ -234,10 +234,9 @@ export function processRtkText(
   if (typeof text !== "string") {
     return {
       text: String(text ?? ""),
+      compressed: false,
       originalTokens: 0,
       compressedTokens: 0,
-      tokensSaved: 0,
-      savingsPercent: 0,
       techniquesUsed: [],
       rulesApplied: [],
       rawOutputPointers: [],
@@ -283,10 +282,9 @@ export function processRtkText(
           // Terminal passthrough: bypass entire downstream pipeline (renderers, stripping, dedup, truncate)
           return {
             text,
+            compressed: false,
             originalTokens,
             compressedTokens: originalTokens,
-            tokensSaved: 0,
-            savingsPercent: 0,
             techniquesUsed: [],
             rulesApplied: [`rtk:policy:passthrough:${policy.reason ?? "flag"}`],
             rawOutputPointers: [],
@@ -321,10 +319,9 @@ export function processRtkText(
             // Terminal passthrough for "passthrough", "invalid", "unrecognized"
             return {
               text,
+              compressed: false,
               originalTokens,
               compressedTokens: originalTokens,
-              tokensSaved: 0,
-              savingsPercent: 0,
               techniquesUsed: [],
               rulesApplied: [`rtk:processor:${procResult.processor}:${procResult.status}`],
               rawOutputPointers: [],
