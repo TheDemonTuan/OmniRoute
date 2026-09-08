@@ -139,9 +139,11 @@ test("Test C — browser runtime detection via CDP or Chrome", () => {
 
   const prevDefault = process.env.CHATGPT_WEB_CODEX_DEFAULT_CHROME_PATHS;
   const prevCdp = process.env.CHATGPT_WEB_CODEX_CDP_URL;
+  const prevGenericCdp = process.env.CHATGPT_WEB_CDP_URL;
   try {
     process.env.CHATGPT_WEB_CODEX_DEFAULT_CHROME_PATHS = "0";
     delete process.env.CHATGPT_WEB_CODEX_CDP_URL;
+    delete process.env.CHATGPT_WEB_CDP_URL;
 
     // Offline when paths disabled
     const offline = resolveChatGptWebCodexBrowserRuntime({
@@ -151,9 +153,10 @@ test("Test C — browser runtime detection via CDP or Chrome", () => {
     assert.equal(offline.mode, "unavailable");
     assert.equal(offline.reason, "browser_unavailable");
 
-    // Internal CDP
+    // Internal CDP is selected only from server-admin environment configuration.
+    process.env.CHATGPT_WEB_CODEX_CDP_URL = "http://chatgpt-web-codex-browser:9223";
     const cdp = resolveChatGptWebCodexBrowserRuntime({
-      browserCdpEndpoint: "http://chatgpt-web-codex-browser:9223",
+      browserCdpEndpoint: "http://connection-controlled-browser:9223",
     });
     assert.equal(cdp.available, true);
     assert.equal(cdp.mode, "internal-cdp");
@@ -162,6 +165,56 @@ test("Test C — browser runtime detection via CDP or Chrome", () => {
     if (prevDefault !== undefined) process.env.CHATGPT_WEB_CODEX_DEFAULT_CHROME_PATHS = prevDefault;
     else delete process.env.CHATGPT_WEB_CODEX_DEFAULT_CHROME_PATHS;
     if (prevCdp !== undefined) process.env.CHATGPT_WEB_CODEX_CDP_URL = prevCdp;
+    else delete process.env.CHATGPT_WEB_CODEX_CDP_URL;
+    if (prevGenericCdp !== undefined) process.env.CHATGPT_WEB_CDP_URL = prevGenericCdp;
+    else delete process.env.CHATGPT_WEB_CDP_URL;
+  }
+});
+
+test("Test C1 — Codex reuses the server-admin CDP resolver", () => {
+  const prevGenericCdp = process.env.CHATGPT_WEB_CDP_URL;
+  const prevCodexCdp = process.env.CHATGPT_WEB_CODEX_CDP_URL;
+  const prevDefault = process.env.CHATGPT_WEB_CODEX_DEFAULT_CHROME_PATHS;
+  try {
+    process.env.CHATGPT_WEB_CDP_URL = "http://generic-browser:9223";
+    process.env.CHATGPT_WEB_CODEX_CDP_URL = "http://legacy-browser:9223";
+    process.env.CHATGPT_WEB_CODEX_DEFAULT_CHROME_PATHS = "0";
+
+    const runtime = resolveChatGptWebCodexBrowserRuntime({
+      browserCdpEndpoint: "http://connection-controlled-browser:9223",
+      chromeExecutablePath: "disabled",
+    });
+
+    assert.equal(runtime.available, true);
+    assert.equal(runtime.mode, "internal-cdp");
+    assert.equal(runtime.cdpEndpoint, "http://generic-browser:9223");
+  } finally {
+    if (prevGenericCdp !== undefined) process.env.CHATGPT_WEB_CDP_URL = prevGenericCdp;
+    else delete process.env.CHATGPT_WEB_CDP_URL;
+    if (prevCodexCdp !== undefined) process.env.CHATGPT_WEB_CODEX_CDP_URL = prevCodexCdp;
+    else delete process.env.CHATGPT_WEB_CODEX_CDP_URL;
+    if (prevDefault !== undefined) process.env.CHATGPT_WEB_CODEX_DEFAULT_CHROME_PATHS = prevDefault;
+    else delete process.env.CHATGPT_WEB_CODEX_DEFAULT_CHROME_PATHS;
+  }
+});
+
+test("Test C2 — invalid server-admin CDP configuration returns a safe runtime code", () => {
+  const prevGenericCdp = process.env.CHATGPT_WEB_CDP_URL;
+  const prevCodexCdp = process.env.CHATGPT_WEB_CODEX_CDP_URL;
+  try {
+    process.env.CHATGPT_WEB_CDP_URL = "http://secret:password@browser:9223";
+    delete process.env.CHATGPT_WEB_CODEX_CDP_URL;
+    assert.throws(
+      () => resolveChatGptWebCodexBrowserRuntime({ chromeExecutablePath: "disabled" }),
+      (error: unknown) =>
+        error instanceof ChatGptWebCodexRuntimeError &&
+        error.code === "chatgpt_cdp_config_invalid" &&
+        !error.message.includes("password")
+    );
+  } finally {
+    if (prevGenericCdp !== undefined) process.env.CHATGPT_WEB_CDP_URL = prevGenericCdp;
+    else delete process.env.CHATGPT_WEB_CDP_URL;
+    if (prevCodexCdp !== undefined) process.env.CHATGPT_WEB_CODEX_CDP_URL = prevCodexCdp;
     else delete process.env.CHATGPT_WEB_CODEX_CDP_URL;
   }
 });

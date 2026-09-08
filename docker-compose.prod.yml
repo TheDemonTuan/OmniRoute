@@ -47,7 +47,7 @@ services:
       redis:
         condition: service_healthy
       chatgpt-web-codex-browser:
-        condition: service_started
+        condition: service_healthy
     build:
       context: .
       target: runner-cli
@@ -89,6 +89,18 @@ services:
       dockerfile: docker/chatgpt-web-codex-browser/Dockerfile
     image: omniroute:chatgpt-web-codex-browser
     restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:9223/json/version', {signal: AbortSignal.timeout(3000)}).then(async r => { if (!r.ok || !(await r.json()).webSocketDebuggerUrl) process.exit(1); }).catch(() => process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 4s
+      retries: 12
+      start_period: 10s
     shm_size: "2gb"
     volumes:
       - chatgpt-web-codex-browser-prod-data:/browser-profile

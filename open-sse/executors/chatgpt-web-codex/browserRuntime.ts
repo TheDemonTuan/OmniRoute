@@ -1,4 +1,8 @@
-import { requireChatGptWebDisplay } from "../../utils/chatgptWebRuntimeGuard.ts";
+import {
+  chatGptWebCdpEndpoint,
+  ChatGptWebRuntimeGuardError,
+  requireChatGptWebDisplay,
+} from "../../utils/chatgptWebRuntimeGuard.ts";
 import { existsSync } from "node:fs";
 
 export type ChatGptWebCodexBrowserRuntime = {
@@ -63,11 +67,19 @@ export function resolveChatGptWebCodexBrowserRuntime(
 ): ChatGptWebCodexBrowserRuntime {
   const explicitChrome =
     data && typeof data.chromeExecutablePath === "string" ? data.chromeExecutablePath : undefined;
-  const explicitCdp =
-    data && typeof data.browserCdpEndpoint === "string" ? data.browserCdpEndpoint : undefined;
-
-  const cdpEndpoint =
-    explicitCdp?.trim() || process.env.CHATGPT_WEB_CODEX_CDP_URL?.trim() || undefined;
+  let cdpEndpoint: string | undefined;
+  try {
+    cdpEndpoint = chatGptWebCdpEndpoint();
+  } catch (error) {
+    if (error instanceof ChatGptWebRuntimeGuardError) {
+      throw new ChatGptWebCodexRuntimeError(
+        "chatgpt_cdp_config_invalid",
+        error.message,
+        error.statusCode
+      );
+    }
+    throw error;
+  }
   const chromeExecutablePath = detectChromeExecutable(explicitChrome);
 
   if (cdpEndpoint) {
@@ -84,7 +96,7 @@ export function resolveChatGptWebCodexBrowserRuntime(
       requireChatGptWebDisplay();
     } catch (error) {
       throw new ChatGptWebCodexRuntimeError(
-        "CHATGPT_BROWSER_DISPLAY_MISSING",
+        "chatgpt_browser_display_missing",
         error instanceof Error ? error.message : "Headed browser display is unavailable",
         503
       );

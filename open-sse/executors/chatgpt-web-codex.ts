@@ -347,7 +347,6 @@ export class ChatGptWebCodexExecutor extends BaseExecutor {
         providerData.proAvailable = capabilities.proAvailable;
         providerData.browserVerified = true;
         if (chromeExecutablePath) providerData.chromeExecutablePath = chromeExecutablePath;
-        if (cdpEndpoint) providerData.browserCdpEndpoint = cdpEndpoint;
         await input.onCredentialsRefreshed?.({
           providerSpecificData: {
             ...record(input.credentials.providerSpecificData),
@@ -355,7 +354,6 @@ export class ChatGptWebCodexExecutor extends BaseExecutor {
             proAvailable: capabilities.proAvailable,
             browserVerified: true,
             ...(chromeExecutablePath ? { chromeExecutablePath } : {}),
-            ...(cdpEndpoint ? { browserCdpEndpoint: cdpEndpoint } : {}),
           },
         });
       }
@@ -465,10 +463,7 @@ export class ChatGptWebCodexExecutor extends BaseExecutor {
         sanitizeErrorMessage(error instanceof Error ? error.message : error)
       );
       if (error instanceof ChatGptWebCodexRuntimeError) {
-        return wrapped(
-          errorResponse(error.statusCode, error.message, error.code),
-          input.body
-        );
+        return wrapped(errorResponse(error.statusCode, error.message, error.code), input.body);
       }
       return wrapped(
         errorResponse(400, error instanceof Error ? error.message : error),

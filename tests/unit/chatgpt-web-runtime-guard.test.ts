@@ -45,10 +45,20 @@ test("local Xvfb DISPLAY accepted", () => {
   requireChatGptWebDisplay(undefined, { platform: "linux", env: { DISPLAY: ":99" } });
 });
 
-test("existing Codex sidecar endpoint reused", () => {
+test("CDP resolver accepts the Codex compatibility alias", () => {
   assert.equal(
     chatGptWebCdpEndpoint({ CHATGPT_WEB_CODEX_CDP_URL: "http://browser:9223" }),
     "http://browser:9223"
+  );
+});
+
+test("CDP resolver prefers the generic server-admin endpoint", () => {
+  assert.equal(
+    chatGptWebCdpEndpoint({
+      CHATGPT_WEB_CDP_URL: "http://generic-browser:9223",
+      CHATGPT_WEB_CODEX_CDP_URL: "http://legacy-browser:9223",
+    }),
+    "http://generic-browser:9223"
   );
 });
 
