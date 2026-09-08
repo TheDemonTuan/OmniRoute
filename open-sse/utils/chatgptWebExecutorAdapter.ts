@@ -2,7 +2,17 @@ import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
-import { acquireBrowserContext, openPage } from "../services/browserPool.ts";
+import {
+  acquireBrowserContext,
+  openPage,
+  resolveBrowserContextProxy,
+} from "../services/browserPool.ts";
+import { normalizeChatGptWebAuthInput } from "./chatgptWebAuthInput.ts";
+import {
+  acquireChatGptWebCdpLease,
+  chatGptWebCdpEndpoint,
+  requireChatGptWebDisplay,
+} from "./chatgptWebRuntimeGuard.ts";
 import type { ExecuteInput, ProviderCredentials } from "../executors/base.ts";
 import {
   extractChatGptWebAttachmentSources,
@@ -23,7 +33,7 @@ type JsonRecord = Record<string, unknown>;
 
 const CHATGPT_WEB_PAGE_URL = "https://chatgpt.com/?temporary-chat=true";
 const MAX_PROMPT_BYTES = 4 * 1024 * 1024;
-const FIRST_PARTY_COOKIE_HOSTS = ["chatgpt.com", "openai.com"] as const;
+const ownedSessionDisposers = new WeakMap<ChatGptWebBrowserSession, () => Promise<void>>();
 
 export interface ChatGptWebStorageCookie extends JsonRecord {
   name: string;
@@ -60,6 +70,7 @@ export interface ChatGptWebSessionFactoryInput {
   locale?: string;
   timezone?: string;
   chromeExecutablePath?: string;
+  signal?: AbortSignal | null;
 }
 
 export interface ChatGptWebExecutorAdapterDeps {
@@ -76,62 +87,11 @@ function isRecord(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isFirstPartyHost(value: string): boolean {
-  const host = value.toLowerCase().replace(/^\./, "");
-  return FIRST_PARTY_COOKIE_HOSTS.some(
-    (allowed) => host === allowed || host.endsWith(`.${allowed}`)
-  );
-}
-
-function validateCookie(value: unknown): asserts value is ChatGptWebStorageCookie {
-  if (
-    !isRecord(value) ||
-    typeof value.name !== "string" ||
-    !value.name ||
-    typeof value.value !== "string" ||
-    typeof value.domain !== "string" ||
-    typeof value.path !== "string" ||
-    !value.path.startsWith("/") ||
-    typeof value.expires !== "number" ||
-    !Number.isFinite(value.expires) ||
-    typeof value.httpOnly !== "boolean" ||
-    typeof value.secure !== "boolean" ||
-    !["Strict", "Lax", "None"].includes(String(value.sameSite))
-  ) {
-    throw new Error("ChatGPT Web browser storage state contains an invalid cookie");
-  }
-  if (!isFirstPartyHost(value.domain)) {
-    throw new Error("ChatGPT Web browser storage state contains a foreign cookie domain");
-  }
-}
-
-function validateOrigin(value: unknown): asserts value is ChatGptWebStorageOrigin {
-  if (!isRecord(value) || typeof value.origin !== "string" || !Array.isArray(value.localStorage)) {
-    throw new Error("ChatGPT Web browser storage state contains an invalid origin");
-  }
-  let url: URL;
-  try {
-    url = new URL(value.origin);
-  } catch {
-    throw new Error("ChatGPT Web browser storage state contains an invalid origin");
-  }
-  if (url.protocol !== "https:" || !isFirstPartyHost(url.hostname)) {
-    throw new Error("ChatGPT Web browser storage state contains a foreign origin");
-  }
-  for (const entry of value.localStorage) {
-    if (!isRecord(entry) || typeof entry.name !== "string" || typeof entry.value !== "string") {
-      throw new Error("ChatGPT Web browser storage state contains invalid local storage");
-    }
-  }
-}
-
 export function normalizeChatGptWebStorageState(value: unknown): ChatGptWebStorageState {
-  if (!isRecord(value) || !Array.isArray(value.cookies) || !Array.isArray(value.origins)) {
+  if (isRecord(value) && value.origins === undefined) {
     throw new Error("ChatGPT Web browser storage state is invalid");
   }
-  for (const cookie of value.cookies) validateCookie(cookie);
-  for (const origin of value.origins) validateOrigin(origin);
-  return structuredClone(value) as unknown as ChatGptWebStorageState;
+  return normalizeChatGptWebAuthInput(value, { allowEmptyCookies: true });
 }
 
 function contentText(value: unknown): string {
@@ -263,19 +223,10 @@ export function prepareChatGptWebBrowserRequest(
 }
 
 function readStorageState(credentials: ProviderCredentials): ChatGptWebStorageState {
-  const providerData = credentials.providerSpecificData;
-  const raw = providerData?.storageState ?? credentials.apiKey;
-  if (typeof raw === "string") {
-    try {
-      return normalizeChatGptWebStorageState(JSON.parse(raw) as unknown);
-    } catch (error) {
-      if (error instanceof SyntaxError) {
-        throw new Error("ChatGPT Web browser storage state JSON is invalid");
-      }
-      throw error;
-    }
-  }
-  return normalizeChatGptWebStorageState(raw);
+  return normalizeChatGptWebAuthInput(
+    credentials.providerSpecificData?.storageState ?? credentials.apiKey,
+    { allowEmptyCookies: true }
+  );
 }
 
 function optionalString(value: unknown): string | undefined {
@@ -318,6 +269,32 @@ export function resolveChatGptWebChromeExecutable(
 async function createDefaultSession(
   input: ChatGptWebSessionFactoryInput
 ): Promise<ChatGptWebBrowserSession> {
+  const cdpEndpoint = chatGptWebCdpEndpoint();
+  if (cdpEndpoint) {
+    const { chromium } = await import("playwright");
+    const proxy = await resolveBrowserContextProxy(input.connectionId, {
+      proxyProviderKey: "chatgpt-web",
+    });
+    const lease = await acquireChatGptWebCdpLease(chromium, cdpEndpoint, {
+      connectionId: input.connectionId,
+      signal: input.signal,
+      contextOptions: {
+        storageState: input.storageState,
+        ...(input.userAgent ? { userAgent: input.userAgent } : {}),
+        ...(input.locale ? { locale: input.locale } : {}),
+        ...(input.timezone ? { timezoneId: input.timezone } : {}),
+        ...(proxy ? { proxy } : {}),
+      },
+    });
+    const session = new PlaywrightChatGptWebBrowserSession(lease.page, {
+      pageUrl: CHATGPT_WEB_PAGE_URL,
+      selection: input.selection,
+      closePageOnCleanup: false,
+    });
+    ownedSessionDisposers.set(session, lease.dispose);
+    return session;
+  }
+  requireChatGptWebDisplay();
   const digest = createHash("sha256")
     .update(input.connectionId)
     .update("\0")
@@ -410,6 +387,7 @@ export async function executeChatGptWebCleanRoom(
   const session = await (deps.createSession ?? createDefaultSession)({
     connectionId,
     storageState,
+    signal: input.signal,
     selection: prepared.selection,
     userAgent: optionalString(providerData?.customUserAgent),
     locale: optionalString(providerData?.locale),
@@ -418,13 +396,19 @@ export async function executeChatGptWebCleanRoom(
       optionalString(providerData?.chromeExecutablePath)
     ),
   });
-  const result = await (deps.runTurn ?? runChatGptWebBrowserTurn)(session, {
-    prompt: prepared.prompt,
-    attachments,
-    signal: input.signal,
-  });
-  return buildChatGptWebOpenAiResponse(input.model, result, input.stream, {
-    id: deps.id?.(),
-    created: deps.now ? Math.floor(deps.now() / 1000) : undefined,
-  });
+  try {
+    const result = await (deps.runTurn ?? runChatGptWebBrowserTurn)(session, {
+      prompt: prepared.prompt,
+      attachments,
+      signal: input.signal,
+    });
+    return buildChatGptWebOpenAiResponse(input.model, result, input.stream, {
+      id: deps.id?.(),
+      created: deps.now ? Math.floor(deps.now() / 1000) : undefined,
+    });
+  } finally {
+    const dispose = ownedSessionDisposers.get(session);
+    ownedSessionDisposers.delete(session);
+    await dispose?.();
+  }
 }

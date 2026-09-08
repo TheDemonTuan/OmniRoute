@@ -1,3 +1,5 @@
+import { ChatGptWebAuthInputError } from "../utils/chatgptWebAuthInput.ts";
+import { ChatGptWebRuntimeGuardError } from "../utils/chatgptWebRuntimeGuard.ts";
 import { chatgpt_webProvider } from "../config/providers/registry/chatgpt-web/index.ts";
 import {
   executeChatGptWebCleanRoom,
@@ -39,7 +41,11 @@ export class ChatGptWebExecutor extends BaseExecutor {
     } catch (error) {
       const message = sanitizeErrorMessage(error);
       return makeExecutorErrorResult(
-        statusForAdapterError(message),
+        error instanceof ChatGptWebRuntimeGuardError
+          ? 503
+          : error instanceof ChatGptWebAuthInputError
+            ? 400
+            : statusForAdapterError(message),
         message || "ChatGPT Web browser execution failed",
         input.body,
         CHATGPT_WEB_URL

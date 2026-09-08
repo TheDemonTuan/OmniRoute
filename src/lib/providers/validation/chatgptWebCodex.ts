@@ -1,7 +1,10 @@
 import { randomBytes } from "node:crypto";
 import { rmSync } from "node:fs";
 
-import { CHATGPT_WEB_CODEX_CONNECTOR_NAME } from "@/shared/constants/chatgptWebCodex";
+import {
+  CHATGPT_WEB_CODEX_CONNECTOR_NAME,
+  CHATGPT_WEB_CODEX_RUNTIME_HEADED,
+} from "@/shared/constants/chatgptWebCodex";
 import { inspectBrowserLoginCapabilities } from "@omniroute/open-sse/vendor/codex-chatgpt-web/browser-login.ts";
 import { decodeChatGptWebCodexSecrets } from "@omniroute/open-sse/executors/chatgpt-web-codex/credentials.ts";
 import {
@@ -115,10 +118,12 @@ export async function validateChatGptWebCodexProvider({
     try {
       capabilities = await inspectBrowserLoginCapabilities({
         appName: connectorName,
-        ...(runtime.chromeExecutablePath ? { chromeExecutablePath: runtime.chromeExecutablePath } : {}),
+        ...(runtime.chromeExecutablePath
+          ? { chromeExecutablePath: runtime.chromeExecutablePath }
+          : {}),
         ...(runtime.cdpEndpoint ? { cdpEndpoint: runtime.cdpEndpoint } : {}),
         storageStatePath: paths.storageStatePath,
-        headed: false,
+        headed: CHATGPT_WEB_CODEX_RUNTIME_HEADED,
         proAvailable: false,
         autoApproveToolCalls: false,
       });
@@ -131,7 +136,7 @@ export async function validateChatGptWebCodexProvider({
       valid: true,
       error: null,
       pendingBrowserVerification: false,
-      method: "headless-browser",
+      method: runtime.cdpEndpoint ? "cdp-browser" : "headed-browser",
       capabilities: {
         browser: "ready",
         storageState: "verified",
@@ -146,7 +151,9 @@ export async function validateChatGptWebCodexProvider({
         browserVerified: true,
         pendingBrowserVerification: false,
         connectorName,
-        ...(runtime.chromeExecutablePath ? { chromeExecutablePath: runtime.chromeExecutablePath } : {}),
+        ...(runtime.chromeExecutablePath
+          ? { chromeExecutablePath: runtime.chromeExecutablePath }
+          : {}),
         ...(runtime.cdpEndpoint ? { browserCdpEndpoint: runtime.cdpEndpoint } : {}),
         ...(runtimeKey ? { runtimeKey } : {}),
         ...(tunnelId ? { tunnelId } : {}),
