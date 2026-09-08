@@ -29,17 +29,23 @@ test("production app slots use the managed ChatGPT browser sidecar", () => {
   assert.match(browserService, /\n\s+healthcheck:/);
 });
 
-test("production workflow builds and deploys an immutable browser image", () => {
+test("production workflow builds app and browser images in parallel jobs", () => {
+  assert.match(productionWorkflow, /build-app:\s*\n\s+name: 1a · Build app → GHCR/);
+  assert.match(productionWorkflow, /build-browser:\s*\n\s+name: 1b · Build ChatGPT browser → GHCR/);
   assert.match(productionWorkflow, /file: docker\/chatgpt-web-codex-browser\/Dockerfile/);
   assert.match(productionWorkflow, /id: browser-build/);
   assert.match(
     productionWorkflow,
     /browser_digest: \$\{\{ steps\.browser-build\.outputs\.digest \}\}/
   );
-  assert.match(productionWorkflow, /name: 1\.9 Smoke ChatGPT browser image/);
+  assert.match(productionWorkflow, /needs: \[build-app, build-browser\]/);
   assert.match(
     productionWorkflow,
-    /BROWSER_IMAGE_REF: \$\{\{ needs\.build\.outputs\.browser_image \}\}@\$\{\{ needs\.build\.outputs\.browser_digest \}\}/
+    /IMAGE_REF: \$\{\{ needs\.build-app\.outputs\.image \}\}@\$\{\{ needs\.build-app\.outputs\.digest \}\}/
+  );
+  assert.match(
+    productionWorkflow,
+    /BROWSER_IMAGE_REF: \$\{\{ needs\.build-browser\.outputs\.browser_image \}\}@\$\{\{ needs\.build-browser\.outputs\.browser_digest \}\}/
   );
   assert.match(
     productionWorkflow,
