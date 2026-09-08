@@ -120,7 +120,7 @@ services:
     image: omniroute:web
     depends_on:
       chatgpt-web-codex-browser:
-        condition: service_started
+        condition: service_healthy
     environment:
       - DATA_DIR=/app/data
       - PORT=${PORT:-20128}
@@ -148,6 +148,19 @@ services:
       dockerfile: docker/chatgpt-web-codex-browser/Dockerfile
     image: omniroute:chatgpt-web-codex-browser
     restart: unless-stopped
+    init: true
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:9223/json/version', {signal: AbortSignal.timeout(3000)}).then(async r => { if (!r.ok || !(await r.json()).webSocketDebuggerUrl) process.exit(1); }).catch(() => process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 4s
+      retries: 12
+      start_period: 10s
     shm_size: "2gb"
     volumes:
       - chatgpt-web-codex-browser-data:/browser-profile
@@ -355,7 +368,12 @@ services:
     # compose network by the omniroute app.
     healthcheck:
       test:
-        ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:1456/readyz',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+        [
+          "CMD",
+          "node",
+          "-e",
+          "require('http').get('http://127.0.0.1:1456/readyz',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))",
+        ]
       interval: 30s
       timeout: 5s
       retries: 3

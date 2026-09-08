@@ -1,3 +1,4 @@
+import { requireChatGptWebDisplay } from "../../utils/chatgptWebRuntimeGuard.ts";
 import { existsSync } from "node:fs";
 
 export type ChatGptWebCodexBrowserRuntime = {
@@ -79,6 +80,15 @@ export function resolveChatGptWebCodexBrowserRuntime(
   }
 
   if (chromeExecutablePath) {
+    try {
+      requireChatGptWebDisplay();
+    } catch (error) {
+      throw new ChatGptWebCodexRuntimeError(
+        "CHATGPT_BROWSER_DISPLAY_MISSING",
+        error instanceof Error ? error.message : "Headed browser display is unavailable",
+        503
+      );
+    }
     return {
       available: true,
       chromeExecutablePath,

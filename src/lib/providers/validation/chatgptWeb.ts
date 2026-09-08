@@ -1,12 +1,17 @@
-import { normalizeChatGptWebStorageState } from "@omniroute/open-sse/utils/chatgptWebExecutorAdapter.ts";
+import {
+  ChatGptWebAuthInputError,
+  normalizeChatGptWebAuthInput,
+} from "@omniroute/open-sse/utils/chatgptWebAuthInput.ts";
 
 export type ChatGptWebValidationResult = {
   valid: boolean;
   error: string | null;
   unsupported: false;
+  method?: string;
+  warning?: string;
 };
 
-/** Validate the encrypted-at-rest browser storage-state credential without echoing it. */
+/** Validate the import format only. Never label an imported credential as a live login. */
 export function validateChatGptWebProvider({
   apiKey,
 }: {
@@ -15,13 +20,12 @@ export function validateChatGptWebProvider({
   if (typeof apiKey !== "string" || !apiKey.trim()) {
     return {
       valid: false,
-      error: "ChatGPT Web browser storage state JSON is required",
+      error: "ChatGPT Web cookie header or browser storage-state JSON is required",
       unsupported: false,
     };
   }
-
   try {
-    const state = normalizeChatGptWebStorageState(JSON.parse(apiKey) as unknown);
+    const state = normalizeChatGptWebAuthInput(apiKey);
     if (state.cookies.length === 0) {
       return {
         valid: false,
@@ -29,12 +33,19 @@ export function validateChatGptWebProvider({
         unsupported: false,
       };
     }
-    return { valid: true, error: null, unsupported: false };
-  } catch {
+    return {
+      valid: true,
+      error: null,
+      unsupported: false,
+    };
+  } catch (error) {
     return {
       valid: false,
-      error: "ChatGPT Web browser storage state JSON is invalid or contains foreign origins",
       unsupported: false,
+      error:
+        error instanceof ChatGptWebAuthInputError
+          ? error.message
+          : "ChatGPT Web credential import failed; no secret content was included in this error",
     };
   }
 }

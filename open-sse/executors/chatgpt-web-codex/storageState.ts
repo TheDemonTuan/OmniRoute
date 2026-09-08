@@ -1,3 +1,4 @@
+import { decodeChatGptWebCodexSecrets } from "./credentials.ts";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
@@ -145,7 +146,7 @@ export function ensureConnectionStorageStateFromCredential(
         authenticated: true,
         verifiedAt: new Date().toISOString(),
         storageStateFingerprint: fingerprint,
-        pendingBrowserVerification: false,
+        pendingBrowserVerification: true,
       })}\n`
     );
     return paths.storageStatePath;
@@ -162,7 +163,7 @@ export function finalizeValidatedChatGptWebCodexSecrets(
   storageState?: Record<string, unknown>;
   pendingBrowserVerification?: boolean;
 } {
-  const parsed = JSON.parse(encodedCredential) as Record<string, unknown>;
+  const parsed = decodeChatGptWebCodexSecrets(encodedCredential);
   const rawCookie = typeof parsed.cookie === "string" ? cookieHeaderValue(parsed.cookie) : "";
   const runtimeKey = typeof parsed.runtimeKey === "string" ? parsed.runtimeKey.trim() : "";
 
@@ -174,7 +175,7 @@ export function finalizeValidatedChatGptWebCodexSecrets(
         ...(runtimeKey ? { runtimeKey } : {}),
       }),
       storageState: parsed.storageState as Record<string, unknown>,
-      pendingBrowserVerification: false,
+      pendingBrowserVerification: true,
     };
   }
 
