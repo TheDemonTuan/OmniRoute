@@ -154,7 +154,6 @@ export async function validateChatGptWebCodexProvider({
         ...(runtime.chromeExecutablePath
           ? { chromeExecutablePath: runtime.chromeExecutablePath }
           : {}),
-        ...(runtime.cdpEndpoint ? { browserCdpEndpoint: runtime.cdpEndpoint } : {}),
         ...(runtimeKey ? { runtimeKey } : {}),
         ...(tunnelId ? { tunnelId } : {}),
         ...(freshCookie ? { validationId } : {}),
