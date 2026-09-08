@@ -65,7 +65,8 @@ read_env_var() {
 }
 
 write_env() {
-    printf 'BLUE_IMAGE=%s\nGREEN_IMAGE=%s\n' "$1" "$2" > "$DEPLOY_ENV.tmp"
+    printf 'BLUE_IMAGE=%s\nGREEN_IMAGE=%s\nCHATGPT_BROWSER_IMAGE=%s\n' \
+        "$1" "$2" "$3" > "$DEPLOY_ENV.tmp"
     mv "$DEPLOY_ENV.tmp" "$DEPLOY_ENV"
 }
 
@@ -76,6 +77,7 @@ if [[ "${1:-}" == "--status" ]]; then
     echo "active slot   : $(cat "$ACTIVE_FILE" 2>/dev/null || echo none)"
     echo "BLUE_IMAGE    : $(read_env_var BLUE_IMAGE)"
     echo "GREEN_IMAGE   : $(read_env_var GREEN_IMAGE)"
+    echo "browser image : $(read_env_var CHATGPT_BROWSER_IMAGE)"
     echo "previous image: $(cat "$PREV_IMAGE_FILE" 2>/dev/null || echo none)"
     echo
     # Before the first deployment there is no .deploy.env, and `docker compose`
@@ -94,17 +96,21 @@ fi
 if [[ "${1:-}" == "--rollback" ]]; then
     [[ -s "$PREV_IMAGE_FILE" ]] || die "no previous image recorded — nothing to roll back to"
     NEW_IMAGE="$(cat "$PREV_IMAGE_FILE")"
-    log "Rolling back to $NEW_IMAGE"
+    NEW_BROWSER_IMAGE="$(read_env_var CHATGPT_BROWSER_IMAGE)"
+    log "Rolling back to $NEW_IMAGE with the current managed browser image"
 else
     NEW_IMAGE="${1:-}"
+    NEW_BROWSER_IMAGE="${2:-}"
 fi
 
-[[ -n "$NEW_IMAGE" ]] || die "usage: deploy.sh <ghcr.io/owner/image@sha256:...> | --status | --rollback"
+[[ -n "$NEW_IMAGE" && -n "$NEW_BROWSER_IMAGE" ]] \
+    || die "usage: deploy.sh <app@sha256:...> <browser@sha256:...> | --status | --rollback"
 
-# Immutable digest only. A moving tag would make "what is running" unknowable
-# and would silently change what a restart brings back up.
-[[ "$NEW_IMAGE" =~ ^ghcr\.io/[a-z0-9._/-]+@sha256:[0-9a-f]{64}$ ]] \
-    || die "not an immutable GHCR digest reference: $NEW_IMAGE"
+# Immutable digests only. Moving tags make running state and rollbacks unknowable.
+for image in "$NEW_IMAGE" "$NEW_BROWSER_IMAGE"; do
+    [[ "$image" =~ ^ghcr\.io/[a-z0-9._/-]+@sha256:[0-9a-f]{64}$ ]] \
+        || die "not an immutable GHCR digest reference: $image"
+done
 
 mkdir -p "$STATE_DIR"
 cd "$APP_DIR"
@@ -154,6 +160,40 @@ PROBE_JS='const p=process.env.PROBE_PORT||"20128";'\
 '.then(r=>r.json())'\
 '.then(j=>{clearTimeout(t);process.exit(j&&j.status==="healthy"?0:1);})'\
 '.catch(()=>{clearTimeout(t);process.exit(1);});'
+
+# Cookie-free browser check from the target app. It verifies the exact network,
+# environment and Playwright path used at runtime before Caddy switches traffic.
+probe_chatgpt_runtime() {
+    local service="$1" js
+    js="$(cat <<'CHATGPT_PROBE_JS'
+const endpoint =
+  process.env.CHATGPT_WEB_CDP_URL?.trim() ||
+  process.env.CHATGPT_WEB_CODEX_CDP_URL?.trim();
+if (!endpoint) throw new Error("managed CDP endpoint is not configured");
+
+const { chromium } = await import("playwright-core");
+let browser;
+let context;
+let ready = false;
+try {
+  browser = await chromium.connectOverCDP(endpoint, { timeout: 10_000 });
+  context = await browser.newContext({ storageState: undefined });
+  const page = await context.newPage();
+  await page.goto("about:blank", { timeout: 5_000 });
+  ready = true;
+} catch {
+  // The deploy log must not expose the configured endpoint or browser diagnostics.
+} finally {
+  await context?.close().catch(() => {});
+  await browser?.close().catch(() => {});
+}
+if (!ready) process.exit(1);
+CHATGPT_PROBE_JS
+)"
+    timeout 40s docker compose \
+        --env-file "$APP_DIR/.app.env" --env-file "$DEPLOY_ENV" -f "$COMPOSE" \
+        exec -T -e OMNI_CHATGPT_SMOKE=1 "$service" bun -e "$js"
+}
 
 probe_app_ready() {
     local service="$1"
@@ -229,6 +269,7 @@ caddy_reload() {
 # ─────────────────────────────────────────────────────────────────────────────
 BLUE_IMAGE="$(read_env_var BLUE_IMAGE)"
 GREEN_IMAGE="$(read_env_var GREEN_IMAGE)"
+OLD_BROWSER_IMAGE="$(read_env_var CHATGPT_BROWSER_IMAGE)"
 ACTIVE="$(cat "$ACTIVE_FILE" 2>/dev/null || true)"
 
 case "$ACTIVE" in
@@ -259,10 +300,10 @@ fi
 [[ -n "$BLUE_IMAGE"  ]] || BLUE_IMAGE="$NEW_IMAGE"
 [[ -n "$GREEN_IMAGE" ]] || GREEN_IMAGE="$NEW_IMAGE"
 
-write_env "$BLUE_IMAGE" "$GREEN_IMAGE"
+write_env "$BLUE_IMAGE" "$GREEN_IMAGE" "$NEW_BROWSER_IMAGE"
 
 restore_env_and_fail() {
-    write_env "$OLD_BLUE" "$OLD_GREEN"
+    write_env "$OLD_BLUE" "$OLD_GREEN" "$OLD_BROWSER_IMAGE"
     die "$1"
 }
 
@@ -273,6 +314,14 @@ restore_env_and_fail() {
 log "Ensuring redis is up..."
 dc up -d redis
 wait_container_healthy redis 60 || restore_env_and_fail "redis did not become healthy"
+
+# The target starts with --no-deps, so the workflow-built browser needs an explicit gate.
+log "Ensuring ChatGPT browser is up..."
+if ! dc up -d --no-deps chatgpt-web-codex-browser; then
+    restore_env_and_fail "ChatGPT browser startup failed; app traffic was not switched"
+fi
+wait_container_healthy chatgpt-web-codex-browser 120 \
+    || restore_env_and_fail "ChatGPT CDP readiness failed; app traffic was not switched"
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  START THE TARGET SLOT  (overlap window opens here)
@@ -300,7 +349,8 @@ dc up -d --no-deps "$TARGET_SERVICE" || restore_env_and_fail "failed to start $T
 
 log "Waiting for $TARGET_SERVICE to become healthy (timeout ${READY_TIMEOUT}s)..."
 if ! wait_container_healthy "$TARGET_SERVICE" "$READY_TIMEOUT" \
-   || ! wait_app_ready "$TARGET_SERVICE" 60; then
+   || ! wait_app_ready "$TARGET_SERVICE" 60 \
+   || ! probe_chatgpt_runtime "$TARGET_SERVICE"; then
     log "NEW VERSION FAILED ITS HEALTH GATE — traffic was never switched."
     dc logs --tail=200 "$TARGET_SERVICE" || true
     log "Stopping the failed slot to restore single-writer state..."

@@ -27,6 +27,10 @@ x-app-env: &app-env
   # never runs and storage.sqlite is left with an un-checkpointed WAL.
   SHUTDOWN_TIMEOUT_MS: "120000"
 
+  # Both slots use the managed browser. The app container does not need DISPLAY.
+  CHATGPT_WEB_CDP_URL: "http://chatgpt-web-codex-browser:9223"
+  CHATGPT_WEB_CODEX_CDP_URL: "http://chatgpt-web-codex-browser:9223"
+
 x-app: &app
   restart: unless-stopped
   init: true
@@ -90,6 +94,39 @@ x-app: &app
       max-file: "3"
 
 services:
+  # Managed CDP runtime. The production workflow pins this image by digest.
+  # deploy.sh updates it with each release before the target slot starts.
+  chatgpt-web-codex-browser:
+    image: ${CHATGPT_BROWSER_IMAGE:?Managed by deploy.sh in .deploy.env}
+    restart: unless-stopped
+    init: true
+    shm_size: "2gb"
+    expose:
+      - "9223"
+    volumes:
+      - chatgpt_browser_data:/browser-profile
+    networks:
+      - backend
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:9223/json/version',{signal:AbortSignal.timeout(3000)}).then(async r=>{if(!r.ok||!(await r.json()).webSocketDebuggerUrl)process.exit(1)}).catch(()=>process.exit(1))"
+      interval: 5s
+      timeout: 4s
+      retries: 12
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   # ── BLUE ────────────────────────────────────────────────────────────────────
   app-blue:
     <<: *app
@@ -201,6 +238,7 @@ networks:
     driver: bridge
 
 volumes:
+  chatgpt_browser_data:
   caddy_data:
   caddy_config:
   redis_data:
