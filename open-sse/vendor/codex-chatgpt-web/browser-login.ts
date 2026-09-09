@@ -272,14 +272,16 @@ export function browserLoginStateExists(
       return false;
     }
     const verifiedTime = new Date(marker.verifiedAt).getTime();
-    if (Number.isNaN(verifiedTime) || Date.now() - verifiedTime > LOGIN_VERIFICATION_TTL_MS) {
+    const ageMs = Date.now() - verifiedTime;
+    if (Number.isNaN(verifiedTime) || ageMs < 0 || ageMs > LOGIN_VERIFICATION_TTL_MS) {
       return false;
     }
-    if (marker.storageStateFingerprint) {
-      const state = JSON.parse(readFileSync(config.storageStatePath, "utf8")) as Record<string, unknown>;
-      const currentFingerprint = createHash("sha256").update(JSON.stringify(state)).digest("hex");
-      if (currentFingerprint !== marker.storageStateFingerprint) return false;
+    if (typeof marker.storageStateFingerprint !== "string" || !marker.storageStateFingerprint) {
+      return false;
     }
+    const state = JSON.parse(readFileSync(config.storageStatePath, "utf8")) as Record<string, unknown>;
+    const currentFingerprint = createHash("sha256").update(JSON.stringify(state)).digest("hex");
+    if (currentFingerprint !== marker.storageStateFingerprint) return false;
     return true;
   } catch {
     return false;

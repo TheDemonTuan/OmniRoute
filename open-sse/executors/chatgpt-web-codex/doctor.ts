@@ -5,11 +5,7 @@ import { sanitizeErrorMessage } from "../../utils/error.ts";
 import { resolveChatGptWebCodexBrowserRuntime } from "./browserRuntime.ts";
 import { decodeChatGptWebCodexSecrets } from "./credentials.ts";
 import { getChatGptWebCodexRuntimeCounts } from "./runtime.ts";
-import {
-  connectionRuntimePaths,
-  ensureConnectionStorageState,
-  ensureConnectionStorageStateFromCredential,
-} from "./storageState.ts";
+import { connectionRuntimePaths } from "./storageState.ts";
 import {
   getTunnelRuntimeStatus,
   tunnelClientPaths,
@@ -49,11 +45,6 @@ export async function getChatGptWebCodexDoctorStatus(connection: {
     hasStorageState = Boolean(secrets.storageState);
     hasCookie = Boolean(secrets.cookie);
     credential = hasStorageState || hasCookie;
-    if (hasStorageState) {
-      ensureConnectionStorageStateFromCredential(connectionId, secrets);
-    } else if (hasCookie && secrets.cookie) {
-      ensureConnectionStorageState(connectionId, secrets.cookie);
-    }
     storageState = existsSync(paths.storageStatePath);
     login = browserLoginStateExists({ storageStatePath: paths.storageStatePath });
     const markerPath = `${paths.storageStatePath}.verified.json`;

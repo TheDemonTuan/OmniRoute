@@ -923,6 +923,22 @@ export async function handleRoundRobinCombo({
             structuredError
           );
           const { cooldownMs } = fallbackResult;
+          const submittedChatGptTurnFailure =
+            structuredError?.code === "chatgpt_submission_ambiguous" ||
+            structuredError?.code === "chatgpt_submitted_turn_failed" ||
+            fallbackResult.reason === "chatgpt_submission_ambiguous" ||
+            fallbackResult.reason === "chatgpt_submitted_turn_failed";
+          if (submittedChatGptTurnFailure) {
+            recordComboRequest(combo.name, modelStr, {
+              success: false,
+              latencyMs: Date.now() - startTime,
+              fallbackCount,
+              strategy: "round-robin",
+              target: toRecordedTarget(target),
+            });
+            recordedAttempts++;
+            return result;
+          }
           const selectedConnectionId =
             result.headers?.get("X-OmniRoute-Selected-Connection-Id") ||
             result.headers?.get("x-omniroute-selected-connection-id") ||

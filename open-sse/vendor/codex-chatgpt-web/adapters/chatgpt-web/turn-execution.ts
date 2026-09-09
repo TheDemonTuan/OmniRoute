@@ -673,6 +673,26 @@ export class ChatGptTurnSessions {
     return true;
   }
 
+  async drain(timeoutMs: number): Promise<boolean> {
+    const pending = [...this.entries.values()]
+      .filter((session) => !session.isPhysicallySettled())
+      .map((session) => session.physicalSettlement);
+    if (pending.length === 0) return true;
+
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        Promise.allSettled(pending).then(() => true),
+        new Promise<boolean>((resolve) => {
+          timer = setTimeout(() => resolve(false), timeoutMs);
+          timer.unref?.();
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
   clear(): number {
     const cancelled = this.entries.size;
     for (const [key, session] of this.entries) this.beginRetirement(key, session);

@@ -65,6 +65,7 @@ export interface ChatGptWebRuntimeAdmission {
 interface ActiveLeaseRecord {
   disposal?: Promise<void>;
   acquiredAt: number;
+  token: symbol;
 }
 
 let activeLeases = 0;
@@ -76,22 +77,27 @@ function getActiveCount(): number {
   return allActive.size;
 }
 
+function ensureCapacity(connectionId: string): void {
+  if (activeConnections.has(connectionId) || getActiveCount() >= getMaxActiveLeases()) {
+    throw new ChatGptWebRuntimeGuardError(
+      "CHATGPT_BROWSER_BUSY",
+      "Browser capacity is occupied; no prompt was sent. Retry after the active turn finishes."
+    );
+  }
+}
+
 export function acquireChatGptWebRuntimeAdmission(
   connectionId: string,
   owner: "clean-room" | "codex" | "verification"
 ): ChatGptWebRuntimeAdmission {
   const normalizedConnectionId = connectionId.trim();
-  if (
-    !normalizedConnectionId ||
-    activeAdmissions.has(normalizedConnectionId) ||
-    activeConnections.has(normalizedConnectionId) ||
-    getActiveCount() >= getMaxActiveLeases()
-  ) {
+  if (!normalizedConnectionId || activeAdmissions.has(normalizedConnectionId)) {
     throw new ChatGptWebRuntimeGuardError(
       "CHATGPT_BROWSER_BUSY",
       `Browser capacity is occupied by another ${owner} operation; no prompt was sent. Retry after the active operation finishes.`
     );
   }
+  ensureCapacity(normalizedConnectionId);
   const token = Symbol(owner);
   activeAdmissions.set(normalizedConnectionId, token);
   return {
@@ -153,8 +159,9 @@ export async function acquireChatGptWebCdpLease(
     }
   }
 
-  const maxLeases = getMaxActiveLeases();
-  if (activeConnections.has(options.connectionId) || activeLeases >= maxLeases) {
+  const connectionId = options.connectionId.trim();
+  const admissionOwnsConnection = activeAdmissions.has(connectionId);
+  if (activeConnections.has(connectionId) || (!admissionOwnsConnection && getActiveCount() >= getMaxActiveLeases())) {
     admission?.release();
     throw new ChatGptWebRuntimeGuardError(
       "CHATGPT_BROWSER_BUSY",
@@ -163,8 +170,8 @@ export async function acquireChatGptWebCdpLease(
   }
 
   activeLeases++;
-  const record: ActiveLeaseRecord = { acquiredAt: Date.now() };
-  activeConnections.set(options.connectionId, record);
+  const record: ActiveLeaseRecord = { acquiredAt: Date.now(), token: Symbol("lease") };
+  activeConnections.set(connectionId, record);
 
   let browser: Browser | undefined;
   let context: BrowserContext | undefined;
@@ -183,8 +190,10 @@ export async function acquireChatGptWebCdpLease(
       } catch {
         /* connected browser: disconnect this client */
       } finally {
-        activeConnections.delete(options.connectionId);
-        activeLeases = Math.max(0, activeLeases - 1);
+        if (activeConnections.get(connectionId) === record) {
+          activeConnections.delete(connectionId);
+          activeLeases = Math.max(0, activeLeases - 1);
+        }
         admission?.release();
       }
     })();
@@ -192,11 +201,9 @@ export async function acquireChatGptWebCdpLease(
     return disposal;
   };
 
-  // Stale lease watchdog: auto-dispose if a lease exceeds max turn duration
+  // The watchdog only begins retirement. Capacity is released in dispose() after cleanup settles.
   const watchdog = setTimeout(() => {
-    if (activeConnections.get(options.connectionId) === record) {
-      void dispose();
-    }
+    if (activeConnections.get(connectionId) === record) void dispose();
   }, MAX_LEASE_DURATION_MS);
   watchdog.unref?.();
 

@@ -8,7 +8,10 @@ import { FORMATS } from "../translator/formats.ts";
 import { buildErrorBody, sanitizeErrorMessage } from "../utils/error.ts";
 import { ChatGptWebAdapterError } from "../vendor/codex-chatgpt-web/adapters/chatgpt-web/adapter-error.ts";
 import { acquireChatGptWebRuntimeAdmission } from "../utils/chatgptWebRuntimeGuard.ts";
-import { createChatGptWebAdapter } from "../vendor/codex-chatgpt-web/adapters/chatgpt-web/index.ts";
+import {
+  createChatGptWebAdapter,
+  waitForChatGptWebTurnSettlement,
+} from "../vendor/codex-chatgpt-web/adapters/chatgpt-web/index.ts";
 import { ChatGptBrowserWorker } from "../vendor/codex-chatgpt-web/adapters/chatgpt-web/browser-worker.ts";
 import {
   browserLoginStateExists,
@@ -455,6 +458,16 @@ export class ChatGptWebCodexExecutor extends BaseExecutor {
             });
           }
         } finally {
+          try {
+            await waitForChatGptWebTurnSettlement(provider, parsed);
+          } catch (settlementError) {
+            input.log?.warn?.(
+              "CHATGPT_WEB_CODEX",
+              sanitizeErrorMessage(
+                settlementError instanceof Error ? settlementError.message : settlementError
+              )
+            );
+          }
           try {
             const storageState = readConnectionStorageState(storageStatePath);
             await input.onCredentialsRefreshed?.({
