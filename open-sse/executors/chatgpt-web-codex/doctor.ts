@@ -35,8 +35,10 @@ export async function getChatGptWebCodexDoctorStatus(connection: {
   const browserRuntime = resolveChatGptWebCodexBrowserRuntime(data);
   let storageState = false;
   let login = false;
-  let solAvailable = data.solAvailable !== false;
-  let proAvailable = data.proAvailable === true;
+  let solAvailable: boolean | null =
+    data.solAvailable === true ? true : data.solAvailable === false ? false : null;
+  let proAvailable: boolean | null =
+    data.proAvailable === true ? true : data.proAvailable === false ? false : null;
   let credential = false;
   let hasStorageState = false;
   let hasCookie = false;
@@ -56,9 +58,7 @@ export async function getChatGptWebCodexDoctorStatus(connection: {
     const markerPath = `${paths.storageStatePath}.verified.json`;
     if (existsSync(markerPath)) {
       try {
-        const marker = JSON.parse(
-          readFileSync(markerPath, "utf8")
-        ) as Record<string, unknown>;
+        const marker = JSON.parse(readFileSync(markerPath, "utf8")) as Record<string, unknown>;
         pendingBrowserVerification = marker.pendingBrowserVerification === true;
         if (typeof marker.solAvailable === "boolean") solAvailable = marker.solAvailable;
         if (typeof marker.proAvailable === "boolean") proAvailable = marker.proAvailable;

@@ -35,7 +35,11 @@ export function chatGptWebCdpEndpoint(
       !["http:", "https:", "ws:", "wss:"].includes(url.protocol) ||
       url.username ||
       url.password ||
-      url.hash
+      url.hash ||
+      url.search ||
+      !url.hostname ||
+      url.port === "0" ||
+      url.pathname !== "/"
     )
       throw new Error();
     return endpoint;
