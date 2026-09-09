@@ -606,6 +606,15 @@ export class ChatGptTurnSessions {
     return session;
   }
 
+  async waitForSettlement(key: string): Promise<void> {
+    const session = this.entries.get(key);
+    if (session) {
+      await session.physicalSettlement;
+      return;
+    }
+    await this.retirements.get(key);
+  }
+
   findConversationHead(conversationKey: string): ChatGptTurnSession | undefined {
     const session = this.conversationHeads.get(conversationKey);
     session?.touch();
@@ -671,6 +680,26 @@ export class ChatGptTurnSessions {
     this.forgetConversationHead(session);
     this.beginRetirement(key, session);
     return true;
+  }
+
+  async drain(timeoutMs: number): Promise<boolean> {
+    const pending = [...this.entries.values()]
+      .filter((session) => !session.isPhysicallySettled())
+      .map((session) => session.physicalSettlement);
+    if (pending.length === 0) return true;
+
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        Promise.allSettled(pending).then(() => true),
+        new Promise<boolean>((resolve) => {
+          timer = setTimeout(() => resolve(false), timeoutMs);
+          timer.unref?.();
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 
   clear(): number {

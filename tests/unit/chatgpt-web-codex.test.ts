@@ -927,6 +927,46 @@ test("accepts inline input_file data URLs and rejects remote file URLs", () => {
   );
 });
 
+test("session registry drain waits for physical settlement and honors a timeout", async () => {
+  const sessions = new ChatGptTurnSessions();
+  let resolvePhysical: () => void = () => {};
+  const physicalSettlement = new Promise<void>((resolve) => {
+    resolvePhysical = resolve;
+  });
+  sessions.getOrCreate("drain-turn", () => ({
+    mode: "read-only",
+    browser: new Promise<string>(() => {}),
+    physicalSettlement,
+    trace: new ChatGptTraceFeed(),
+    text: new ChatGptTextFeed(),
+    cancel() {},
+  }));
+
+  assert.equal(await sessions.drain(1), false);
+  resolvePhysical();
+  assert.equal(await sessions.drain(100), true);
+});
+
+test("session registry waits for a retired turn's physical settlement", async () => {
+  const sessions = new ChatGptTurnSessions();
+  let resolvePhysical: () => void = () => {};
+  const physicalSettlement = new Promise<void>((resolve) => {
+    resolvePhysical = resolve;
+  });
+  const session = sessions.getOrCreate("retired-turn", () => ({
+    mode: "read-only",
+    browser: new Promise<string>(() => {}),
+    physicalSettlement,
+    trace: new ChatGptTraceFeed(),
+    text: new ChatGptTextFeed(),
+    cancel() {},
+  }));
+  sessions.retire("retired-turn", session);
+  const wait = sessions.waitForSettlement("retired-turn");
+  resolvePhysical();
+  await wait;
+});
+
 test("session registry reports waiting turns as settled retained sessions", async () => {
   const sessions = new ChatGptTurnSessions();
   assert.equal(sessions.activeCount(), 0);
@@ -1179,6 +1219,13 @@ test("browserLoginStateExists detects stale marker TTL and storageState fingerpr
     const validMarker = JSON.parse(readFileSync(markerPath, "utf8")) as Record<string, unknown>;
     const staleDate = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString();
     writeFileSync(markerPath, JSON.stringify({ ...validMarker, verifiedAt: staleDate }));
+    assert.equal(browserLoginStateExists({ storageStatePath: statePath }), false);
+
+    const futureDate = new Date(Date.now() + 60_000).toISOString();
+    writeFileSync(markerPath, JSON.stringify({ ...validMarker, verifiedAt: futureDate }));
+    assert.equal(browserLoginStateExists({ storageStatePath: statePath }), false);
+
+    writeFileSync(markerPath, JSON.stringify({ ...validMarker, storageStateFingerprint: undefined }));
     assert.equal(browserLoginStateExists({ storageStatePath: statePath }), false);
   } finally {
     rmSync(root, { recursive: true, force: true });

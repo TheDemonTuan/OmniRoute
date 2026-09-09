@@ -849,6 +849,7 @@ async function testApiKeyConnection(connection: any) {
     connection.provider === "chatgpt-web-codex"
       ? await validateChatGptWebCodexProvider({
           apiKey: connection.apiKey,
+          connectionId: connection.id,
           providerSpecificData: { ...providerSpecificData, verifyBrowserLogin: true },
         })
       : await validateProviderApiKey({

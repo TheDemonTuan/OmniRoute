@@ -127,6 +127,29 @@ test("runtime admission blocks overlapping owner types on the same connection", 
   codex.release();
 });
 
+test("runtime admission and a direct CDP lease share the global browser capacity", async () => {
+  const { acquireChatGptWebRuntimeAdmission } =
+    await import("../../open-sse/utils/chatgptWebRuntimeGuard.ts");
+  const previous = process.env.CHATGPT_WEB_MAX_BROWSER_TABS;
+  process.env.CHATGPT_WEB_MAX_BROWSER_TABS = "1";
+  const admission = acquireChatGptWebRuntimeAdmission("capacity-admission", "codex");
+  try {
+    await assert.rejects(
+      acquireChatGptWebCdpLease(
+        createMockDriver() as unknown as import("playwright").ChromiumBrowserContext,
+        "http://browser:9223",
+        createLeaseOpts("capacity-other-connection")
+      ),
+      (error: unknown) =>
+        error instanceof ChatGptWebRuntimeGuardError && error.code === "CHATGPT_BROWSER_BUSY"
+    );
+  } finally {
+    admission.release();
+    if (previous === undefined) delete process.env.CHATGPT_WEB_MAX_BROWSER_TABS;
+    else process.env.CHATGPT_WEB_MAX_BROWSER_TABS = previous;
+  }
+});
+
 test("runtime admission applies the global browser capacity across owner types", async () => {
   const { acquireChatGptWebRuntimeAdmission } =
     await import("../../open-sse/utils/chatgptWebRuntimeGuard.ts");

@@ -120,6 +120,17 @@ async function cleanup(): Promise<void> {
       import("@/shared/utils/loggerResource"),
       import("@/lib/usage/callLogs"),
     ]);
+    try {
+      const { drainChatGptWebCodexRuntime, stopChatGptWebCodexRuntime } =
+        await import("@omniroute/open-sse/executors/chatgpt-web-codex/runtime.ts");
+      const drained = await drainChatGptWebCodexRuntime();
+      if (!drained) console.warn("[Shutdown] ChatGPT Web (Codex) runtime did not drain before timeout.");
+      await stopChatGptWebCodexRuntime();
+      console.log("[Shutdown] ChatGPT Web (Codex) runtime stopped.");
+    } catch {
+      /* feature unused */
+    }
+
     const flushResult = await flushSpendBatchWriter();
     if (flushResult.flushedEntries > 0) {
       console.log(
@@ -144,15 +155,6 @@ async function cleanup(): Promise<void> {
       }
     } catch {
       /* feature unused / docker missing */
-    }
-
-    try {
-      const { stopChatGptWebCodexRuntime } =
-        await import("@omniroute/open-sse/executors/chatgpt-web-codex/runtime.ts");
-      await stopChatGptWebCodexRuntime();
-      console.log("[Shutdown] ChatGPT Web (Codex) runtime stopped.");
-    } catch {
-      /* feature unused */
     }
 
     await closeSharedLoggerResource();
