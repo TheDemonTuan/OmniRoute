@@ -350,7 +350,7 @@ test("Test E — executor returns 503 chatgpt_web_codex_browser_unavailable when
   }
 });
 
-test("Test E1 — executor rejects unverified Sol availability before browser submission", async () => {
+test("Test E1 — executor verifies pending Sol availability before browser submission", async () => {
   const previousCdp = process.env.CHATGPT_WEB_CODEX_CDP_URL;
   process.env.CHATGPT_WEB_CODEX_CDP_URL = "http://127.0.0.1:9223";
   const executor = new ChatGptWebCodexExecutor();
@@ -382,7 +382,8 @@ test("Test E1 — executor rejects unverified Sol availability before browser su
 
     assert.equal(result.response.status, 400);
     const json = (await result.response.json()) as { error?: { message?: string } };
-    assert.match(json.error?.message ?? "", /availability has not been verified/i);
+    assert.doesNotMatch(json.error?.message ?? "", /availability has not been verified/i);
+    assert.match(json.error?.message ?? "", /connect|browser/i);
   } finally {
     if (previousCdp === undefined) delete process.env.CHATGPT_WEB_CODEX_CDP_URL;
     else process.env.CHATGPT_WEB_CODEX_CDP_URL = previousCdp;

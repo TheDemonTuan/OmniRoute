@@ -16,6 +16,7 @@ import { ChatGptBrowserWorker } from "../vendor/codex-chatgpt-web/adapters/chatg
 import {
   browserLoginStateExists,
   inspectBrowserLoginCapabilities,
+  storedBrowserLoginCapabilities,
 } from "../vendor/codex-chatgpt-web/browser-login.ts";
 import { extractChatGptTurnIdentity } from "../vendor/codex-chatgpt-web/adapters/chatgpt-web/environment.ts";
 import { bridgeToResponsesSSE, buildResponseJSON } from "../vendor/codex-chatgpt-web/bridge.ts";
@@ -357,7 +358,6 @@ export class ChatGptWebCodexExecutor extends BaseExecutor {
           503
         );
       }
-      requireVerifiedRouteCapabilities(route, providerData);
       const cdpEndpoint = browserRuntime.cdpEndpoint;
       const chromeExecutablePath = browserRuntime.chromeExecutablePath;
       const runtimePaths = connectionRuntimePaths(connectionId);
@@ -374,36 +374,37 @@ export class ChatGptWebCodexExecutor extends BaseExecutor {
         proAvailable: providerData.proAvailable === true,
         autoApproveToolCalls: false,
       };
+      let capabilities = storedBrowserLoginCapabilities(loginConfig);
       if (!browserLoginStateExists(loginConfig)) {
         const verificationAdmission = acquireChatGptWebRuntimeAdmission(
           connectionId,
           "verification"
         );
-        let capabilities: Awaited<ReturnType<typeof inspectBrowserLoginCapabilities>>;
         try {
           capabilities = await inspectBrowserLoginCapabilities(loginConfig);
         } finally {
           verificationAdmission.release();
         }
-        const capabilitiesVerified =
-          typeof capabilities.solAvailable === "boolean" &&
-          typeof capabilities.proAvailable === "boolean";
-        providerData.solAvailable = capabilities.solAvailable;
-        providerData.proAvailable = capabilities.proAvailable;
-        providerData.browserVerified = capabilitiesVerified;
-        providerData.pendingBrowserVerification = !capabilitiesVerified;
-        if (chromeExecutablePath) providerData.chromeExecutablePath = chromeExecutablePath;
-        await input.onCredentialsRefreshed?.({
-          providerSpecificData: {
-            ...record(input.credentials.providerSpecificData),
-            solAvailable: capabilities.solAvailable,
-            proAvailable: capabilities.proAvailable,
-            browserVerified: capabilitiesVerified,
-            pendingBrowserVerification: !capabilitiesVerified,
-            ...(chromeExecutablePath ? { chromeExecutablePath } : {}),
-          },
-        });
       }
+      const capabilitiesVerified =
+        typeof capabilities.solAvailable === "boolean" &&
+        typeof capabilities.proAvailable === "boolean";
+      providerData.solAvailable = capabilities.solAvailable;
+      providerData.proAvailable = capabilities.proAvailable;
+      providerData.browserVerified = capabilitiesVerified;
+      providerData.pendingBrowserVerification = !capabilitiesVerified;
+      if (chromeExecutablePath) providerData.chromeExecutablePath = chromeExecutablePath;
+      const verifiedProviderData = {
+        ...record(input.credentials.providerSpecificData),
+        solAvailable: capabilities.solAvailable,
+        proAvailable: capabilities.proAvailable,
+        browserVerified: capabilitiesVerified,
+        pendingBrowserVerification: !capabilitiesVerified,
+        ...(chromeExecutablePath ? { chromeExecutablePath } : {}),
+      };
+      input.credentials.providerSpecificData = verifiedProviderData;
+      await input.onCredentialsRefreshed?.({ providerSpecificData: verifiedProviderData });
+      requireVerifiedRouteCapabilities(route, providerData);
       const provider = buildProviderConfig(
         { ...input, credentials: { ...input.credentials, providerSpecificData: providerData } },
         parsed,
