@@ -606,6 +606,15 @@ export class ChatGptTurnSessions {
     return session;
   }
 
+  async waitForSettlement(key: string): Promise<void> {
+    const session = this.entries.get(key);
+    if (session) {
+      await session.physicalSettlement;
+      return;
+    }
+    await this.retirements.get(key);
+  }
+
   findConversationHead(conversationKey: string): ChatGptTurnSession | undefined {
     const session = this.conversationHeads.get(conversationKey);
     session?.touch();

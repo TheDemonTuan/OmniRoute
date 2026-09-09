@@ -947,6 +947,26 @@ test("session registry drain waits for physical settlement and honors a timeout"
   assert.equal(await sessions.drain(100), true);
 });
 
+test("session registry waits for a retired turn's physical settlement", async () => {
+  const sessions = new ChatGptTurnSessions();
+  let resolvePhysical: () => void = () => {};
+  const physicalSettlement = new Promise<void>((resolve) => {
+    resolvePhysical = resolve;
+  });
+  const session = sessions.getOrCreate("retired-turn", () => ({
+    mode: "read-only",
+    browser: new Promise<string>(() => {}),
+    physicalSettlement,
+    trace: new ChatGptTraceFeed(),
+    text: new ChatGptTextFeed(),
+    cancel() {},
+  }));
+  sessions.retire("retired-turn", session);
+  const wait = sessions.waitForSettlement("retired-turn");
+  resolvePhysical();
+  await wait;
+});
+
 test("session registry reports waiting turns as settled retained sessions", async () => {
   const sessions = new ChatGptTurnSessions();
   assert.equal(sessions.activeCount(), 0);

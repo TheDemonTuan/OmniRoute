@@ -171,8 +171,7 @@ export async function waitForChatGptWebTurnSettlement(
   parsed: CodexParsedRequest
 ): Promise<void> {
   const executionKey = `${chatGptWebExecutionNamespace(provider)}:${chatGptTurnExecutionKey(parsed)}`;
-  const session = chatGptTurnSessions.find(executionKey);
-  if (session) await session.physicalSettlement;
+  await chatGptTurnSessions.waitForSettlement(executionKey);
 }
 
 function structuredContent(text: string): unknown | undefined {
