@@ -71,6 +71,11 @@ let activeLeases = 0;
 const activeConnections = new Map<string, ActiveLeaseRecord>();
 const activeAdmissions = new Map<string, symbol>();
 
+function getActiveCount(): number {
+  const allActive = new Set([...activeAdmissions.keys(), ...activeConnections.keys()]);
+  return allActive.size;
+}
+
 export function acquireChatGptWebRuntimeAdmission(
   connectionId: string,
   owner: "clean-room" | "codex" | "verification"
@@ -79,7 +84,8 @@ export function acquireChatGptWebRuntimeAdmission(
   if (
     !normalizedConnectionId ||
     activeAdmissions.has(normalizedConnectionId) ||
-    activeAdmissions.size >= getMaxActiveLeases()
+    activeConnections.has(normalizedConnectionId) ||
+    getActiveCount() >= getMaxActiveLeases()
   ) {
     throw new ChatGptWebRuntimeGuardError(
       "CHATGPT_BROWSER_BUSY",

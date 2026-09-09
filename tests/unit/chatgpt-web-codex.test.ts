@@ -26,6 +26,7 @@ import {
   ensureConnectionStorageState,
   readConnectionStorageState,
 } from "../../open-sse/executors/chatgpt-web-codex/storageState.ts";
+import { getChatGptWebCodexDoctorStatus } from "../../open-sse/executors/chatgpt-web-codex/doctor.ts";
 import {
   buildTunnelRuntimeStatusArgs,
   buildTunnelRuntimeStopArgs,
@@ -613,7 +614,10 @@ test("pins tunnel-client 0.0.13 and upgrades previously shipped builds", () => {
 
 test("turn broker holds a tool invocation and rejects wrong or duplicate results", async () => {
   const root = mkdtempSync(join(tmpdir(), "omniroute-cgw-broker-"));
-  const socketPath = join(root, "runtime", "turn-broker.sock");
+  const socketPath =
+    process.platform === "win32"
+      ? `\\\\.\\pipe\\omniroute-cgw-broker-${Date.now()}`
+      : join(root, "runtime", "turn-broker.sock");
   const broker = TurnBroker.forSocket(socketPath);
   try {
     const token = await broker.register(
@@ -660,7 +664,10 @@ test("turn broker holds a tool invocation and rejects wrong or duplicate results
 
 test("revoking a turn rejects a pending connector invocation", async () => {
   const root = mkdtempSync(join(tmpdir(), "omniroute-cgw-revoke-"));
-  const socketPath = join(root, "runtime", "turn-broker.sock");
+  const socketPath =
+    process.platform === "win32"
+      ? `\\\\.\\pipe\\omniroute-cgw-revoke-${Date.now()}`
+      : join(root, "runtime", "turn-broker.sock");
   const broker = TurnBroker.forSocket(socketPath);
   try {
     const token = await broker.register(
@@ -698,7 +705,10 @@ test("revoking a turn rejects a pending connector invocation", async () => {
 
 test("an explicitly bounded turn token expires closed", async () => {
   const root = mkdtempSync(join(tmpdir(), "omniroute-cgw-expiry-"));
-  const socketPath = join(root, "runtime", "turn-broker.sock");
+  const socketPath =
+    process.platform === "win32"
+      ? `\\\\.\\pipe\\omniroute-cgw-expiry-${Date.now()}`
+      : join(root, "runtime", "turn-broker.sock");
   const broker = TurnBroker.forSocket(socketPath);
   try {
     const token = await broker.register(
@@ -1149,3 +1159,40 @@ test("a previous_response_id binding miss does not cool down the ChatGPT Web Cod
   assert.equal(result.cooldownMs, 0);
   assert.equal(result.skipProviderBreaker, true);
 });
+
+test("browserLoginStateExists detects stale marker TTL and storageState fingerprint mismatch", () => {
+  const root = mkdtempSync(join(tmpdir(), "cgw-marker-freshness-"));
+  const statePath = join(root, "storage-state.json");
+  const markerPath = loginVerificationMarkerPath(statePath);
+
+  try {
+    writeFileSync(statePath, JSON.stringify({ cookies: [{ name: "token", value: "abc" }] }));
+    writeVerificationMarker(statePath, { solAvailable: true, proAvailable: true });
+    assert.equal(browserLoginStateExists({ storageStatePath: statePath }), true);
+
+    // 1. Mutate storage-state -> fingerprint mismatch invalidates marker:
+    writeFileSync(statePath, JSON.stringify({ cookies: [{ name: "token", value: "different_value" }] }));
+    assert.equal(browserLoginStateExists({ storageStatePath: statePath }), false);
+
+    // 2. Restore matching content, but set verifiedAt to 8 days ago (> 7-day TTL):
+    writeFileSync(statePath, JSON.stringify({ cookies: [{ name: "token", value: "abc" }] }));
+    const validMarker = JSON.parse(readFileSync(markerPath, "utf8")) as Record<string, unknown>;
+    const staleDate = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString();
+    writeFileSync(markerPath, JSON.stringify({ ...validMarker, verifiedAt: staleDate }));
+    assert.equal(browserLoginStateExists({ storageStatePath: statePath }), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("doctor status evaluates cleanly without ReferenceError for verified and unverified state", async () => {
+  const unverified = await getChatGptWebCodexDoctorStatus({
+    id: "conn-doctor-unverified",
+    apiKey: encodeChatGptWebCodexSecrets({ cookie: "__Secure-next-auth.session-token=TEST_ONLY" }),
+    providerSpecificData: {},
+  });
+  assert.equal(typeof unverified.verification.verified, "boolean");
+  assert.equal(unverified.verification.verified, false);
+  assert.equal(unverified.login.ready, false);
+});
+
