@@ -26,6 +26,11 @@ import {
   ERROR_TYPE_LABELS,
   validationBadgeProps,
 } from "../../src/app/(dashboard)/dashboard/providers/[id]/providerPageHelpers.ts";
+import {
+  CHATGPT_EFFORT_SLIDER_CONTAINER_SELECTOR,
+  chatGptEffortSlider,
+  parseChatGptEffortSliderState,
+} from "../../open-sse/vendor/codex-chatgpt-web/chatgpt-session.ts";
 
 const VALID_COOKIE =
   "__Secure-next-auth.session-token=mock-valid-session-token-abc123xyz; path=/; domain=.chatgpt.com";
@@ -343,4 +348,35 @@ test("Test F — UI validation badge maps pending to warning Pending Verificatio
   const failedBadge = validationBadgeProps("failed");
   assert.equal(failedBadge.variant, "error");
   assert.equal(failedBadge.fallback, "Invalid");
+});
+
+test("Test G — chatGptEffortSlider targets visible container with attached semantic slider", () => {
+  const container = { isVisible: async () => true };
+  const slider = {
+    isVisible: async () => false,
+    getAttribute: async (attr: string) =>
+      attr === "aria-valuemin" ? "0" : attr === "aria-valuemax" ? "4" : "2",
+  };
+  const mockPage = {
+    locator: (selector: string) => {
+      if (selector === CHATGPT_EFFORT_SLIDER_CONTAINER_SELECTOR) {
+        return {
+          filter: () => ({
+            last: () => ({
+              ...container,
+              locator: (childSel: string) => (childSel === '[role="slider"]' ? slider : null),
+            }),
+          }),
+        };
+      }
+      return null;
+    },
+  } as unknown as import("playwright").Page;
+
+  const result = chatGptEffortSlider(mockPage);
+  assert.ok(result.sliderContainer);
+  assert.ok(result.slider);
+
+  const parsed = parseChatGptEffortSliderState("0", "4", "2");
+  assert.deepEqual(parsed, { min: 0, max: 4, value: 2 });
 });

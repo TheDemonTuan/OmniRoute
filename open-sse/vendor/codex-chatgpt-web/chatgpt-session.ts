@@ -18,6 +18,7 @@ export const CHATGPT_EFFORT_MENU_SELECTOR = [
   '[role="group"]:has([role="menuitemradio"], [data-model-reasoning-effort-slider])',
 ].join(", ");
 export const CHATGPT_EFFORT_ITEM_SELECTOR = '[role="menuitemradio"]';
+export const CHATGPT_EFFORT_SLIDER_CONTAINER_SELECTOR = "[data-model-reasoning-effort-slider]";
 export const CHATGPT_EFFORT_SLIDER_SELECTOR =
   '[data-model-reasoning-effort-slider] [role="slider"]';
 export const CHATGPT_EFFORT_SLIDER_MAX_OPTIONS = 5;
@@ -44,6 +45,14 @@ function safeIntegerAttribute(value: string | null): number | undefined {
   if (value === null || !/^-?\d+$/.test(value)) return undefined;
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) ? parsed : undefined;
+}
+
+export function chatGptEffortSlider(page: Page): { sliderContainer: Locator; slider: Locator } {
+  const sliderContainer = page
+    .locator(CHATGPT_EFFORT_SLIDER_CONTAINER_SELECTOR)
+    .filter({ visible: true })
+    .last();
+  return { sliderContainer, slider: sliderContainer.locator('[role="slider"]') };
 }
 
 export function parseChatGptEffortSliderState(
@@ -151,24 +160,39 @@ export async function detectChatGptAccountCapabilities(
   const menu = page.locator(CHATGPT_EFFORT_MENU_SELECTOR).last();
   const menuVisible = await menu.isVisible().catch(() => false);
   const menuExpanded = await effortButton.getAttribute("aria-expanded").catch(() => null);
-  if (!menuVisible && menuExpanded !== "true") await effortButton.press("Enter");
+  if (!menuVisible && menuExpanded !== "true") {
+    await effortButton.click({ force: true }).catch(async () => {
+      await effortButton.press("Enter").catch(() => {});
+    });
+  }
   try {
     const efforts = menu.locator(CHATGPT_EFFORT_ITEM_SELECTOR);
-    const slider = page.locator(CHATGPT_EFFORT_SLIDER_SELECTOR).filter({ visible: true }).last();
+    const { sliderContainer, slider } = chatGptEffortSlider(page);
+    const timeout = Math.min(options.selectorTimeoutMs ?? 15_000, 30_000);
     const waitAbort = new AbortController();
     try {
-      const timeoutMs = Math.max(1, deadline - Date.now());
+      const effectiveTimeout = Math.min(timeout, Math.max(1, deadline - Date.now()));
       const ready = await Promise.race([
         efforts
           .first()
-          .waitFor({ state: "visible", timeout: timeoutMs, signal: waitAbort.signal })
+          .waitFor({ state: "visible", timeout: effectiveTimeout, signal: waitAbort.signal })
           .then(() => "items" as const),
-        slider
-          .waitFor({ state: "visible", timeout: timeoutMs, signal: waitAbort.signal })
+        sliderContainer
+          .waitFor({ state: "visible", timeout: effectiveTimeout, signal: waitAbort.signal })
+          .then(() =>
+            slider.waitFor({
+              state: "attached",
+              timeout: effectiveTimeout,
+              signal: waitAbort.signal,
+            })
+          )
           .then(() => "slider" as const),
       ]);
-      const sliderVisible = ready === "slider" || (await slider.isVisible().catch(() => false));
-      if (!sliderVisible) {
+      const sliderActive =
+        ready === "slider" ||
+        (await sliderContainer.isVisible().catch(() => false)) ||
+        (await slider.isVisible().catch(() => false));
+      if (!sliderActive) {
         return { solAvailable: true, proAvailable: (await efforts.count()) >= 5 };
       }
       const state = parseChatGptEffortSliderState(

@@ -59,7 +59,7 @@ import {
   CHATGPT_EFFORT_CONTROL_SELECTOR,
   CHATGPT_EFFORT_ITEM_SELECTOR,
   CHATGPT_EFFORT_MENU_SELECTOR,
-  CHATGPT_EFFORT_SLIDER_SELECTOR,
+  chatGptEffortSlider,
   CHATGPT_STOP_BUTTON_SELECTOR,
   CHATGPT_TEMPORARY_CHAT_URL,
   CHATGPT_USER_TURN_SELECTOR,
@@ -1924,10 +1924,8 @@ export class ChatGptBrowserWorker {
     await captureDiagnostic?.("effort-menu-open-requested");
     const effortChoices = effortMenu.locator(CHATGPT_EFFORT_ITEM_SELECTOR);
     const effortChoice = effortChoices.nth(uiEffortIndex);
-    const effortSlider = page
-      .locator(CHATGPT_EFFORT_SLIDER_SELECTOR)
-      .filter({ visible: true })
-      .last();
+    const { sliderContainer: effortSliderContainer, slider: effortSlider } =
+      chatGptEffortSlider(page);
     const waitAbort = new AbortController();
     let ready: "effort" | "slider" | "rate-limit" | "session-expired";
     try {
@@ -1935,8 +1933,11 @@ export class ChatGptBrowserWorker {
         effortChoice
           .waitFor({ state: "visible", timeout: 70_000, signal: waitAbort.signal })
           .then(() => "effort" as const),
-        effortSlider
+        effortSliderContainer
           .waitFor({ state: "visible", timeout: 70_000, signal: waitAbort.signal })
+          .then(() =>
+            effortSlider.waitFor({ state: "attached", timeout: 70_000, signal: waitAbort.signal })
+          )
           .then(() => "slider" as const),
         chatGptRateLimitDialog(page)
           .waitFor({ state: "visible", timeout: 70_000, signal: waitAbort.signal })
@@ -1949,7 +1950,11 @@ export class ChatGptBrowserWorker {
       if (ready === "session-expired") await throwIfChatGptSessionFailureAlert(page);
       // The current picker exposes model rows as menuitemradio alongside the effort slider.
       // Those rows can win the locator race even though they are not effort choices.
-      if (ready !== "slider" && (await effortSlider.isVisible().catch(() => false)))
+      if (
+        ready !== "slider" &&
+        ((await effortSliderContainer.isVisible().catch(() => false)) ||
+          (await effortSlider.isVisible().catch(() => false)))
+      )
         ready = "slider";
       await captureDiagnostic?.(
         ready === "slider" ? "effort-slider-visible" : "effort-choice-visible"

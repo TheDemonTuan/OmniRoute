@@ -21,8 +21,18 @@ function statusForAdapterError(message: string): number {
   ) {
     return 429;
   }
-  if (/request|messages|prompt|model|tools|text content|reasoning effort/i.test(message))
+  if (
+    /(?:first-party|request client|bridge|evaluate:|browser|cdp lease|timed? out)/i.test(message)
+  ) {
+    return 502;
+  }
+  if (
+    /(?:invalid|malformed|missing|unsupported) (?:messages?|prompt|models?|tools?|text content|reasoning effort)/i.test(
+      message
+    )
+  ) {
     return 400;
+  }
   return 502;
 }
 

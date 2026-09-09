@@ -92,13 +92,28 @@ function escapeRegExp(value: string): string {
 }
 
 function exportedName(source: string, localName: string): string | null {
-  const exportStart = source.lastIndexOf("export{");
-  if (exportStart < 0) return null;
-  const exportBlock = source.slice(exportStart + "export{".length);
-  const match = exportBlock.match(
-    new RegExp(`(?:^|,)${escapeRegExp(localName)} as ([A-Za-z_$][\\w$]*)`)
-  );
-  return match?.[1] ?? null;
+  const exportMatches = source.match(/export\s*\{([^}]+)\}/g);
+  if (!exportMatches) {
+    const exportStart = source.lastIndexOf("export{");
+    if (exportStart < 0) return null;
+    const exportBlock = source.slice(exportStart + "export{".length);
+    const match = exportBlock.match(
+      new RegExp(`(?:^|,)${escapeRegExp(localName)} as ([A-Za-z_$][\\w$]*)`)
+    );
+    return match?.[1] ?? null;
+  }
+  for (let i = exportMatches.length - 1; i >= 0; i--) {
+    const block = exportMatches[i];
+    const asMatch = block.match(
+      new RegExp(`(?:^|[{,\\s])${escapeRegExp(localName)}\\s+as\\s+([A-Za-z_$][\\w$]*)`)
+    );
+    if (asMatch?.[1]) return asMatch[1];
+    const directMatch = block.match(
+      new RegExp(`(?:^|[{,\\s])${escapeRegExp(localName)}(?:$|[,\\s}])`)
+    );
+    if (directMatch) return localName;
+  }
+  return null;
 }
 
 /**
@@ -109,16 +124,16 @@ export function parseChatGptWebFirstPartyModuleContract(
   source: string
 ): ChatGptWebFirstPartyModuleContract {
   const finalizeLocal = source.match(
-    /function ([A-Za-z_$][\w$]*)\(e=!1,t=`none`(?:,n=[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)?)?\)\{return [A-Za-z_$][\w$]*\(`finalized`,e,t(?:,n)?\)\}/
+    /function ([A-Za-z_$][\w$]*)\(e=!1,t=["'`]none["'`](?:,n=[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)?)?\)\{return [A-Za-z_$][\w$]*\(["'`]finalized["'`],e,t(?:,n)?\)\}/
   )?.[1];
   const enforcement = source.match(
     /Promise\.all\(\[([A-Za-z_$][\w$]*)\.getEnforcementToken\(t,\{forceSync:!0\}\),([A-Za-z_$][\w$]*)\.getEnforcementToken\(t\)\]\)/
   );
   const requestClientLocal = source.match(
-    /([A-Za-z_$][\w$]*)\.safePost\(`\/sentinel\/chat-requirements\/prepare`/
+    /([A-Za-z_$][\w$]*)\.safePost\(["'`]\/sentinel\/chat-requirements\/prepare["'`]/
   )?.[1];
   const headerBuilderLocal = source.match(
-    /function ([A-Za-z_$][\w$]*)\(e,t,n,r,i,a\)\{let o=\{\};return e\?\.token\?o\[`OpenAI-Sentinel-Chat-Requirements-Token`\]/
+    /function ([A-Za-z_$][\w$]*)\(e,t,n,r,i,a\)\{let o=\{\};return e\?\.token\?o\[["'`]OpenAI-Sentinel-Chat-Requirements-Token["'`]\]/
   )?.[1];
   const proofLocal = enforcement?.[1];
   const turnstileLocal = enforcement?.[2];
@@ -323,14 +338,27 @@ function buildBridgeModuleSource(
   return [
     `import * as upstream from ${urlLiteral};`,
     `const names = ${contractLiteral};`,
-    `window[${keyLiteral}] = {`,
-    `finalizeRequirements: upstream[names.finalizeRequirements],`,
-    `proofManager: upstream[names.proofManager],`,
-    `turnstileManager: upstream[names.turnstileManager],`,
-    `requestClient: upstream[names.requestClient],`,
-    `buildSentinelHeaders: upstream[names.buildSentinelHeaders]`,
+    `const resolveMember = (name) => {`,
+    `  if (!name) return undefined;`,
+    `  const direct = upstream[name];`,
+    `  if (direct !== undefined) return direct;`,
+    `  if (upstream.default && typeof upstream.default === "object") return upstream.default[name];`,
+    `  return undefined;`,
     `};`,
-  ].join("");
+    `const rawClient = resolveMember(names.requestClient);`,
+    `const client = (rawClient && typeof rawClient === "object" && typeof rawClient.safePost === "function")`,
+    `  ? rawClient`,
+    `  : (typeof rawClient === "function" && rawClient.safePost) ? rawClient`,
+    `  : (rawClient && typeof rawClient === "object" && rawClient.client && typeof rawClient.client.safePost === "function") ? rawClient.client`,
+    `  : rawClient;`,
+    `window[${keyLiteral}] = {`,
+    `  finalizeRequirements: resolveMember(names.finalizeRequirements),`,
+    `  proofManager: resolveMember(names.proofManager),`,
+    `  turnstileManager: resolveMember(names.turnstileManager),`,
+    `  requestClient: client,`,
+    `  buildSentinelHeaders: resolveMember(names.buildSentinelHeaders)`,
+    `};`,
+  ].join("\n");
 }
 
 async function ensureFirstPartyBridge(page: Page): Promise<void> {
@@ -358,40 +386,50 @@ async function ensureFirstPartyBridge(page: Page): Promise<void> {
 
   const { assetUrl, contract } = await discoverFirstPartyModule(page);
   const moduleSource = buildBridgeModuleSource(assetUrl, contract);
-  await page.evaluate(
-    ({ bridgeKey, moduleSource: source }) =>
-      new Promise<void>((resolve, reject) => {
-        const root = globalThis as typeof globalThis & Record<string, unknown>;
-        const blobUrl = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
-        const script = document.createElement("script");
-        script.type = "module";
-        script.src = blobUrl;
-        script.onload = () => {
-          URL.revokeObjectURL(blobUrl);
-          const bridge = root[bridgeKey] as FirstPartyBridge | null;
-          if (
-            bridge &&
-            typeof bridge.finalizeRequirements === "function" &&
-            typeof bridge.proofManager?.getEnforcementToken === "function" &&
-            typeof bridge.turnstileManager?.getEnforcementToken === "function" &&
-            typeof bridge.requestClient?.safePost === "function" &&
-            typeof bridge.buildSentinelHeaders === "function"
-          ) {
-            resolve();
-          } else {
+  try {
+    await page.evaluate(
+      ({ bridgeKey, moduleSource: source }) =>
+        new Promise<void>((resolve, reject) => {
+          const root = globalThis as typeof globalThis & Record<string, unknown>;
+          const blobUrl = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
+          const script = document.createElement("script");
+          script.type = "module";
+          script.src = blobUrl;
+          script.onload = () => {
+            URL.revokeObjectURL(blobUrl);
+            const bridge = root[bridgeKey] as FirstPartyBridge | null;
+            if (
+              bridge &&
+              typeof bridge.finalizeRequirements === "function" &&
+              typeof bridge.proofManager?.getEnforcementToken === "function" &&
+              typeof bridge.turnstileManager?.getEnforcementToken === "function" &&
+              typeof bridge.requestClient?.safePost === "function" &&
+              typeof bridge.buildSentinelHeaders === "function"
+            ) {
+              resolve();
+            } else {
+              delete root[bridgeKey];
+              reject(
+                new Error("ChatGPT Web first-party bridge did not expose the required client")
+              );
+            }
+          };
+          script.onerror = () => {
+            URL.revokeObjectURL(blobUrl);
             delete root[bridgeKey];
-            reject(new Error("ChatGPT Web first-party bridge did not expose the required client"));
-          }
-        };
-        script.onerror = () => {
-          URL.revokeObjectURL(blobUrl);
-          delete root[bridgeKey];
-          reject(new Error("ChatGPT Web first-party bridge module failed to load"));
-        };
-        document.head.appendChild(script);
-      }),
-    { bridgeKey: FIRST_PARTY_BRIDGE_KEY, moduleSource }
-  );
+            reject(new Error("ChatGPT Web first-party bridge module failed to load"));
+          };
+          document.head.appendChild(script);
+        }),
+      { bridgeKey: FIRST_PARTY_BRIDGE_KEY, moduleSource }
+    );
+  } catch (error) {
+    contractCache.delete(assetUrl);
+    if (lastKnownModuleAssetUrl === assetUrl) {
+      lastKnownModuleAssetUrl = null;
+    }
+    throw error;
+  }
 }
 
 function directModel(selection: ChatGptWebUiSelection): { model: string; reason: boolean } {
@@ -409,6 +447,11 @@ async function registerAttachments(
   return page.evaluate(
     async ({ abortKey, attachments: metadata, bridgeKey, requestId }) => {
       const root = globalThis as typeof globalThis & Record<string, unknown>;
+      const abortStore = (root[abortKey] ??= {}) as Record<string, AbortController>;
+      const controller = (abortStore[requestId] ??= new AbortController());
+      if (!metadata || metadata.length === 0) {
+        return [];
+      }
       const bridge = root[bridgeKey] as {
         requestClient?: {
           safePost(path: string, options: JsonRecord): Promise<unknown>;
@@ -417,9 +460,6 @@ async function registerAttachments(
       if (typeof bridge?.requestClient?.safePost !== "function") {
         throw new Error("ChatGPT Web first-party request client is unavailable");
       }
-      const abortStore = (root[abortKey] ??= {}) as Record<string, AbortController>;
-      const controller = new AbortController();
-      abortStore[requestId] = controller;
       const registered: BrowserRegisteredAttachment[] = [];
       for (const attachment of metadata) {
         const useCase = attachment.kind === "image" ? "multimodal" : "my_files";
@@ -527,6 +567,9 @@ async function processRegisteredAttachments(
   requestId: string,
   registered: BrowserConversationAttachment[]
 ): Promise<void> {
+  if (!registered || registered.length === 0) {
+    return;
+  }
   await page.evaluate(
     async ({ abortKey, bridgeKey, registered, requestId }) => {
       const root = globalThis as typeof globalThis & Record<string, unknown>;
@@ -584,8 +627,12 @@ async function storeConversationDraft(
 ): Promise<void> {
   const mode = directModel(input.selection);
   await page.evaluate(
-    ({ mode, prompt, registered, requestId, requestKey }) => {
+    ({ abortKey, mode, prompt, registered, requestId, requestKey }) => {
       const root = globalThis as typeof globalThis & Record<string, unknown>;
+      const abortStore = (root[abortKey] ??= {}) as Record<string, AbortController>;
+      if (!abortStore[requestId]) {
+        abortStore[requestId] = new AbortController();
+      }
       const images = registered.filter((item) => item.kind === "image");
       const attachments = registered.map((item) => ({
         id: item.fileId,
@@ -644,6 +691,7 @@ async function storeConversationDraft(
       };
     },
     {
+      abortKey: FIRST_PARTY_ABORT_KEY,
       mode,
       prompt: input.prompt,
       registered,

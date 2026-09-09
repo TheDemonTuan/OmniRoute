@@ -9,6 +9,7 @@ import {
   parseChatGptWebFirstPartyModuleContract,
   type ChatGptWebFirstPartyModuleContract,
 } from "../../open-sse/utils/chatgptWebFirstParty.ts";
+import { ChatGptWebExecutor } from "../../open-sse/executors/chatgpt-web.ts";
 import type { ChatGptWebResolvedAttachment } from "../../open-sse/utils/chatgptWebAttachments.ts";
 
 type SafePost = (path: string, options: Record<string, unknown>) => Promise<unknown>;
@@ -275,5 +276,24 @@ describe("ChatGPT Web first-party request execution", () => {
     } finally {
       restoreBridge();
     }
+  });
+
+  test("maps unavailable first-party request client to 502 rather than 400 bad request", async () => {
+    const executor = new ChatGptWebExecutor({
+      executeTurn: async () => {
+        throw new Error("evaluate: Error: ChatGPT Web first-party request client is unavailable");
+      },
+    });
+
+    const result = await executor.execute({
+      body: {
+        model: "chatgpt-web/gpt-5-5",
+        messages: [{ role: "user", content: "hello" }],
+      },
+      headers: {},
+      auth: { apiKey: "__Secure-next-auth.session-token=fake-token" },
+    } as unknown as import("../../open-sse/executors/base.ts").ExecuteInput);
+
+    assert.equal(result.response.status, 502);
   });
 });
