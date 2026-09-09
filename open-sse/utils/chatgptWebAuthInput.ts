@@ -187,7 +187,7 @@ function fromCookieHeader(raw: string, allowBareSessionToken: boolean): Imported
         }
         fail(
           "AUTH_COOKIE_HEADER",
-          "Expected Cookie: name=value; name=value, or a JSON cookie export/storage state."
+          "Expected name=value; name=value from the Cookie request header, or browser storage-state JSON."
         );
       }
       return [pair.slice(0, equals).trim(), pair.slice(equals + 1)] as const;

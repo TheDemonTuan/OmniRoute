@@ -157,13 +157,14 @@ export async function detectChatGptAccountCapabilities(
     const slider = page.locator(CHATGPT_EFFORT_SLIDER_SELECTOR).filter({ visible: true }).last();
     const waitAbort = new AbortController();
     try {
+      const timeoutMs = Math.max(1, deadline - Date.now());
       const ready = await Promise.race([
         efforts
           .first()
-          .waitFor({ state: "visible", timeout: 70_000, signal: waitAbort.signal })
+          .waitFor({ state: "visible", timeout: timeoutMs, signal: waitAbort.signal })
           .then(() => "items" as const),
         slider
-          .waitFor({ state: "visible", timeout: 70_000, signal: waitAbort.signal })
+          .waitFor({ state: "visible", timeout: timeoutMs, signal: waitAbort.signal })
           .then(() => "slider" as const),
       ]);
       const sliderVisible = ready === "slider" || (await slider.isVisible().catch(() => false));

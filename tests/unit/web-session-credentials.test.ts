@@ -14,6 +14,15 @@ test("web session credential metadata covers every web-cookie provider", () => {
   }
 });
 
+test("ChatGPT Web accepts the full Cookie request header without requiring storageState", () => {
+  const requirement = webSessionCredentials.getWebSessionCredentialRequirement("chatgpt-web");
+  assert.ok(requirement && requirement.kind === "cookie");
+  assert.equal(requirement.credentialName, "ChatGPT Cookie header (full)");
+  assert.equal(requirement.acceptsFullCookieHeader, true);
+  assert.match(requirement.hintFallback ?? "", /Cookie request-header value/);
+  assert.doesNotMatch(requirement.hintFallback ?? "", /intentionally rejected/);
+});
+
 test("web session credential metadata identifies cookie, token, and no-auth providers", () => {
   // Grok needs BOTH sso and sso-rw cookies (#3180). #7567 added the proactive
   // cf_clearance/User-Agent hint — assert its intent, don't freeze operator copy.
