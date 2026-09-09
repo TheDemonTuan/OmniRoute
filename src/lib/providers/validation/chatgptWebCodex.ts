@@ -84,39 +84,12 @@ export async function validateChatGptWebCodexProvider({
     const { resolveChatGptWebCodexBrowserRuntime } =
       await import("@omniroute/open-sse/services/chatgptWebCodexAdmin.ts");
     const runtime = resolveChatGptWebCodexBrowserRuntime(providerSpecificData);
+    const verifyBrowserLogin = providerSpecificData.verifyBrowserLogin === true;
 
-    if (!runtime.available) {
-      return {
-        valid: true,
-        error: null,
-        pendingBrowserVerification: true,
-        method: "structural-validation",
-        capabilities: {
-          browser: "unavailable",
-          storageState: "pending",
-          login: "pending",
-          temporaryChats: "pending",
-          solAvailable: true,
-          proAvailable: false,
-        },
-        providerSpecificData: {
-          browserVerified: false,
-          pendingBrowserVerification: true,
-          connectorName,
-          ...(runtimeKey ? { runtimeKey } : {}),
-          ...(tunnelId ? { tunnelId } : {}),
-          ...(freshCookie ? { validationId } : {}),
-        },
-        runtime: {
-          available: false,
-          reason: "browser_unavailable",
-        },
-      };
-    }
-
-    let capabilities;
-    try {
-      capabilities = await inspectBrowserLoginCapabilities({
+    // Saving a connection must not wait for a remote ChatGPT page or its volatile UI.
+    // An explicit connection test or request performs browser authentication.
+    if (verifyBrowserLogin && runtime.available) {
+      const capabilities = await inspectBrowserLoginCapabilities({
         appName: connectorName,
         ...(runtime.chromeExecutablePath
           ? { chromeExecutablePath: runtime.chromeExecutablePath }
@@ -126,42 +99,69 @@ export async function validateChatGptWebCodexProvider({
         headed: CHATGPT_WEB_CODEX_RUNTIME_HEADED,
         proAvailable: false,
         autoApproveToolCalls: false,
+        verificationTimeoutMs: 25_000,
       });
-    } catch (error) {
-      rmSync(paths.root, { recursive: true, force: true });
-      throw error;
+      if (!freshCookie) rmSync(paths.root, { recursive: true, force: true });
+      return {
+        valid: true,
+        error: null,
+        pendingBrowserVerification: false,
+        method: runtime.cdpEndpoint ? "cdp-browser" : "headed-browser",
+        capabilities: {
+          browser: "ready",
+          storageState: "verified",
+          login: "authenticated",
+          temporaryChats: "ready",
+          solAvailable: capabilities.solAvailable,
+          proAvailable: capabilities.proAvailable,
+        },
+        providerSpecificData: {
+          solAvailable: capabilities.solAvailable,
+          proAvailable: capabilities.proAvailable,
+          browserVerified: true,
+          pendingBrowserVerification: false,
+          connectorName,
+          ...(runtime.chromeExecutablePath
+            ? { chromeExecutablePath: runtime.chromeExecutablePath }
+            : {}),
+          ...(runtime.cdpEndpoint ? { browserCdpEndpoint: runtime.cdpEndpoint } : {}),
+          ...(runtimeKey ? { runtimeKey } : {}),
+          ...(tunnelId ? { tunnelId } : {}),
+          ...(freshCookie ? { validationId } : {}),
+        },
+        runtime: { available: true, mode: runtime.mode },
+      };
     }
+
     if (!freshCookie) rmSync(paths.root, { recursive: true, force: true });
     return {
       valid: true,
       error: null,
-      pendingBrowserVerification: false,
-      method: runtime.cdpEndpoint ? "cdp-browser" : "headed-browser",
+      pendingBrowserVerification: true,
+      method: "structural-validation",
       capabilities: {
-        browser: "ready",
-        storageState: "verified",
-        login: "authenticated",
-        temporaryChats: "ready",
-        solAvailable: capabilities.solAvailable,
-        proAvailable: capabilities.proAvailable,
+        browser: runtime.available ? "pending" : "unavailable",
+        storageState: "pending",
+        login: "pending",
+        temporaryChats: "pending",
+        solAvailable: true,
+        proAvailable: false,
       },
       providerSpecificData: {
-        solAvailable: capabilities.solAvailable,
-        proAvailable: capabilities.proAvailable,
-        browserVerified: true,
-        pendingBrowserVerification: false,
+        browserVerified: false,
+        pendingBrowserVerification: true,
         connectorName,
         ...(runtime.chromeExecutablePath
           ? { chromeExecutablePath: runtime.chromeExecutablePath }
           : {}),
+        ...(runtime.cdpEndpoint ? { browserCdpEndpoint: runtime.cdpEndpoint } : {}),
         ...(runtimeKey ? { runtimeKey } : {}),
         ...(tunnelId ? { tunnelId } : {}),
         ...(freshCookie ? { validationId } : {}),
       },
-      runtime: {
-        available: true,
-        mode: runtime.mode,
-      },
+      runtime: runtime.available
+        ? { available: true, mode: runtime.mode }
+        : { available: false, reason: "browser_unavailable" },
     };
   } catch (error) {
     return {

@@ -7,6 +7,7 @@ import { isCloudEnabled, resolveProxyForConnection } from "@/lib/db/settings";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 import { syncToCloud } from "@/lib/cloudSync";
 import { validateProviderApiKey } from "@/lib/providers/validation";
+import { validateChatGptWebCodexProvider } from "@/lib/providers/validation/chatgptWebCodex";
 import { projectProviderValidationResultForPublicResponse } from "@/lib/providers/validation/transport";
 import { getCliRuntimeStatus } from "@/shared/services/cliRuntime";
 import { buildQoderCliNotFoundHint } from "@omniroute/open-sse/services/qoderCliResolve.ts";
@@ -843,13 +844,19 @@ async function testApiKeyConnection(connection: any) {
     };
   }
 
-  const result = projectProviderValidationResultForPublicResponse(
-    await validateProviderApiKey({
-      provider: connection.provider,
-      apiKey: connection.apiKey,
-      providerSpecificData: connection.providerSpecificData,
-    })
-  );
+  const providerSpecificData = (connection.providerSpecificData as Record<string, unknown>) || {};
+  const validation =
+    connection.provider === "chatgpt-web-codex"
+      ? await validateChatGptWebCodexProvider({
+          apiKey: connection.apiKey,
+          providerSpecificData: { ...providerSpecificData, verifyBrowserLogin: true },
+        })
+      : await validateProviderApiKey({
+          provider: connection.provider,
+          apiKey: connection.apiKey,
+          providerSpecificData,
+        });
+  const result = projectProviderValidationResultForPublicResponse(validation);
 
   if (result.unsupported) {
     const error = "Provider test not supported";
@@ -1045,9 +1052,9 @@ export async function testSingleConnection(connectionId: string, validationModel
 
   const isPendingVerification = Boolean(
     (result as any).pendingBrowserVerification ||
-      (connection.provider === "chatgpt-web-codex" &&
-        ((result as any).capabilities?.browser === "unavailable" ||
-          (result as any).pendingBrowserVerification))
+    (connection.provider === "chatgpt-web-codex" &&
+      ((result as any).capabilities?.browser === "unavailable" ||
+        (result as any).pendingBrowserVerification))
   );
 
   const updateData: Record<string, any> = {
@@ -1104,6 +1111,13 @@ export async function testSingleConnection(connectionId: string, validationModel
   if (result.valid && (connection.apiKey || connection.accessToken)) {
     const recovered = recoverKeyHealth(connectionId, "primary", connection.providerSpecificData);
     if (recovered) updateData.providerSpecificData = recovered;
+  }
+
+  if (connection.provider === "chatgpt-web-codex" && (result as any).providerSpecificData) {
+    updateData.providerSpecificData = {
+      ...((connection.providerSpecificData as Record<string, unknown>) || {}),
+      ...((result as any).providerSpecificData as Record<string, unknown>),
+    };
   }
 
   if (result.refreshed && result.newTokens) {

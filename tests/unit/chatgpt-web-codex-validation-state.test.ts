@@ -106,6 +106,33 @@ test("Test A — cookie structurally valid, browser/CDP offline", async () => {
   }
 });
 
+test("Test A1 — validation stays structural when browser runtime is available", async () => {
+  const previousCdp = process.env.CHATGPT_WEB_CODEX_CDP_URL;
+  const root = mkdtempSync(join(tmpdir(), "omniroute-cgw-testa1-"));
+  try {
+    process.env.CHATGPT_WEB_CODEX_CDP_URL = "http://127.0.0.1:9223";
+    process.env.DATA_DIR = root;
+    const startedAt = Date.now();
+    const result = await validateChatGptWebCodexProvider({
+      apiKey: VALID_COOKIE,
+      providerSpecificData: { connectorName: "OmniRoute Test Connector" },
+    });
+
+    assert.ok(Date.now() - startedAt < 2_000);
+    assert.equal(result.valid, true);
+    assert.equal(result.method, "structural-validation");
+    assert.equal(result.pendingBrowserVerification, true);
+    assert.equal(result.runtime?.available, true);
+    assert.equal(result.providerSpecificData?.browserVerified, false);
+    assert.equal(result.providerSpecificData?.pendingBrowserVerification, true);
+  } finally {
+    if (previousCdp !== undefined) process.env.CHATGPT_WEB_CODEX_CDP_URL = previousCdp;
+    else delete process.env.CHATGPT_WEB_CODEX_CDP_URL;
+    delete process.env.DATA_DIR;
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("Test B — cookie malformed missing __Secure-next-auth.session-token", async () => {
   // 1. Validation fails with specific missing session token error
   const result = await validateChatGptWebCodexProvider({

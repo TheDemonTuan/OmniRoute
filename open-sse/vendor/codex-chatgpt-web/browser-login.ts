@@ -28,6 +28,7 @@ export type BrowserLoginConfig = Pick<
 > & {
   chromeExecutablePath?: string;
   cdpEndpoint?: string;
+  verificationTimeoutMs?: number;
 };
 
 interface LoginVerificationMarker {
@@ -95,17 +96,25 @@ async function inspectStoredState(
     const verifierContext = await verifierBrowser.newContext({ storageState });
     try {
       const verifierPage = await verifierContext.newPage();
+      const deadline = Date.now() + (config.verificationTimeoutMs ?? 60_000);
+      const remainingMs = (): number => Math.max(1, deadline - Date.now());
       await verifierPage.goto(CHATGPT_TEMPORARY_CHAT_URL, {
         waitUntil: "domcontentloaded",
-        timeout: 60_000,
+        timeout: remainingMs(),
       });
+      await assertAuthenticatedChatGptPage(verifierPage);
+      await assertTemporaryChatPage(verifierPage);
       await verifierPage
         .locator(CHATGPT_COMPOSER_SELECTOR)
         .first()
-        .waitFor({ state: "visible", timeout: 60_000 });
-      await assertAuthenticatedChatGptPage(verifierPage);
-      await assertTemporaryChatPage(verifierPage);
-      return { ...(await detectChatGptAccountCapabilities(verifierPage)), url: verifierPage.url() };
+        .waitFor({ state: "visible", timeout: remainingMs() });
+      return {
+        ...(await detectChatGptAccountCapabilities(verifierPage, {
+          selectorTimeoutMs: Math.min(5_000, remainingMs()),
+          stableAbsenceMs: 1_000,
+        })),
+        url: verifierPage.url(),
+      };
     } finally {
       await verifierContext.close();
     }

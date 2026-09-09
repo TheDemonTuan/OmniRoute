@@ -5,6 +5,7 @@ import {
   collectChatGptWebFirstPartyAssetCandidates,
   executeChatGptWebFirstPartyTurn,
   extractChatGptWebFirstPartyAssetReferences,
+  isChatGptWebFirstPartyBridgeReady,
   parseChatGptWebFirstPartyModuleContract,
   type ChatGptWebFirstPartyModuleContract,
 } from "../../open-sse/utils/chatgptWebFirstParty.ts";
@@ -46,6 +47,30 @@ function installFirstPartyBridge(safePost: SafePost): () => void {
 }
 
 describe("ChatGPT Web first-party module contract discovery", () => {
+  test("requires every callable required by the first-party request path", () => {
+    assert.equal(isChatGptWebFirstPartyBridgeReady({}), false);
+    assert.equal(
+      isChatGptWebFirstPartyBridgeReady({
+        finalizeRequirements: async () => ({}),
+        proofManager: { getEnforcementToken: async () => "proof" },
+        turnstileManager: { getEnforcementToken: async () => "turnstile" },
+        requestClient: {},
+        buildSentinelHeaders: () => ({}),
+      }),
+      false
+    );
+    assert.equal(
+      isChatGptWebFirstPartyBridgeReady({
+        finalizeRequirements: async () => ({}),
+        proofManager: { getEnforcementToken: async () => "proof" },
+        turnstileManager: { getEnforcementToken: async () => "turnstile" },
+        requestClient: { safePost: async () => new Response() },
+        buildSentinelHeaders: () => ({}),
+      }),
+      true
+    );
+  });
+
   test("discovers semantic helpers without pinning minified export names", () => {
     const source = [
       "async function aa(e,t){let[r,i]=await Promise.all([cc.getEnforcementToken(t,{forceSync:!0}),dd.getEnforcementToken(t)]);return[r,i]}",

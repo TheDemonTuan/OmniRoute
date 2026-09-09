@@ -67,6 +67,26 @@ const contractCache = new Map<string, Promise<ChatGptWebFirstPartyModuleContract
 const pageRequestTails = new WeakMap<Page, Promise<void>>();
 let lastKnownModuleAssetUrl: string | null = null;
 
+type FirstPartyBridge = {
+  finalizeRequirements?: unknown;
+  proofManager?: { getEnforcementToken?: unknown };
+  turnstileManager?: { getEnforcementToken?: unknown };
+  requestClient?: { safePost?: unknown };
+  buildSentinelHeaders?: unknown;
+};
+
+export function isChatGptWebFirstPartyBridgeReady(value: unknown): boolean {
+  const bridge = value as FirstPartyBridge | null;
+  return Boolean(
+    bridge &&
+    typeof bridge.finalizeRequirements === "function" &&
+    typeof bridge.proofManager?.getEnforcementToken === "function" &&
+    typeof bridge.turnstileManager?.getEnforcementToken === "function" &&
+    typeof bridge.requestClient?.safePost === "function" &&
+    typeof bridge.buildSentinelHeaders === "function"
+  );
+}
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -314,11 +334,27 @@ function buildBridgeModuleSource(
 }
 
 async function ensureFirstPartyBridge(page: Page): Promise<void> {
-  const ready = await page.evaluate((key) => {
-    const root = globalThis as typeof globalThis & Record<string, unknown>;
-    return typeof root[key] === "object" && root[key] !== null;
-  }, FIRST_PARTY_BRIDGE_KEY);
+  const ready = await page.evaluate(
+    ({ bridgeKey }) => {
+      const root = globalThis as typeof globalThis & Record<string, unknown>;
+      const bridge = root[bridgeKey] as FirstPartyBridge | null;
+      return Boolean(
+        bridge &&
+        typeof bridge.finalizeRequirements === "function" &&
+        typeof bridge.proofManager?.getEnforcementToken === "function" &&
+        typeof bridge.turnstileManager?.getEnforcementToken === "function" &&
+        typeof bridge.requestClient?.safePost === "function" &&
+        typeof bridge.buildSentinelHeaders === "function"
+      );
+    },
+    { bridgeKey: FIRST_PARTY_BRIDGE_KEY }
+  );
   if (ready) return;
+
+  await page.evaluate((bridgeKey) => {
+    const root = globalThis as typeof globalThis & Record<string, unknown>;
+    delete root[bridgeKey];
+  }, FIRST_PARTY_BRIDGE_KEY);
 
   const { assetUrl, contract } = await discoverFirstPartyModule(page);
   const moduleSource = buildBridgeModuleSource(assetUrl, contract);
@@ -326,21 +362,30 @@ async function ensureFirstPartyBridge(page: Page): Promise<void> {
     ({ bridgeKey, moduleSource: source }) =>
       new Promise<void>((resolve, reject) => {
         const root = globalThis as typeof globalThis & Record<string, unknown>;
-        if (typeof root[bridgeKey] === "object" && root[bridgeKey] !== null) {
-          resolve();
-          return;
-        }
         const blobUrl = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
         const script = document.createElement("script");
         script.type = "module";
         script.src = blobUrl;
         script.onload = () => {
           URL.revokeObjectURL(blobUrl);
-          if (typeof root[bridgeKey] === "object" && root[bridgeKey] !== null) resolve();
-          else reject(new Error("ChatGPT Web first-party bridge did not initialize"));
+          const bridge = root[bridgeKey] as FirstPartyBridge | null;
+          if (
+            bridge &&
+            typeof bridge.finalizeRequirements === "function" &&
+            typeof bridge.proofManager?.getEnforcementToken === "function" &&
+            typeof bridge.turnstileManager?.getEnforcementToken === "function" &&
+            typeof bridge.requestClient?.safePost === "function" &&
+            typeof bridge.buildSentinelHeaders === "function"
+          ) {
+            resolve();
+          } else {
+            delete root[bridgeKey];
+            reject(new Error("ChatGPT Web first-party bridge did not expose the required client"));
+          }
         };
         script.onerror = () => {
           URL.revokeObjectURL(blobUrl);
+          delete root[bridgeKey];
           reject(new Error("ChatGPT Web first-party bridge module failed to load"));
         };
         document.head.appendChild(script);
