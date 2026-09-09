@@ -180,17 +180,24 @@ function buildProviderConfig(
   const cdpEndpoint = browserRuntime.cdpEndpoint;
   const chromeExecutablePath = browserRuntime.chromeExecutablePath;
 
-  const solAvailable = data.solAvailable !== false;
-  const proAvailable = data.proAvailable === true;
-  if (route.sol !== solAvailable) {
+  const solAvailable = data.solAvailable;
+  const proAvailable = data.proAvailable;
+  if (route.sol && solAvailable !== true) {
     throw new Error(
-      route.sol
+      solAvailable === false
         ? "ChatGPT Sol models are not available for this Luna-only connection"
-        : "ChatGPT Luna models are only available for Luna-only connections"
+        : "ChatGPT Sol model availability has not been verified for this connection"
     );
   }
-  if (route.pro && !proAvailable) {
-    throw new Error(`${route.id} is not available for this non-Pro connection`);
+  if (!route.sol && solAvailable === false) {
+    throw new Error("ChatGPT Luna models are only available for Luna-only connections");
+  }
+  if (route.pro && proAvailable !== true) {
+    throw new Error(
+      proAvailable === false
+        ? `${route.id} is not available for this non-Pro connection`
+        : `${route.id} availability has not been verified for this connection`
+    );
   }
 
   const hasTools = toolModeRequired(parsed);
@@ -325,6 +332,12 @@ export class ChatGptWebCodexExecutor extends BaseExecutor {
           503
         );
       }
+      const provider = buildProviderConfig(
+        { ...input, credentials: { ...input.credentials, providerSpecificData: providerData } },
+        parsed,
+        connectionRuntimePaths(connectionId).storageStatePath,
+        connectionId
+      );
       const cdpEndpoint = browserRuntime.cdpEndpoint;
       const chromeExecutablePath = browserRuntime.chromeExecutablePath;
       const runtimePaths = connectionRuntimePaths(connectionId);
@@ -374,15 +387,6 @@ export class ChatGptWebCodexExecutor extends BaseExecutor {
           brokerSocketPath: connectionRuntimePaths(connectionId).brokerSocketPath,
         });
       }
-      const provider = buildProviderConfig(
-        {
-          ...input,
-          credentials: { ...input.credentials, providerSpecificData: providerData },
-        },
-        parsed,
-        storageStatePath,
-        connectionId
-      );
       const adapter = createChatGptWebAdapter(provider);
       const worker = ChatGptBrowserWorker.forProvider(provider);
       trackChatGptWebCodexRuntime(worker, connectionRuntimePaths(connectionId).brokerSocketPath);

@@ -66,6 +66,8 @@ test("Test A — cookie structurally valid, browser/CDP offline", async () => {
     assert.equal(result.runtime?.reason, "browser_unavailable");
     assert.equal(result.providerSpecificData?.pendingBrowserVerification, true);
     assert.equal(result.providerSpecificData?.browserVerified, false);
+    assert.equal(result.providerSpecificData?.solAvailable, null);
+    assert.equal(result.providerSpecificData?.proAvailable, null);
     assert.ok(typeof result.providerSpecificData?.validationId === "string");
 
     // 2. Finalize credential saves cookie with pendingBrowserVerification marker
@@ -95,6 +97,8 @@ test("Test A — cookie structurally valid, browser/CDP offline", async () => {
     assert.equal(doctor.browser.ready, false);
     assert.equal(doctor.verification.pending, true);
     assert.equal(doctor.login.ready, false);
+    assert.equal(doctor.solAvailable, null);
+    assert.equal(doctor.proAvailable, null);
   } finally {
     if (prevCdp !== undefined) process.env.CHATGPT_WEB_CODEX_CDP_URL = prevCdp;
     else delete process.env.CHATGPT_WEB_CODEX_CDP_URL;
@@ -234,15 +238,23 @@ test("Test C2 — invalid server-admin CDP configuration returns a safe runtime 
   const prevGenericCdp = process.env.CHATGPT_WEB_CDP_URL;
   const prevCodexCdp = process.env.CHATGPT_WEB_CODEX_CDP_URL;
   try {
-    process.env.CHATGPT_WEB_CDP_URL = "http://secret:password@browser:9223";
     delete process.env.CHATGPT_WEB_CODEX_CDP_URL;
-    assert.throws(
-      () => resolveChatGptWebCodexBrowserRuntime({ chromeExecutablePath: "disabled" }),
-      (error: unknown) =>
-        error instanceof ChatGptWebCodexRuntimeError &&
-        error.code === "chatgpt_cdp_config_invalid" &&
-        !error.message.includes("password")
-    );
+    for (const endpoint of [
+      "http://secret:password@browser:9223",
+      "http://browser:9223/json/version",
+      "http://browser:9223/?token=secret",
+      "http://browser:0",
+    ]) {
+      process.env.CHATGPT_WEB_CDP_URL = endpoint;
+      assert.throws(
+        () => resolveChatGptWebCodexBrowserRuntime({ chromeExecutablePath: "disabled" }),
+        (error: unknown) =>
+          error instanceof ChatGptWebCodexRuntimeError &&
+          error.code === "chatgpt_cdp_config_invalid" &&
+          !error.message.includes("password") &&
+          !error.message.includes("secret")
+      );
+    }
   } finally {
     if (prevGenericCdp !== undefined) process.env.CHATGPT_WEB_CDP_URL = prevGenericCdp;
     else delete process.env.CHATGPT_WEB_CDP_URL;
@@ -333,6 +345,36 @@ test("Test E — executor returns 503 chatgpt_web_codex_browser_unavailable when
     if (prevDefault !== undefined) process.env.CHATGPT_WEB_CODEX_DEFAULT_CHROME_PATHS = prevDefault;
     else delete process.env.CHATGPT_WEB_CODEX_DEFAULT_CHROME_PATHS;
   }
+});
+
+test("Test E1 — executor rejects unverified Sol availability before browser submission", async () => {
+  const executor = new ChatGptWebCodexExecutor();
+  const encoded = encodeChatGptWebCodexSecrets({ cookie: VALID_COOKIE });
+
+  const result = await executor.execute({
+    model: "chatgpt-web-codex/high",
+    clientResponseFormat: "openai-responses",
+    credentials: {
+      connectionId: "test-conn-e1",
+      apiKey: encoded,
+      providerSpecificData: {
+        browserCdpEndpoint: "http://127.0.0.1:9223",
+      },
+    },
+    clientHeaders: { originator: "codex_cli_rs" },
+    body: {
+      model: "gpt-5.6-sol",
+      _nativeCodexPassthrough: true,
+      client_metadata: {
+        "x-codex-turn-metadata": JSON.stringify({ thread_id: "thread-e1", turn_id: "turn-e1" }),
+      },
+      input: [{ type: "message", role: "user", content: [{ type: "input_text", text: "hello" }] }],
+    },
+  });
+
+  assert.equal(result.response.status, 400);
+  const json = (await result.response.json()) as { error?: { message?: string } };
+  assert.match(json.error?.message ?? "", /availability has not been verified/i);
 });
 
 test("Test F — UI validation badge maps pending to warning Pending Verification", () => {
