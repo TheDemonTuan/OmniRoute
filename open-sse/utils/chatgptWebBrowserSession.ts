@@ -19,6 +19,7 @@ const CHATGPT_WEB_ORIGIN = "https://chatgpt.com";
 const DEFAULT_TURN_TIMEOUT_MS = 180_000;
 const MAX_BUFFERED_FRAMES = 2_048;
 const MAX_BUFFERED_FRAME_BYTES = 16 * 1024 * 1024;
+const browserTurnSettlements = new WeakMap<ChatGptWebBrowserSession, Promise<void>>();
 
 export interface ChatGptWebBrowserSessionHandlers {
   onBootstrap(sseText: string): void;
@@ -211,6 +212,8 @@ class ChatGptWebBrowserTurnRunner {
   private settled = false;
   private readonly turnController = new AbortController();
   private readonly resultPromise: Promise<ChatGptWebBrowserTurnResult>;
+  private submission: Promise<string | void> | null = null;
+  private cleanup: (() => Promise<void>) | null = null;
   private resolveResult: (result: ChatGptWebBrowserTurnResult) => void = () => {};
   private rejectResult: (error: Error) => void = () => {};
 
@@ -351,7 +354,7 @@ class ChatGptWebBrowserTurnRunner {
   }
 
   private submitPrompt(): void {
-    void this.session
+    this.submission = this.session
       .submitPrompt({
         prompt: this.prompt,
         attachments: this.attachments,
@@ -367,8 +370,10 @@ class ChatGptWebBrowserTurnRunner {
       });
   }
 
-  async run(timeoutMs: number, signal?: AbortSignal | null): Promise<ChatGptWebBrowserTurnResult> {
-    let cleanup: (() => Promise<void>) | null = null;
+  run(
+    timeoutMs: number,
+    signal?: AbortSignal | null
+  ): { outcome: Promise<ChatGptWebBrowserTurnResult>; physicalSettlement: Promise<void> } {
     const timeout = setTimeout(
       () => this.fail(new Error("ChatGPT Web browser turn timed out")),
       timeoutMs
@@ -376,15 +381,34 @@ class ChatGptWebBrowserTurnRunner {
     timeout.unref?.();
     const abort = (): void => this.fail(new Error("ChatGPT Web browser turn aborted"));
     signal?.addEventListener("abort", abort, { once: true });
-    try {
-      cleanup = await this.session.start(this.handlers());
-      if (!this.settled) this.submitPrompt();
-      return await this.resultPromise;
-    } finally {
-      clearTimeout(timeout);
-      signal?.removeEventListener("abort", abort);
-      await cleanup?.();
-    }
+    const start = this.session.start(this.handlers()).then(
+      (cleanup) => {
+        this.cleanup = cleanup;
+        if (!this.settled) this.submitPrompt();
+        return this.resultPromise;
+      },
+      (error: unknown) => {
+        this.fail(turnError(error, "ChatGPT Web browser turn failed to start"));
+        return undefined;
+      }
+    );
+    // `resultPromise` can reject immediately on client cancellation even when creating the
+    // browser observer is still pending. `physicalSettlement` retains that creation promise.
+    const outcome = Promise.race([this.resultPromise, start]);
+    const physicalSettlement = start
+      .then(
+        () => undefined,
+        () => undefined
+      )
+      .then(async () => {
+        clearTimeout(timeout);
+        signal?.removeEventListener("abort", abort);
+        // The response may finish before Playwright completes the composer action. Page/context
+        // ownership remains with this turn until submission and observer cleanup have settled.
+        await this.submission;
+        await this.cleanup?.();
+      });
+    return { outcome, physicalSettlement };
   }
 }
 
@@ -400,8 +424,31 @@ export async function runChatGptWebBrowserTurn(
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
     throw new Error("ChatGPT Web browser turn requires a positive timeout");
   }
+  const priorSettlement = browserTurnSettlements.get(session);
+  if (priorSettlement) {
+    throw new Error("ChatGPT Web browser session already has a settling turn");
+  }
   const runner = new ChatGptWebBrowserTurnRunner(session, prompt, request.attachments ?? []);
-  return runner.run(timeoutMs, request.signal);
+  const turn = runner.run(timeoutMs, request.signal);
+  browserTurnSettlements.set(session, turn.physicalSettlement);
+  void turn.physicalSettlement.finally(() => {
+    if (browserTurnSettlements.get(session) === turn.physicalSettlement) {
+      browserTurnSettlements.delete(session);
+    }
+  });
+  return turn.outcome.then(
+    async (result) => {
+      await turn.physicalSettlement;
+      return result;
+    },
+    async (error: unknown) => {
+      // Cancellation is the one client-facing fast path. Its browser work continues through
+      // physicalSettlement and the owner is retained by the executor until it is safe to release.
+      if (error instanceof Error && /\baborted\b/i.test(error.message)) throw error;
+      await turn.physicalSettlement;
+      throw error;
+    }
+  );
 }
 
 /**
@@ -410,6 +457,12 @@ export async function runChatGptWebBrowserTurn(
  * ChatGPT's own loaded module performs auth and Sentinel inside the page. The hot path never
  * touches the composer, model picker, attachment input, cookies, or bearer tokens.
  */
+export async function awaitChatGptWebBrowserTurnSettlement(
+  session: ChatGptWebBrowserSession
+): Promise<void> {
+  await browserTurnSettlements.get(session);
+}
+
 export class PlaywrightChatGptWebBrowserSession implements ChatGptWebBrowserSession {
   private readonly pageUrl: string;
   private readonly selection: ChatGptWebUiSelection | undefined;

@@ -288,6 +288,29 @@ describe("ChatGPT Web clean-room browser-owned session", () => {
     assert.equal(session.submittedPrompt, "");
   });
 
+  test("aborts promptly while browser observer startup is still pending", async () => {
+    const controller = new AbortController();
+    let releaseStart: () => void = () => {};
+    const session = {
+      url: () => "https://chatgpt.com/?temporary-chat=true",
+      start: async () =>
+        new Promise<() => Promise<void>>((resolve) => {
+          releaseStart = () => resolve(async () => {});
+        }),
+      submitPrompt: async () => "",
+    } satisfies ChatGptWebBrowserSession;
+
+    const turn = runChatGptWebBrowserTurn(session, {
+      prompt: "cancel pending start",
+      timeoutMs: 1_000,
+      signal: controller.signal,
+    });
+    controller.abort();
+    await assert.rejects(turn, /aborted/);
+    releaseStart();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  });
+
   test("aborts promptly while browser submission is still pending", async () => {
     const controller = new AbortController();
     let cleanupCount = 0;
@@ -320,12 +343,42 @@ describe("ChatGPT Web clean-room browser-owned session", () => {
       }),
     ]);
     if (timeout) clearTimeout(timeout);
-    releaseSubmission();
-    if (observed === timeoutMarker) await turn.catch(() => {});
-
     assert.notEqual(observed, timeoutMarker, "abort waited for the pending browser submission");
     assert.match(String(observed), /aborted/);
+    assert.equal(cleanupCount, 0, "browser cleanup ran before the pending submission settled");
+    releaseSubmission();
+    await new Promise<void>((resolve) => setImmediate(resolve));
     assert.equal(cleanupCount, 1);
+  });
+
+  test("refuses to reuse a browser session until the cancelled turn physically settles", async () => {
+    const controller = new AbortController();
+    let releaseSubmission: () => void = () => {};
+    const session = {
+      url: () => "https://chatgpt.com/?temporary-chat=true",
+      start: async () => async () => {},
+      submitPrompt: async () =>
+        new Promise<void>((resolve) => {
+          releaseSubmission = resolve;
+        }),
+    } satisfies ChatGptWebBrowserSession;
+
+    const turn = runChatGptWebBrowserTurn(session, {
+      prompt: "first turn",
+      timeoutMs: 1_000,
+      signal: controller.signal,
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    controller.abort();
+    await assert.rejects(turn, /aborted/);
+
+    await assert.rejects(
+      runChatGptWebBrowserTurn(session, { prompt: "replacement", timeoutMs: 1_000 }),
+      /already has a settling turn/
+    );
+
+    releaseSubmission();
+    await new Promise<void>((resolve) => setImmediate(resolve));
   });
 
   test("aborts the browser-owned request when the turn timeout expires", async () => {
@@ -335,7 +388,13 @@ describe("ChatGPT Web clean-room browser-owned session", () => {
       start: async () => async () => {},
       submitPrompt: async (request: { signal?: AbortSignal | null }) => {
         submittedSignal = request.signal;
-        return new Promise<string>(() => {});
+        return new Promise<string>((_resolve, reject) => {
+          request.signal?.addEventListener(
+            "abort",
+            () => reject(new Error("browser submission aborted")),
+            { once: true }
+          );
+        });
       },
     } satisfies ChatGptWebBrowserSession;
 

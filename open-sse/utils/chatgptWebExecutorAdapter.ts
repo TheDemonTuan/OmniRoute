@@ -22,6 +22,7 @@ import {
 } from "./chatgptWebAttachments.ts";
 import {
   PlaywrightChatGptWebBrowserSession,
+  awaitChatGptWebBrowserTurnSettlement,
   runChatGptWebBrowserTurn,
   type ChatGptWebBrowserSession,
   type ChatGptWebBrowserTurnRequest,
@@ -407,6 +408,10 @@ export async function executeChatGptWebCleanRoom(
       created: deps.now ? Math.floor(deps.now() / 1000) : undefined,
     });
   } finally {
+    // The caller can observe cancellation before the browser composer call unwinds. Keep a
+    // session's owned context/lease until that physical work finishes so another turn cannot
+    // inherit an in-flight page.
+    await awaitChatGptWebBrowserTurnSettlement(session);
     const dispose = ownedSessionDisposers.get(session);
     ownedSessionDisposers.delete(session);
     await dispose?.();
