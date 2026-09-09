@@ -45,8 +45,12 @@ import {
   mergeChatGptRuntimeStorageState,
   resolveBrowserConfig,
 } from "../../open-sse/vendor/codex-chatgpt-web/adapters/chatgpt-web/browser-worker.ts";
+import { chromium } from "playwright-core";
 import {
+  browserLoginStateExists,
+  inspectBrowserLoginCapabilities,
   loginVerificationMarkerPath,
+  storedBrowserLoginCapabilities,
   writeVerificationMarker,
 } from "../../open-sse/vendor/codex-chatgpt-web/browser-login.ts";
 import {
@@ -57,6 +61,11 @@ import {
   CHATGPT_BIGGER_CONTEXT_PARTS,
   compileChatGptWebPrompt,
 } from "../../open-sse/vendor/codex-chatgpt-web/adapters/chatgpt-web/prompt.ts";
+import {
+  CHATGPT_WEB_BIGGER_CONTEXT_MULTIPLIER,
+  CHATGPT_WEB_PRO_MODEL_CONTEXT_WINDOW,
+  resolveChatGptWebContextLimits,
+} from "../../open-sse/vendor/codex-chatgpt-web/chatgpt-web-models.ts";
 import { parseRequest } from "../../open-sse/vendor/codex-chatgpt-web/responses/parser.ts";
 import {
   expandPreviousResponseInput,
@@ -287,11 +296,166 @@ test("verified capability refresh preserves the credential marker binding", () =
     writeVerificationMarker(statePath, { solAvailable: false, proAvailable: false });
     const marker = JSON.parse(readFileSync(markerPath, "utf8")) as Record<string, unknown>;
     assert.equal(marker.cookieFingerprint, "cookie-bound");
+    assert.equal(marker.capabilitiesVerified, true);
     assert.equal(marker.pendingBrowserVerification, false);
     assert.equal(marker.solAvailable, false);
     assert.equal(marker.proAvailable, false);
     assert.match(String(marker.storageStateFingerprint), /^[a-f0-9]{64}$/);
   } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("marker semantics safely distinguish unknown/unverified capabilities from verified false", () => {
+  const root = mkdtempSync(join(tmpdir(), "omniroute-chatgpt-web-unverified-marker-"));
+  const statePath = join(root, "storage-state.json");
+  const markerPath = loginVerificationMarkerPath(statePath);
+  try {
+    writeFileSync(statePath, `${JSON.stringify({ cookies: [], origins: [] })}\n`);
+    writeFileSync(
+      markerPath,
+      `${JSON.stringify({
+        version: 1,
+        authenticated: true,
+        verifiedAt: "2026-08-31T00:00:00.000Z",
+        pendingBrowserVerification: true,
+      })}\n`
+    );
+
+    // When capability probe produces no verified capabilities (unverified / unknown):
+    writeVerificationMarker(statePath, {});
+    const marker = JSON.parse(readFileSync(markerPath, "utf8")) as Record<string, unknown>;
+    assert.equal(marker.authenticated, true);
+    assert.equal(marker.capabilitiesVerified, false);
+    assert.equal(marker.pendingBrowserVerification, true);
+    assert.equal(marker.solAvailable, undefined);
+    assert.equal(marker.proAvailable, undefined);
+
+    const config = { storageStatePath: statePath, appName: "test" };
+    assert.equal(browserLoginStateExists(config), false);
+    assert.deepEqual(storedBrowserLoginCapabilities(config), {});
+
+    // Distinguish from verified false (e.g. Luna-only non-Pro account):
+    writeVerificationMarker(statePath, { solAvailable: false, proAvailable: false });
+    const verifiedFalseMarker = JSON.parse(readFileSync(markerPath, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    assert.equal(verifiedFalseMarker.capabilitiesVerified, true);
+    assert.equal(verifiedFalseMarker.pendingBrowserVerification, false);
+    assert.equal(verifiedFalseMarker.solAvailable, false);
+    assert.equal(verifiedFalseMarker.proAvailable, false);
+    assert.deepEqual(storedBrowserLoginCapabilities(config), {
+      solAvailable: false,
+      proAvailable: false,
+    });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("authenticated page with capability probe failure leaves capabilities unverified instead of optimistic fallback", async () => {
+  const root = mkdtempSync(join(tmpdir(), "omniroute-chatgpt-web-probe-fail-"));
+  const statePath = join(root, "storage-state.json");
+  const markerPath = loginVerificationMarkerPath(statePath);
+  const originalConnectOverCDP = chromium.connectOverCDP;
+
+  try {
+    writeFileSync(statePath, `${JSON.stringify({ cookies: [], origins: [] })}\n`);
+    writeFileSync(
+      markerPath,
+      `${JSON.stringify({
+        version: 1,
+        authenticated: true,
+        verifiedAt: "2026-08-31T00:00:00.000Z",
+        cookieFingerprint: "cookie-probe-fail",
+        pendingBrowserVerification: true,
+      })}\n`
+    );
+
+    const composerLocator = {
+      first: () => ({
+        waitFor: async () => {},
+      }),
+      last: () => ({
+        locator: () => {
+          throw new Error("Simulated capability probe failure");
+        },
+      }),
+      filter: () => ({
+        count: async () => 1,
+        last: () => ({
+          locator: () => {
+            throw new Error("Simulated capability probe failure");
+          },
+        }),
+      }),
+      count: async () => 1,
+      nth: () => ({
+        isVisible: async () => true,
+      }),
+    };
+
+    const dialogLocator = {
+      filter: () => ({
+        count: async () => 0,
+      }),
+    };
+
+    const mockPage = {
+      url: () => "https://chatgpt.com/?temporary-chat=true",
+      goto: async () => {},
+      locator: (selector: string) => {
+        if (selector.includes("dialog")) return dialogLocator;
+        return composerLocator;
+      },
+    };
+
+    const mockContext = {
+      newPage: async () => mockPage,
+      close: async () => {},
+    };
+
+    const mockBrowser = {
+      newContext: async () => mockContext,
+      close: async () => {},
+    };
+
+    chromium.connectOverCDP = (async () =>
+      mockBrowser as unknown as Awaited<
+        ReturnType<typeof chromium.connectOverCDP>
+      >) as typeof chromium.connectOverCDP;
+
+    const config = {
+      appName: "test",
+      storageStatePath: statePath,
+      cdpEndpoint: "http://127.0.0.1:9222",
+      headed: false,
+      proAvailable: false,
+      autoApproveToolCalls: false,
+      verificationTimeoutMs: 5_000,
+    };
+
+    const inspected = await inspectBrowserLoginCapabilities(config);
+
+    // Capabilities must NOT be optimistically marked as true:
+    assert.equal(inspected.solAvailable, undefined);
+    assert.equal(inspected.proAvailable, undefined);
+
+    // Marker must record authenticated login without false capability verification:
+    const marker = JSON.parse(readFileSync(markerPath, "utf8")) as Record<string, unknown>;
+    assert.equal(marker.authenticated, true);
+    assert.equal(marker.capabilitiesVerified, false);
+    assert.equal(marker.pendingBrowserVerification, true);
+    assert.equal(marker.cookieFingerprint, "cookie-probe-fail");
+    assert.equal(marker.solAvailable, undefined);
+    assert.equal(marker.proAvailable, undefined);
+
+    // The authenticated session remains pending until capabilities are proven.
+    assert.equal(browserLoginStateExists(config), false);
+    assert.deepEqual(storedBrowserLoginCapabilities(config), {});
+  } finally {
+    chromium.connectOverCDP = originalConnectOverCDP;
     rmSync(root, { recursive: true, force: true });
   }
 });
@@ -328,6 +492,19 @@ test("cookie-header storage state satisfies Playwright cookie requirements", () 
     else process.env.DATA_DIR = previousDataDir;
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("Bigger Context multiplies the selected ChatGPT context limit", () => {
+  const limits = resolveChatGptWebContextLimits("gpt-5.6-sol", "max", {
+    solAvailable: true,
+    proAvailable: true,
+    experimentalBiggerContext: true,
+  });
+
+  assert.equal(
+    limits.contextWindow,
+    CHATGPT_WEB_PRO_MODEL_CONTEXT_WINDOW * CHATGPT_WEB_BIGGER_CONTEXT_MULTIPLIER
+  );
 });
 
 test("explicit Responses reasoning effort is read for mismatch preflight", () => {

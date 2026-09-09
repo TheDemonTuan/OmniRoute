@@ -111,6 +111,43 @@ const createLeaseOpts = (id: string) => ({
   contextOptions: { storageState: createStorageState() },
 });
 
+test("runtime admission blocks overlapping owner types on the same connection", async () => {
+  const { acquireChatGptWebRuntimeAdmission } =
+    await import("../../open-sse/utils/chatgptWebRuntimeGuard.ts");
+  const cleanRoom = acquireChatGptWebRuntimeAdmission("shared-connection", "clean-room");
+
+  assert.throws(
+    () => acquireChatGptWebRuntimeAdmission("shared-connection", "codex"),
+    (error: unknown) =>
+      error instanceof ChatGptWebRuntimeGuardError && error.code === "CHATGPT_BROWSER_BUSY"
+  );
+
+  cleanRoom.release();
+  const codex = acquireChatGptWebRuntimeAdmission("shared-connection", "codex");
+  codex.release();
+});
+
+test("runtime admission applies the global browser capacity across owner types", async () => {
+  const { acquireChatGptWebRuntimeAdmission } =
+    await import("../../open-sse/utils/chatgptWebRuntimeGuard.ts");
+  const previous = process.env.CHATGPT_WEB_MAX_BROWSER_TABS;
+  process.env.CHATGPT_WEB_MAX_BROWSER_TABS = "2";
+  const first = acquireChatGptWebRuntimeAdmission("capacity-clean-room", "clean-room");
+  const second = acquireChatGptWebRuntimeAdmission("capacity-codex", "codex");
+  try {
+    assert.throws(
+      () => acquireChatGptWebRuntimeAdmission("capacity-verification", "verification"),
+      (error: unknown) =>
+        error instanceof ChatGptWebRuntimeGuardError && error.code === "CHATGPT_BROWSER_BUSY"
+    );
+  } finally {
+    first.release();
+    second.release();
+    if (previous === undefined) delete process.env.CHATGPT_WEB_MAX_BROWSER_TABS;
+    else process.env.CHATGPT_WEB_MAX_BROWSER_TABS = previous;
+  }
+});
+
 test("CDP lease only creates owned context and disposes once", async () => {
   const driver = createMockDriver();
   const lease = await acquireChatGptWebCdpLease(

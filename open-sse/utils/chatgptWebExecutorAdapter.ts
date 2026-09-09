@@ -10,6 +10,7 @@ import {
 import { normalizeChatGptWebAuthInput } from "./chatgptWebAuthInput.ts";
 import {
   acquireChatGptWebCdpLease,
+  acquireChatGptWebRuntimeAdmission,
   chatGptWebCdpEndpoint,
   requireChatGptWebDisplay,
 } from "./chatgptWebRuntimeGuard.ts";
@@ -272,28 +273,35 @@ async function createDefaultSession(
 ): Promise<ChatGptWebBrowserSession> {
   const cdpEndpoint = chatGptWebCdpEndpoint();
   if (cdpEndpoint) {
-    const { chromium } = await import("playwright");
-    const proxy = await resolveBrowserContextProxy(input.connectionId, {
-      proxyProviderKey: "chatgpt-web",
-    });
-    const lease = await acquireChatGptWebCdpLease(chromium, cdpEndpoint, {
-      connectionId: input.connectionId,
-      signal: input.signal,
-      contextOptions: {
-        storageState: input.storageState,
-        ...(input.userAgent ? { userAgent: input.userAgent } : {}),
-        ...(input.locale ? { locale: input.locale } : {}),
-        ...(input.timezone ? { timezoneId: input.timezone } : {}),
-        ...(proxy ? { proxy } : {}),
-      },
-    });
-    const session = new PlaywrightChatGptWebBrowserSession(lease.page, {
-      pageUrl: CHATGPT_WEB_PAGE_URL,
-      selection: input.selection,
-      closePageOnCleanup: false,
-    });
-    ownedSessionDisposers.set(session, lease.dispose);
-    return session;
+    const admission = acquireChatGptWebRuntimeAdmission(input.connectionId, "clean-room");
+    try {
+      const { chromium } = await import("playwright");
+      const proxy = await resolveBrowserContextProxy(input.connectionId, {
+        proxyProviderKey: "chatgpt-web",
+      });
+      const lease = await acquireChatGptWebCdpLease(chromium, cdpEndpoint, {
+        connectionId: input.connectionId,
+        signal: input.signal,
+        admission,
+        contextOptions: {
+          storageState: input.storageState,
+          ...(input.userAgent ? { userAgent: input.userAgent } : {}),
+          ...(input.locale ? { locale: input.locale } : {}),
+          ...(input.timezone ? { timezoneId: input.timezone } : {}),
+          ...(proxy ? { proxy } : {}),
+        },
+      });
+      const session = new PlaywrightChatGptWebBrowserSession(lease.page, {
+        pageUrl: CHATGPT_WEB_PAGE_URL,
+        selection: input.selection,
+        closePageOnCleanup: false,
+      });
+      ownedSessionDisposers.set(session, lease.dispose);
+      return session;
+    } catch (error) {
+      admission.release();
+      throw error;
+    }
   }
   requireChatGptWebDisplay();
   const digest = createHash("sha256")

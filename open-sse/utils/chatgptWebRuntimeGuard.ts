@@ -58,6 +58,10 @@ export interface ChatGptWebCdpLease {
   dispose(): Promise<void>;
 }
 
+export interface ChatGptWebRuntimeAdmission {
+  release(): void;
+}
+
 interface ActiveLeaseRecord {
   disposal?: Promise<void>;
   acquiredAt: number;
@@ -65,6 +69,33 @@ interface ActiveLeaseRecord {
 
 let activeLeases = 0;
 const activeConnections = new Map<string, ActiveLeaseRecord>();
+const activeAdmissions = new Map<string, symbol>();
+
+export function acquireChatGptWebRuntimeAdmission(
+  connectionId: string,
+  owner: "clean-room" | "codex" | "verification"
+): ChatGptWebRuntimeAdmission {
+  const normalizedConnectionId = connectionId.trim();
+  if (
+    !normalizedConnectionId ||
+    activeAdmissions.has(normalizedConnectionId) ||
+    activeAdmissions.size >= getMaxActiveLeases()
+  ) {
+    throw new ChatGptWebRuntimeGuardError(
+      "CHATGPT_BROWSER_BUSY",
+      `Browser capacity is occupied by another ${owner} operation; no prompt was sent. Retry after the active operation finishes.`
+    );
+  }
+  const token = Symbol(owner);
+  activeAdmissions.set(normalizedConnectionId, token);
+  return {
+    release(): void {
+      if (activeAdmissions.get(normalizedConnectionId) === token) {
+        activeAdmissions.delete(normalizedConnectionId);
+      }
+    },
+  };
+}
 
 const DEFAULT_MAX_ACTIVE_LEASES = 2;
 function getMaxActiveLeases(): number {
@@ -100,9 +131,11 @@ export async function acquireChatGptWebCdpLease(
     connectionId: string;
     contextOptions: BrowserContextOptions;
     signal?: AbortSignal | null;
+    admission?: ChatGptWebRuntimeAdmission;
   }
 ): Promise<ChatGptWebCdpLease> {
   if (options.signal?.aborted) throw new DOMException("Browser operation aborted", "AbortError");
+  const admission = options.admission;
 
   // If the same connection has an existing lease that is already disposing, wait for it to settle
   const existing = activeConnections.get(options.connectionId);
@@ -116,6 +149,7 @@ export async function acquireChatGptWebCdpLease(
 
   const maxLeases = getMaxActiveLeases();
   if (activeConnections.has(options.connectionId) || activeLeases >= maxLeases) {
+    admission?.release();
     throw new ChatGptWebRuntimeGuardError(
       "CHATGPT_BROWSER_BUSY",
       "Browser capacity is occupied; no prompt was sent. Retry after the active turn finishes."
@@ -145,6 +179,7 @@ export async function acquireChatGptWebCdpLease(
       } finally {
         activeConnections.delete(options.connectionId);
         activeLeases = Math.max(0, activeLeases - 1);
+        admission?.release();
       }
     })();
     record.disposal = disposal;
