@@ -252,6 +252,8 @@ export async function loginToChatGpt(
   }
 }
 
+const LOGIN_VERIFICATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
 export function browserLoginStateExists(
   config: Pick<BrowserLoginConfig, "storageStatePath">
 ): boolean {
@@ -260,13 +262,25 @@ export function browserLoginStateExists(
   if (!existsSync(markerPath)) return false;
   try {
     const marker = JSON.parse(readFileSync(markerPath, "utf8")) as Partial<LoginVerificationMarker>;
-    return (
-      marker.version === 1 &&
-      marker.authenticated === true &&
-      marker.capabilitiesVerified === true &&
-      marker.pendingBrowserVerification !== true &&
-      typeof marker.verifiedAt === "string"
-    );
+    if (
+      marker.version !== 1 ||
+      marker.authenticated !== true ||
+      marker.capabilitiesVerified !== true ||
+      marker.pendingBrowserVerification === true ||
+      typeof marker.verifiedAt !== "string"
+    ) {
+      return false;
+    }
+    const verifiedTime = new Date(marker.verifiedAt).getTime();
+    if (Number.isNaN(verifiedTime) || Date.now() - verifiedTime > LOGIN_VERIFICATION_TTL_MS) {
+      return false;
+    }
+    if (marker.storageStateFingerprint) {
+      const state = JSON.parse(readFileSync(config.storageStatePath, "utf8")) as Record<string, unknown>;
+      const currentFingerprint = createHash("sha256").update(JSON.stringify(state)).digest("hex");
+      if (currentFingerprint !== marker.storageStateFingerprint) return false;
+    }
+    return true;
   } catch {
     return false;
   }

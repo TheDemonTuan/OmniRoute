@@ -90,6 +90,10 @@ export async function validateChatGptWebCodexProvider({
     // Saving a connection must not wait for a remote ChatGPT page or its volatile UI.
     // An explicit connection test or request performs browser authentication.
     if (verifyBrowserLogin && runtime.available) {
+      const connectionId =
+        (typeof providerSpecificData.connectionId === "string" &&
+          providerSpecificData.connectionId.trim()) ||
+        validationId;
       const admission = acquireChatGptWebRuntimeAdmission(connectionId, "verification");
       let capabilities: Awaited<ReturnType<typeof inspectBrowserLoginCapabilities>>;
       try {

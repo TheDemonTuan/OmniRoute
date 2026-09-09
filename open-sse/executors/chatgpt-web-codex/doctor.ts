@@ -43,6 +43,7 @@ export async function getChatGptWebCodexDoctorStatus(connection: {
   let hasStorageState = false;
   let hasCookie = false;
   let pendingBrowserVerification = false;
+  let capabilitiesVerified = false;
   try {
     const secrets = decodeChatGptWebCodexSecrets(String(connection.apiKey || ""));
     hasStorageState = Boolean(secrets.storageState);
@@ -56,7 +57,6 @@ export async function getChatGptWebCodexDoctorStatus(connection: {
     storageState = existsSync(paths.storageStatePath);
     login = browserLoginStateExists({ storageStatePath: paths.storageStatePath });
     const markerPath = `${paths.storageStatePath}.verified.json`;
-    let capabilitiesVerified = false;
     if (existsSync(markerPath)) {
       try {
         const marker = JSON.parse(readFileSync(markerPath, "utf8")) as Record<string, unknown>;
