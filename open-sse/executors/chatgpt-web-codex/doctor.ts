@@ -38,7 +38,7 @@ export async function getChatGptWebCodexDoctorStatus(connection: {
   let credential = false;
   let hasStorageState = false;
   let hasCookie = false;
-  let pendingBrowserVerification = false;
+  let pendingBrowserVerification = data.pendingBrowserVerification === true;
   let capabilitiesVerified = false;
   try {
     const secrets = decodeChatGptWebCodexSecrets(String(connection.apiKey || ""));
