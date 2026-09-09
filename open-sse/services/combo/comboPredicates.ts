@@ -236,6 +236,8 @@ const REQUEST_SCOPED_UPSTREAM_ERROR_CODES: Record<string, true> = {
   context_length_exceeded: true,
   upstream_empty_response: true,
   upstream_response_failed: true,
+  chatgpt_submission_ambiguous: true,
+  chatgpt_submitted_turn_failed: true,
   // Local combo per-target timer (targetTimeoutRunner) — not a connection health signal.
   combo_target_timeout: true,
   // Local limiter queue-capacity codes — not a provider/connection health signal.

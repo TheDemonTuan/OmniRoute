@@ -56,12 +56,19 @@ export async function getChatGptWebCodexDoctorStatus(connection: {
     storageState = existsSync(paths.storageStatePath);
     login = browserLoginStateExists({ storageStatePath: paths.storageStatePath });
     const markerPath = `${paths.storageStatePath}.verified.json`;
+    let capabilitiesVerified = false;
     if (existsSync(markerPath)) {
       try {
         const marker = JSON.parse(readFileSync(markerPath, "utf8")) as Record<string, unknown>;
         pendingBrowserVerification = marker.pendingBrowserVerification === true;
-        if (typeof marker.solAvailable === "boolean") solAvailable = marker.solAvailable;
-        if (typeof marker.proAvailable === "boolean") proAvailable = marker.proAvailable;
+        capabilitiesVerified = marker.capabilitiesVerified === true;
+        if (capabilitiesVerified) {
+          if (typeof marker.solAvailable === "boolean") solAvailable = marker.solAvailable;
+          if (typeof marker.proAvailable === "boolean") proAvailable = marker.proAvailable;
+        } else {
+          solAvailable = null;
+          proAvailable = null;
+        }
       } catch {
         // Marker detail is optional.
       }
@@ -96,11 +103,11 @@ export async function getChatGptWebCodexDoctorStatus(connection: {
     },
     verification: {
       pending: pendingBrowserVerification,
-      verified: login && !pendingBrowserVerification,
+      verified: login && !pendingBrowserVerification && capabilitiesVerified,
     },
     storageState: { ready: storageState && credential },
-    login: { ready: login && !pendingBrowserVerification },
-    temporaryChats: { ready: login && !pendingBrowserVerification },
+    login: { ready: login && !pendingBrowserVerification && capabilitiesVerified },
+    temporaryChats: { ready: login && !pendingBrowserVerification && capabilitiesVerified },
     tunnelBinary: { ready: existsSync(tunnelPaths.binary) },
     tunnel: {
       ready: tunnel.ok,

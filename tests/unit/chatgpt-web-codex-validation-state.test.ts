@@ -14,7 +14,10 @@ import {
   encodeChatGptWebCodexSecrets,
 } from "../../open-sse/executors/chatgpt-web-codex/credentials.ts";
 import { getChatGptWebCodexDoctorStatus } from "../../open-sse/executors/chatgpt-web-codex/doctor.ts";
-import { ChatGptWebCodexExecutor } from "../../open-sse/executors/chatgpt-web-codex.ts";
+import {
+  assertChatGptWebCodexRouteAvailable,
+  ChatGptWebCodexExecutor,
+} from "../../open-sse/executors/chatgpt-web-codex.ts";
 import {
   cookieHeaderValue,
   finalizeValidatedChatGptWebCodexSecrets,
@@ -348,33 +351,53 @@ test("Test E — executor returns 503 chatgpt_web_codex_browser_unavailable when
 });
 
 test("Test E1 — executor rejects unverified Sol availability before browser submission", async () => {
+  const previousCdp = process.env.CHATGPT_WEB_CODEX_CDP_URL;
+  process.env.CHATGPT_WEB_CODEX_CDP_URL = "http://127.0.0.1:9223";
   const executor = new ChatGptWebCodexExecutor();
   const encoded = encodeChatGptWebCodexSecrets({ cookie: VALID_COOKIE });
 
-  const result = await executor.execute({
-    model: "chatgpt-web-codex/high",
-    clientResponseFormat: "openai-responses",
-    credentials: {
-      connectionId: "test-conn-e1",
-      apiKey: encoded,
-      providerSpecificData: {
-        browserCdpEndpoint: "http://127.0.0.1:9223",
+  try {
+    const result = await executor.execute({
+      model: "chatgpt-web-codex/high",
+      clientResponseFormat: "openai-responses",
+      credentials: {
+        connectionId: "test-conn-e1",
+        apiKey: encoded,
+        providerSpecificData: {
+          browserCdpEndpoint: "http://127.0.0.1:9223",
+        },
       },
-    },
-    clientHeaders: { originator: "codex_cli_rs" },
-    body: {
-      model: "gpt-5.6-sol",
-      _nativeCodexPassthrough: true,
-      client_metadata: {
-        "x-codex-turn-metadata": JSON.stringify({ thread_id: "thread-e1", turn_id: "turn-e1" }),
+      clientHeaders: { originator: "codex_cli_rs" },
+      body: {
+        model: "gpt-5.6-sol",
+        _nativeCodexPassthrough: true,
+        client_metadata: {
+          "x-codex-turn-metadata": JSON.stringify({ thread_id: "thread-e1", turn_id: "turn-e1" }),
+        },
+        input: [
+          { type: "message", role: "user", content: [{ type: "input_text", text: "hello" }] },
+        ],
       },
-      input: [{ type: "message", role: "user", content: [{ type: "input_text", text: "hello" }] }],
-    },
-  });
+    });
 
-  assert.equal(result.response.status, 400);
-  const json = (await result.response.json()) as { error?: { message?: string } };
-  assert.match(json.error?.message ?? "", /availability has not been verified/i);
+    assert.equal(result.response.status, 400);
+    const json = (await result.response.json()) as { error?: { message?: string } };
+    assert.match(json.error?.message ?? "", /availability has not been verified/i);
+  } finally {
+    if (previousCdp === undefined) delete process.env.CHATGPT_WEB_CODEX_CDP_URL;
+    else process.env.CHATGPT_WEB_CODEX_CDP_URL = previousCdp;
+  }
+});
+
+test("Luna-only capabilities allow Luna and Think routes but reject Sol", () => {
+  const lunaOnly = { solAvailable: false, proAvailable: false };
+
+  assert.doesNotThrow(() => assertChatGptWebCodexRouteAvailable("luna", lunaOnly));
+  assert.doesNotThrow(() => assertChatGptWebCodexRouteAvailable("think", lunaOnly));
+  assert.throws(
+    () => assertChatGptWebCodexRouteAvailable("high", lunaOnly),
+    /Sol models are not available/
+  );
 });
 
 test("Test F — UI validation badge maps pending to warning Pending Verification", () => {

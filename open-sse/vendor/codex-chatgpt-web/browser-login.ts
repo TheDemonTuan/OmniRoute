@@ -18,8 +18,8 @@ import type { ChatGptWebAccountCapabilities } from "./chatgpt-web-models";
 export interface BrowserLoginResult {
   storageStatePath: string;
   accountSurfaceUrl: string;
-  solAvailable: boolean;
-  proAvailable: boolean;
+  solAvailable?: boolean;
+  proAvailable?: boolean;
 }
 
 export type BrowserLoginConfig = Pick<
@@ -35,6 +35,7 @@ interface LoginVerificationMarker {
   version: 1;
   authenticated: true;
   verifiedAt: string;
+  capabilitiesVerified?: boolean;
   solAvailable?: boolean;
   proAvailable?: boolean;
   cookieFingerprint?: string;
@@ -48,7 +49,7 @@ export function loginVerificationMarkerPath(storageStatePath: string): string {
 
 export function writeVerificationMarker(
   storageStatePath: string,
-  capabilities: ChatGptWebAccountCapabilities
+  capabilities: Partial<ChatGptWebAccountCapabilities> = {}
 ): void {
   let previous: Partial<LoginVerificationMarker> = {};
   try {
@@ -65,14 +66,23 @@ export function writeVerificationMarker(
   } catch {
     // The caller that owns storage-state validation reports malformed state.
   }
+  const capabilitiesVerified =
+    typeof capabilities.solAvailable === "boolean" &&
+    typeof capabilities.proAvailable === "boolean";
   const marker: LoginVerificationMarker = {
     version: 1,
     authenticated: true,
     verifiedAt: new Date().toISOString(),
-    ...capabilities,
+    capabilitiesVerified,
+    ...(typeof capabilities.solAvailable === "boolean"
+      ? { solAvailable: capabilities.solAvailable }
+      : {}),
+    ...(typeof capabilities.proAvailable === "boolean"
+      ? { proAvailable: capabilities.proAvailable }
+      : {}),
     ...(previous.cookieFingerprint ? { cookieFingerprint: previous.cookieFingerprint } : {}),
     ...(storageStateFingerprint ? { storageStateFingerprint } : {}),
-    pendingBrowserVerification: false,
+    pendingBrowserVerification: !capabilitiesVerified,
   };
   atomicWriteFile(loginVerificationMarkerPath(storageStatePath), `${JSON.stringify(marker)}\n`);
 }
@@ -80,7 +90,7 @@ export function writeVerificationMarker(
 async function inspectStoredState(
   config: BrowserLoginConfig,
   storageState: NonNullable<BrowserContextOptions["storageState"]>
-): Promise<ChatGptWebAccountCapabilities & { url: string }> {
+): Promise<Partial<ChatGptWebAccountCapabilities> & { url: string }> {
   if (!config.cdpEndpoint && !config.chromeExecutablePath) {
     throw new Error("ChatGPT browser verification requires Chrome or a CDP endpoint");
   }
@@ -108,7 +118,7 @@ async function inspectStoredState(
         .first()
         .waitFor({ state: "visible", timeout: remainingMs() });
       await assertAuthenticatedChatGptPage(verifierPage);
-      let capabilities: ChatGptWebAccountCapabilities = { solAvailable: true, proAvailable: true };
+      let capabilities: Partial<ChatGptWebAccountCapabilities> = {};
       try {
         capabilities = await detectChatGptAccountCapabilities(verifierPage, {
           selectorTimeoutMs: Math.min(5_000, remainingMs()),
@@ -128,7 +138,7 @@ async function inspectStoredState(
 
 export async function inspectBrowserLoginCapabilities(
   config: BrowserLoginConfig
-): Promise<ChatGptWebAccountCapabilities> {
+): Promise<Partial<ChatGptWebAccountCapabilities>> {
   if (
     !existsSync(config.storageStatePath) ||
     !existsSync(loginVerificationMarkerPath(config.storageStatePath))
@@ -137,7 +147,14 @@ export async function inspectBrowserLoginCapabilities(
   }
   const inspected = await inspectStoredState(config, config.storageStatePath);
   writeVerificationMarker(config.storageStatePath, inspected);
-  return { solAvailable: inspected.solAvailable, proAvailable: inspected.proAvailable };
+  return {
+    ...(typeof inspected.solAvailable === "boolean"
+      ? { solAvailable: inspected.solAvailable }
+      : {}),
+    ...(typeof inspected.proAvailable === "boolean"
+      ? { proAvailable: inspected.proAvailable }
+      : {}),
+  };
 }
 
 export function storedBrowserLoginCapabilities(
@@ -148,6 +165,7 @@ export function storedBrowserLoginCapabilities(
     const marker = JSON.parse(
       readFileSync(loginVerificationMarkerPath(config.storageStatePath), "utf8")
     ) as Partial<LoginVerificationMarker>;
+    if (marker.capabilitiesVerified !== true) return {};
     return {
       ...(typeof marker.solAvailable === "boolean" ? { solAvailable: marker.solAvailable } : {}),
       ...(typeof marker.proAvailable === "boolean" ? { proAvailable: marker.proAvailable } : {}),
@@ -221,8 +239,12 @@ export async function loginToChatGpt(
     return {
       storageStatePath: config.storageStatePath,
       accountSurfaceUrl: page.url(),
-      solAvailable: inspected.solAvailable,
-      proAvailable: inspected.proAvailable,
+      ...(typeof inspected.solAvailable === "boolean"
+        ? { solAvailable: inspected.solAvailable }
+        : {}),
+      ...(typeof inspected.proAvailable === "boolean"
+        ? { proAvailable: inspected.proAvailable }
+        : {}),
     };
   } finally {
     await context.close();
@@ -241,6 +263,7 @@ export function browserLoginStateExists(
     return (
       marker.version === 1 &&
       marker.authenticated === true &&
+      marker.capabilitiesVerified === true &&
       marker.pendingBrowserVerification !== true &&
       typeof marker.verifiedAt === "string"
     );

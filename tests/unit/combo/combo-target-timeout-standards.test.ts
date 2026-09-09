@@ -112,6 +112,19 @@ test("decision seam: typed combo_target_timeout 504 is request-scoped and does n
   );
 });
 
+test("decision seam: submitted ChatGPT turn failures are request-scoped", () => {
+  for (const code of ["chatgpt_submission_ambiguous", "chatgpt_submitted_turn_failed"]) {
+    const decision = decideProviderBreakerRecord({
+      status: 502,
+      errorText: "ChatGPT prompt may already have been submitted",
+      structuredError: { code, type: "server_error" },
+      sameProviderNext: false,
+    });
+    assert.equal(decision.requestScopedFailure, true);
+    assert.equal(decision.shouldRecord, false);
+  }
+});
+
 test("decision seam: generic upstream 504 is NOT request-scoped and still records breaker failure", () => {
   const decision = decideProviderBreakerRecord({
     status: 504,
