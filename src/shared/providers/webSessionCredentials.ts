@@ -30,18 +30,25 @@ export type WebSessionCredentialRequirement =
 export const WEB_SESSION_CREDENTIAL_REQUIREMENTS = {
   "chatgpt-web": {
     kind: "cookie",
-    credentialName: "Playwright storage-state JSON",
-    placeholder: '{"cookies":[...],"origins":[...]}',
-    acceptsFullCookieHeader: false,
-    storageKeys: ["storageState", "cookies", "origins"],
-    hintFallback:
-      "Export storageState from a browser context that is already signed in to chatgpt.com, then paste the complete JSON object. Raw Cookie headers are intentionally rejected.",
-    guideSteps: [
-      "Sign in to chatgpt.com in a dedicated browser profile.",
-      "Export that profile's Playwright-compatible storageState object.",
-      "Paste the complete JSON object here and validate it before saving.",
+    credentialName: "ChatGPT Cookie header (full)",
+    placeholder: "__Secure-next-auth.session-token=...; cf_clearance=...",
+    acceptsFullCookieHeader: true,
+    storageKeys: [
+      "cookie",
+      "storageState",
+      "cookies",
+      "origins",
+      "__Secure-next-auth.session-token",
     ],
-    guideNote: "The credential is encrypted at rest and is used only by the local browser context.",
+    hintFallback:
+      "Paste the complete Cookie request-header value from your signed-in chatgpt.com session. The Cookie: prefix is optional.",
+    guideSteps: [
+      "Sign in to chatgpt.com in your browser.",
+      "Open Developer Tools → Network and select a request to chatgpt.com.",
+      "Copy the complete Cookie request-header value and paste it here.",
+    ],
+    guideNote:
+      "Playwright storage-state JSON remains supported as an advanced option. The credential is encrypted at rest.",
   },
   "chatgpt-web-codex": {
     kind: "cookie",

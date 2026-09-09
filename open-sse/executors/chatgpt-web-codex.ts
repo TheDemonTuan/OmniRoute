@@ -346,6 +346,7 @@ export class ChatGptWebCodexExecutor extends BaseExecutor {
         providerData.solAvailable = capabilities.solAvailable;
         providerData.proAvailable = capabilities.proAvailable;
         providerData.browserVerified = true;
+        providerData.pendingBrowserVerification = false;
         if (chromeExecutablePath) providerData.chromeExecutablePath = chromeExecutablePath;
         await input.onCredentialsRefreshed?.({
           providerSpecificData: {
@@ -353,6 +354,7 @@ export class ChatGptWebCodexExecutor extends BaseExecutor {
             solAvailable: capabilities.solAvailable,
             proAvailable: capabilities.proAvailable,
             browserVerified: true,
+            pendingBrowserVerification: false,
             ...(chromeExecutablePath ? { chromeExecutablePath } : {}),
           },
         });

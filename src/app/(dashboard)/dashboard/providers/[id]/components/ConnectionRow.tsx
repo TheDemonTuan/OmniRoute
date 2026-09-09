@@ -231,10 +231,7 @@ function getStatusPresentation(
       statusVariant: "warning",
       statusLabel: providerText(t, "statusPendingVerification", "Pending Verification"),
       errorType: "pending_verification",
-      errorBadge: ERROR_TYPE_LABELS["pending_verification"] || {
-        labelKey: "pendingVerification",
-        variant: "warning",
-      },
+      errorBadge: null,
       errorTextClass: "text-yellow-600 dark:text-yellow-400",
     };
   }

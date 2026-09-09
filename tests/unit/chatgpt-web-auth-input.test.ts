@@ -44,6 +44,20 @@ test("Cookie header preserves equals and chunked session names", () => {
   assert.deepEqual(out.origins, []);
 });
 
+test("malformed Cookie header error stays actionable after sanitization", async () => {
+  const { sanitizeErrorMessage } = await import("../../open-sse/utils/errorSanitization.ts");
+  assert.throws(
+    () => normalizeChatGptWebAuthInput("not-a-cookie-header"),
+    (error: unknown) => {
+      assert.ok(error instanceof ChatGptWebAuthInputError);
+      const message = sanitizeErrorMessage(error.message);
+      assert.match(message, /Expected name=value/);
+      assert.doesNotMatch(message, /\[REDACTED\]/);
+      return true;
+    }
+  );
+});
+
 test("bare token requires explicit Codex compatibility option", () => {
   assertThrowsCode(() => normalizeChatGptWebAuthInput("TEST_ONLY"), "AUTH_COOKIE_HEADER");
   const result = normalizeChatGptWebAuthInput("TEST_ONLY", { allowBareSessionToken: true });

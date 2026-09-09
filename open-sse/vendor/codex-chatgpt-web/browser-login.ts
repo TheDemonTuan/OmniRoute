@@ -102,12 +102,12 @@ async function inspectStoredState(
         waitUntil: "domcontentloaded",
         timeout: remainingMs(),
       });
-      await assertAuthenticatedChatGptPage(verifierPage);
       await assertTemporaryChatPage(verifierPage);
       await verifierPage
         .locator(CHATGPT_COMPOSER_SELECTOR)
         .first()
         .waitFor({ state: "visible", timeout: remainingMs() });
+      await assertAuthenticatedChatGptPage(verifierPage);
       return {
         ...(await detectChatGptAccountCapabilities(verifierPage, {
           selectorTimeoutMs: Math.min(5_000, remainingMs()),
