@@ -212,3 +212,26 @@ test("already cancelled work never connects", async () => {
   );
   assert.equal(driver.events.length, 0);
 });
+
+test("same connection waits for in-flight disposal and acquires without CHATGPT_BROWSER_BUSY", async () => {
+  const driver = createMockDriver();
+  const lease1 = await acquireChatGptWebCdpLease(
+    driver as unknown as import("playwright").ChromiumBrowserContext,
+    "http://browser:9223",
+    createLeaseOpts("conn-wait")
+  );
+
+  // Trigger disposal in background (simulating in-flight context.close during rapid follow-up turn)
+  const disposePromise = lease1.dispose();
+
+  // Second acquire for the same connection arrives while dispose is settling
+  const lease2 = await acquireChatGptWebCdpLease(
+    createMockDriver() as unknown as import("playwright").ChromiumBrowserContext,
+    "http://browser:9223",
+    createLeaseOpts("conn-wait")
+  );
+  await disposePromise;
+
+  assert.ok(lease2);
+  await lease2.dispose();
+});

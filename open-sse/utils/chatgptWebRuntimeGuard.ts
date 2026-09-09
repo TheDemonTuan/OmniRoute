@@ -53,9 +53,42 @@ export interface ChatGptWebCdpLease {
   page: Page;
   dispose(): Promise<void>;
 }
+
+interface ActiveLeaseRecord {
+  disposal?: Promise<void>;
+  acquiredAt: number;
+}
+
 let activeLeases = 0;
-const activeConnections = new Set<string>();
-const MAX_ACTIVE_LEASES = 2;
+const activeConnections = new Map<string, ActiveLeaseRecord>();
+
+const DEFAULT_MAX_ACTIVE_LEASES = 2;
+function getMaxActiveLeases(): number {
+  const envVal = Number(process.env.CHATGPT_WEB_MAX_BROWSER_TABS);
+  return Number.isFinite(envVal) && envVal > 0 ? envVal : DEFAULT_MAX_ACTIVE_LEASES;
+}
+
+const CLEANUP_TIMEOUT_MS = 3_000;
+const MAX_LEASE_DURATION_MS = 180_000;
+
+async function boundedCleanup(fn: (() => Promise<void>) | undefined, ms: number): Promise<void> {
+  if (!fn) return;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      fn(),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, ms);
+        timer.unref?.();
+      }),
+    ]);
+  } catch {
+    /* best effort cleanup */
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export async function acquireChatGptWebCdpLease(
   driver: CdpDriver,
   endpoint: string,
@@ -66,36 +99,62 @@ export async function acquireChatGptWebCdpLease(
   }
 ): Promise<ChatGptWebCdpLease> {
   if (options.signal?.aborted) throw new DOMException("Browser operation aborted", "AbortError");
-  if (activeConnections.has(options.connectionId) || activeLeases >= MAX_ACTIVE_LEASES) {
+
+  // If the same connection has an existing lease that is already disposing, wait for it to settle
+  const existing = activeConnections.get(options.connectionId);
+  if (existing?.disposal) {
+    try {
+      await boundedCleanup(() => existing.disposal, 5_000);
+    } catch {
+      /* continue to capacity check */
+    }
+  }
+
+  const maxLeases = getMaxActiveLeases();
+  if (activeConnections.has(options.connectionId) || activeLeases >= maxLeases) {
     throw new ChatGptWebRuntimeGuardError(
       "CHATGPT_BROWSER_BUSY",
       "Browser capacity is occupied; no prompt was sent. Retry after the active turn finishes."
     );
   }
+
   activeLeases++;
-  activeConnections.add(options.connectionId);
+  const record: ActiveLeaseRecord = { acquiredAt: Date.now() };
+  activeConnections.set(options.connectionId, record);
+
   let browser: Browser | undefined;
   let context: BrowserContext | undefined;
   let disposal: Promise<void> | undefined;
+
   const dispose = (): Promise<void> => {
     if (disposal) return disposal;
     disposal = (async () => {
       try {
-        await context?.close();
+        await boundedCleanup(() => context?.close(), CLEANUP_TIMEOUT_MS);
       } catch {
         /* best-effort cleanup after a process crash */
       }
       try {
-        await browser?.close();
+        await boundedCleanup(() => browser?.close(), 2_000);
       } catch {
         /* connected browser: disconnect this client */
       } finally {
         activeConnections.delete(options.connectionId);
-        activeLeases--;
+        activeLeases = Math.max(0, activeLeases - 1);
       }
     })();
+    record.disposal = disposal;
     return disposal;
   };
+
+  // Stale lease watchdog: auto-dispose if a lease exceeds max turn duration
+  const watchdog = setTimeout(() => {
+    if (activeConnections.get(options.connectionId) === record) {
+      void dispose();
+    }
+  }, MAX_LEASE_DURATION_MS);
+  watchdog.unref?.();
+
   let phase: "connect" | "context" | "page" = "connect";
   try {
     browser = await driver.connectOverCDP(endpoint, { timeout: 20_000 });
@@ -106,8 +165,15 @@ export async function acquireChatGptWebCdpLease(
     phase = "page";
     const page = await context.newPage();
     if (options.signal?.aborted) throw new DOMException("Browser operation aborted", "AbortError");
-    return { page, dispose };
+    return {
+      page,
+      dispose: async () => {
+        clearTimeout(watchdog);
+        return dispose();
+      },
+    };
   } catch (error) {
+    clearTimeout(watchdog);
     await dispose();
     if (error instanceof DOMException && error.name === "AbortError") throw error;
     const code = phase === "connect" ? "CHATGPT_CDP_UNAVAILABLE" : "CHATGPT_BROWSER_CONTEXT_FAILED";
