@@ -68,6 +68,16 @@ function wrapped(response: Response, body: unknown): ExecutorExecuteResult {
   };
 }
 
+const inFlightCodexVerifications = new Map<string, Promise<ChatGptWebAccountCapabilities>>();
+
+function verificationKey(
+  connectionId: string,
+  storageStatePath: string,
+  runtimeIdentity: string
+): string {
+  return `${connectionId}:${storageStatePath}:${runtimeIdentity}`;
+}
+
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -164,9 +174,10 @@ function buildProviderConfig(
   input: ExecuteInput,
   parsed: CodexParsedRequest,
   storageStatePath: string,
-  connectionId: string
+  connectionId: string,
+  verifiedData?: Record<string, unknown>
 ): CodexProviderConfig {
-  const data = record(input.credentials.providerSpecificData);
+  const data = verifiedData ?? record(input.credentials.providerSpecificData);
   const route = requireChatGptWebCodexRoute(input.model);
   const paths = connectionRuntimePaths(connectionId);
   const browserRuntime = resolveChatGptWebCodexBrowserRuntime(data);
@@ -182,6 +193,15 @@ function buildProviderConfig(
 
   const solAvailable = data.solAvailable !== false;
   const proAvailable = data.proAvailable === true;
+
+  if (data.pendingBrowserVerification === true && data.browserVerified !== true) {
+    throw new ChatGptWebCodexRuntimeError(
+      "chatgpt_capability_unverified",
+      "ChatGPT Web model availability has not been verified for this connection. Please test or verify the connection first.",
+      503
+    );
+  }
+
   if (route.sol !== solAvailable) {
     throw new Error(
       route.sol
@@ -342,7 +362,20 @@ export class ChatGptWebCodexExecutor extends BaseExecutor {
         autoApproveToolCalls: false,
       };
       if (!browserLoginStateExists(loginConfig)) {
-        const capabilities = await inspectBrowserLoginCapabilities(loginConfig);
+        const runtimeIdentity = cdpEndpoint ?? chromeExecutablePath ?? "unavailable";
+        const key = verificationKey(connectionId, storageStatePath, runtimeIdentity);
+        let verificationPromise = inFlightCodexVerifications.get(key);
+        if (!verificationPromise) {
+          verificationPromise = (async () => {
+            try {
+              return await inspectBrowserLoginCapabilities(loginConfig);
+            } finally {
+              inFlightCodexVerifications.delete(key);
+            }
+          })();
+          inFlightCodexVerifications.set(key, verificationPromise);
+        }
+        const capabilities = await verificationPromise;
         providerData.solAvailable = capabilities.solAvailable;
         providerData.proAvailable = capabilities.proAvailable;
         providerData.browserVerified = true;
@@ -467,8 +500,15 @@ export class ChatGptWebCodexExecutor extends BaseExecutor {
       if (error instanceof ChatGptWebCodexRuntimeError) {
         return wrapped(errorResponse(error.statusCode, error.message, error.code), input.body);
       }
+      const message = sanitizeErrorMessage(error instanceof Error ? error.message : error);
+      const isCapabilityProbeFailure =
+        message.includes("capability probe") || message.includes("stable composer state");
       return wrapped(
-        errorResponse(400, error instanceof Error ? error.message : error),
+        errorResponse(
+          isCapabilityProbeFailure ? 503 : 400,
+          message,
+          isCapabilityProbeFailure ? "chatgpt_capability_verification_failed" : undefined
+        ),
         input.body
       );
     }

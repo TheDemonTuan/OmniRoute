@@ -106,9 +106,11 @@ function createMockDriver(failAt?: "connect" | "context" | "page") {
   };
 }
 
-const createLeaseOpts = (id: string) => ({
+const createLeaseOpts = (id: string, extra: Record<string, unknown> = {}) => ({
   connectionId: id,
   contextOptions: { storageState: createStorageState() },
+  queueTimeoutMs: 0,
+  ...extra,
 });
 
 test("CDP lease only creates owned context and disposes once", async () => {
@@ -234,4 +236,99 @@ test("same connection waits for in-flight disposal and acquires without CHATGPT_
 
   assert.ok(lease2);
   await lease2.dispose();
+});
+
+test("concurrent requests queue in FIFO order and acquire when slot frees", async () => {
+  const driver = createMockDriver();
+  const lease1 = await acquireChatGptWebCdpLease(
+    driver as unknown as import("playwright").ChromiumBrowserContext,
+    "http://browser:9223",
+    createLeaseOpts("conn-fifo", { queueTimeoutMs: 5_000 })
+  );
+
+  let lease2Acquired = false;
+  const lease2Promise = acquireChatGptWebCdpLease(
+    createMockDriver() as unknown as import("playwright").ChromiumBrowserContext,
+    "http://browser:9223",
+    createLeaseOpts("conn-fifo", { queueTimeoutMs: 5_000 })
+  ).then((l) => {
+    lease2Acquired = true;
+    return l;
+  });
+
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(lease2Acquired, false, "lease2 must wait in queue while lease1 is active");
+
+  await lease1.dispose();
+  const lease2 = await lease2Promise;
+  assert.equal(lease2Acquired, true, "lease2 acquired after lease1 disposes");
+  await lease2.dispose();
+});
+
+test("global capacity wakes a different connection when either slot frees", async () => {
+  const leaseA = await acquireChatGptWebCdpLease(
+    createMockDriver() as unknown as import("playwright").ChromiumBrowserContext,
+    "http://browser:9223",
+    createLeaseOpts("conn-global-a", { queueTimeoutMs: 5_000 })
+  );
+  const leaseB = await acquireChatGptWebCdpLease(
+    createMockDriver() as unknown as import("playwright").ChromiumBrowserContext,
+    "http://browser:9223",
+    createLeaseOpts("conn-global-b", { queueTimeoutMs: 5_000 })
+  );
+
+  const queuedLease = acquireChatGptWebCdpLease(
+    createMockDriver() as unknown as import("playwright").ChromiumBrowserContext,
+    "http://browser:9223",
+    createLeaseOpts("conn-global-c", { queueTimeoutMs: 5_000 })
+  );
+
+  await leaseA.dispose();
+  const leaseC = await queuedLease;
+  await Promise.all([leaseB.dispose(), leaseC.dispose()]);
+});
+
+test("queued request aborts cleanly via AbortSignal without holding slot", async () => {
+  const driver = createMockDriver();
+  const lease1 = await acquireChatGptWebCdpLease(
+    driver as unknown as import("playwright").ChromiumBrowserContext,
+    "http://browser:9223",
+    createLeaseOpts("conn-abort", { queueTimeoutMs: 5_000 })
+  );
+
+  const controller = new AbortController();
+  const lease2Promise = acquireChatGptWebCdpLease(
+    createMockDriver() as unknown as import("playwright").ChromiumBrowserContext,
+    "http://browser:9223",
+    createLeaseOpts("conn-abort", { signal: controller.signal, queueTimeoutMs: 5_000 })
+  );
+
+  await new Promise((r) => setTimeout(r, 20));
+  controller.abort();
+
+  await assert.rejects(lease2Promise, (err: unknown) => {
+    return (err as Error).name === "AbortError";
+  });
+
+  await lease1.dispose();
+});
+
+test("queued request times out when queueTimeoutMs expires", async () => {
+  const driver = createMockDriver();
+  const lease1 = await acquireChatGptWebCdpLease(
+    driver as unknown as import("playwright").ChromiumBrowserContext,
+    "http://browser:9223",
+    createLeaseOpts("conn-timeout", { queueTimeoutMs: 50 })
+  );
+
+  await assert.rejects(
+    acquireChatGptWebCdpLease(
+      createMockDriver() as unknown as import("playwright").ChromiumBrowserContext,
+      "http://browser:9223",
+      createLeaseOpts("conn-timeout", { queueTimeoutMs: 50 })
+    ),
+    (err: unknown) => (err as ChatGptWebRuntimeGuardError).code === "CHATGPT_BROWSER_BUSY"
+  );
+
+  await lease1.dispose();
 });

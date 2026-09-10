@@ -5,11 +5,7 @@ import { sanitizeErrorMessage } from "../../utils/error.ts";
 import { resolveChatGptWebCodexBrowserRuntime } from "./browserRuntime.ts";
 import { decodeChatGptWebCodexSecrets } from "./credentials.ts";
 import { getChatGptWebCodexRuntimeCounts } from "./runtime.ts";
-import {
-  connectionRuntimePaths,
-  ensureConnectionStorageState,
-  ensureConnectionStorageStateFromCredential,
-} from "./storageState.ts";
+import { connectionRuntimePaths } from "./storageState.ts";
 import {
   getTunnelRuntimeStatus,
   tunnelClientPaths,
@@ -40,25 +36,21 @@ export async function getChatGptWebCodexDoctorStatus(connection: {
   let credential = false;
   let hasStorageState = false;
   let hasCookie = false;
-  let pendingBrowserVerification = false;
+  let pendingBrowserVerification =
+    data.pendingBrowserVerification === true ||
+    (data.browserVerified !== true &&
+      (data.solAvailable === undefined || data.proAvailable === undefined));
   try {
     const secrets = decodeChatGptWebCodexSecrets(String(connection.apiKey || ""));
     hasStorageState = Boolean(secrets.storageState);
     hasCookie = Boolean(secrets.cookie);
     credential = hasStorageState || hasCookie;
-    if (hasStorageState) {
-      ensureConnectionStorageStateFromCredential(connectionId, secrets);
-    } else if (hasCookie && secrets.cookie) {
-      ensureConnectionStorageState(connectionId, secrets.cookie);
-    }
     storageState = existsSync(paths.storageStatePath);
     login = browserLoginStateExists({ storageStatePath: paths.storageStatePath });
     const markerPath = `${paths.storageStatePath}.verified.json`;
     if (existsSync(markerPath)) {
       try {
-        const marker = JSON.parse(
-          readFileSync(markerPath, "utf8")
-        ) as Record<string, unknown>;
+        const marker = JSON.parse(readFileSync(markerPath, "utf8")) as Record<string, unknown>;
         pendingBrowserVerification = marker.pendingBrowserVerification === true;
         if (typeof marker.solAvailable === "boolean") solAvailable = marker.solAvailable;
         if (typeof marker.proAvailable === "boolean") proAvailable = marker.proAvailable;

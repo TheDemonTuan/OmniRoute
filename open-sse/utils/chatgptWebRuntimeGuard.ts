@@ -62,6 +62,19 @@ interface ActiveLeaseRecord {
 let activeLeases = 0;
 const activeConnections = new Map<string, ActiveLeaseRecord>();
 
+interface Waiter {
+  connectionId: string;
+  resolve: () => void;
+  reject: (err: Error) => void;
+  timer?: ReturnType<typeof setTimeout>;
+  abortHandler?: () => void;
+}
+
+const queuedWaiters: Waiter[] = [];
+const reservedConnections = new Set<string>();
+const DEFAULT_MAX_QUEUE_WAITERS = 20;
+const DEFAULT_QUEUE_TIMEOUT_MS = 120_000;
+
 const DEFAULT_MAX_ACTIVE_LEASES = 2;
 function getMaxActiveLeases(): number {
   const envVal = Number(process.env.CHATGPT_WEB_MAX_BROWSER_TABS);
@@ -96,6 +109,8 @@ export async function acquireChatGptWebCdpLease(
     connectionId: string;
     contextOptions: BrowserContextOptions;
     signal?: AbortSignal | null;
+    queueTimeoutMs?: number;
+    maxQueueWaiters?: number;
   }
 ): Promise<ChatGptWebCdpLease> {
   if (options.signal?.aborted) throw new DOMException("Browser operation aborted", "AbortError");
@@ -110,15 +125,90 @@ export async function acquireChatGptWebCdpLease(
     }
   }
 
+  const queueTimeoutMs =
+    options.queueTimeoutMs !== undefined
+      ? options.queueTimeoutMs
+      : process.env.CHATGPT_WEB_QUEUE_TIMEOUT_MS !== undefined
+        ? Number(process.env.CHATGPT_WEB_QUEUE_TIMEOUT_MS)
+        : DEFAULT_QUEUE_TIMEOUT_MS;
+  const maxWaiters = options.maxQueueWaiters ?? DEFAULT_MAX_QUEUE_WAITERS;
+
   const maxLeases = getMaxActiveLeases();
-  if (activeConnections.has(options.connectionId) || activeLeases >= maxLeases) {
-    throw new ChatGptWebRuntimeGuardError(
-      "CHATGPT_BROWSER_BUSY",
-      "Browser capacity is occupied; no prompt was sent. Retry after the active turn finishes."
-    );
+  let acquiredViaQueue = false;
+
+  if (
+    activeConnections.has(options.connectionId) ||
+    reservedConnections.has(options.connectionId) ||
+    activeLeases >= maxLeases
+  ) {
+    if (queueTimeoutMs <= 0) {
+      throw new ChatGptWebRuntimeGuardError(
+        "CHATGPT_BROWSER_BUSY",
+        "Browser capacity is occupied; no prompt was sent. Retry after the active turn finishes."
+      );
+    }
+    if (queuedWaiters.length >= maxWaiters) {
+      throw new ChatGptWebRuntimeGuardError(
+        "CHATGPT_BROWSER_BUSY",
+        "Browser capacity is saturated. Please wait for the current turn to complete."
+      );
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const removeWaiter = (): void => {
+        const index = queuedWaiters.indexOf(waiter);
+        if (index !== -1) queuedWaiters.splice(index, 1);
+      };
+      const waiter: Waiter = {
+        connectionId: options.connectionId,
+        resolve: () => {
+          if (settled) return;
+          settled = true;
+          if (waiter.timer) clearTimeout(waiter.timer);
+          if (waiter.abortHandler && options.signal) {
+            options.signal.removeEventListener("abort", waiter.abortHandler);
+          }
+          resolve();
+        },
+        reject: (err) => {
+          if (settled) return;
+          settled = true;
+          if (waiter.timer) clearTimeout(waiter.timer);
+          if (waiter.abortHandler && options.signal) {
+            options.signal.removeEventListener("abort", waiter.abortHandler);
+          }
+          removeWaiter();
+          reject(err);
+        },
+      };
+
+      if (queueTimeoutMs > 0 && Number.isFinite(queueTimeoutMs)) {
+        waiter.timer = setTimeout(() => {
+          waiter.reject(
+            new ChatGptWebRuntimeGuardError(
+              "CHATGPT_BROWSER_BUSY",
+              "Browser capacity is occupied; no prompt was sent. Retry after the active turn finishes."
+            )
+          );
+        }, queueTimeoutMs);
+        waiter.timer.unref?.();
+      }
+
+      if (options.signal) {
+        waiter.abortHandler = () => {
+          waiter.reject(new DOMException("Browser operation aborted", "AbortError"));
+        };
+        options.signal.addEventListener("abort", waiter.abortHandler, { once: true });
+      }
+
+      queuedWaiters.push(waiter);
+    });
+    reservedConnections.delete(options.connectionId);
+    acquiredViaQueue = true;
   }
 
-  activeLeases++;
+  if (!acquiredViaQueue) activeLeases++;
   const record: ActiveLeaseRecord = { acquiredAt: Date.now() };
   activeConnections.set(options.connectionId, record);
 
@@ -140,7 +230,18 @@ export async function acquireChatGptWebCdpLease(
         /* connected browser: disconnect this client */
       } finally {
         activeConnections.delete(options.connectionId);
-        activeLeases = Math.max(0, activeLeases - 1);
+        const nextIndex = queuedWaiters.findIndex(
+          (waiter) =>
+            !activeConnections.has(waiter.connectionId) &&
+            !reservedConnections.has(waiter.connectionId)
+        );
+        if (nextIndex !== -1) {
+          const nextWaiter = queuedWaiters.splice(nextIndex, 1)[0]!;
+          reservedConnections.add(nextWaiter.connectionId);
+          nextWaiter.resolve();
+        } else {
+          activeLeases = Math.max(0, activeLeases - 1);
+        }
       }
     })();
     record.disposal = disposal;
