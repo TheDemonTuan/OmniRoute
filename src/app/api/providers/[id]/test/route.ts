@@ -880,6 +880,10 @@ async function testApiKeyConnection(connection: any) {
     return {
       ...buildApiKeyConnectionTestResult(result, error, diagnosis),
       pendingBrowserVerification: true,
+      ...((result as any).providerSpecificData
+        ? { providerSpecificData: (result as any).providerSpecificData }
+        : {}),
+      ...((result as any).capabilities ? { capabilities: (result as any).capabilities } : {}),
     };
   }
 
@@ -888,7 +892,13 @@ async function testApiKeyConnection(connection: any) {
     ? makeDiagnosis("ok", "upstream", null, null)
     : classifyFailure({ error, statusCode: result.statusCode, provider: connection.provider });
 
-  return buildApiKeyConnectionTestResult(result, error, diagnosis);
+  return {
+    ...buildApiKeyConnectionTestResult(result, error, diagnosis),
+    ...((result as any).providerSpecificData
+      ? { providerSpecificData: (result as any).providerSpecificData }
+      : {}),
+    ...((result as any).capabilities ? { capabilities: (result as any).capabilities } : {}),
+  };
 }
 
 /**
