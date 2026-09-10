@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { normalizeChatGptWebAuthInput } from "../../utils/chatgptWebAuthInput.ts";
 
 export type ChatGptWebCodexSecrets = {
@@ -29,6 +31,10 @@ export function encodeChatGptWebCodexSecrets(secrets: ChatGptWebCodexSecrets): s
     ...(secrets.runtimeKey?.trim() ? { runtimeKey: secrets.runtimeKey.trim() } : {}),
   });
 }
+export function chatGptWebCodexCredentialFingerprint(value: string): string {
+  return createHash("sha256").update(value.trim()).digest("hex");
+}
+
 export function decodeChatGptWebCodexSecrets(value: string): ChatGptWebCodexSecrets {
   const text = value.trim();
   if (!text) throw new Error("ChatGPT Web (Codex) credentials are missing");

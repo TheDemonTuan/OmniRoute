@@ -10,7 +10,7 @@ import {
 import { normalizeChatGptWebAuthInput } from "./chatgptWebAuthInput.ts";
 import {
   acquireChatGptWebCdpLease,
-  acquireChatGptWebRuntimeAdmission,
+  acquireQueuedChatGptWebRuntimeAdmission,
   chatGptWebCdpEndpoint,
   requireChatGptWebDisplay,
 } from "./chatgptWebRuntimeGuard.ts";
@@ -273,7 +273,11 @@ async function createDefaultSession(
 ): Promise<ChatGptWebBrowserSession> {
   const cdpEndpoint = chatGptWebCdpEndpoint();
   if (cdpEndpoint) {
-    const admission = acquireChatGptWebRuntimeAdmission(input.connectionId, "clean-room");
+    const admission = await acquireQueuedChatGptWebRuntimeAdmission(
+      input.connectionId,
+      "clean-room",
+      { signal: input.signal }
+    );
     try {
       const { chromium } = await import("playwright");
       const proxy = await resolveBrowserContextProxy(input.connectionId, {

@@ -118,15 +118,10 @@ async function inspectStoredState(
         .first()
         .waitFor({ state: "visible", timeout: remainingMs() });
       await assertAuthenticatedChatGptPage(verifierPage);
-      let capabilities: Partial<ChatGptWebAccountCapabilities> = {};
-      try {
-        capabilities = await detectChatGptAccountCapabilities(verifierPage, {
-          selectorTimeoutMs: Math.min(5_000, remainingMs()),
-          stableAbsenceMs: 1_000,
-        });
-      } catch {
-        // Session is already verified and authenticated on temporary chat; best-effort capability probe
-      }
+      const capabilities = await detectChatGptAccountCapabilities(verifierPage, {
+        selectorTimeoutMs: Math.min(25_000, remainingMs()),
+        stableAbsenceMs: 2_000,
+      });
       return { ...capabilities, url: verifierPage.url() };
     } finally {
       await verifierContext.close();

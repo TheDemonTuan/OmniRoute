@@ -72,6 +72,46 @@ let activeLeases = 0;
 const activeConnections = new Map<string, ActiveLeaseRecord>();
 const activeAdmissions = new Map<string, symbol>();
 
+interface AdmissionWaiter {
+  connectionId: string;
+  owner: "clean-room" | "codex" | "verification";
+  resolve: (admission: ChatGptWebRuntimeAdmission) => void;
+  reject: (err: Error) => void;
+  timer?: ReturnType<typeof setTimeout>;
+  abortHandler?: () => void;
+}
+
+const queuedAdmissionWaiters: AdmissionWaiter[] = [];
+const DEFAULT_MAX_QUEUE_WAITERS = 20;
+const DEFAULT_QUEUE_TIMEOUT_MS = 120_000;
+
+function scheduleNextAdmissionWaiter(): void {
+  if (queuedAdmissionWaiters.length === 0) return;
+  const maxLeases = getMaxActiveLeases();
+  if (getActiveCount() >= maxLeases) return;
+
+  const waiter = queuedAdmissionWaiters[0];
+  if (!waiter || activeConnections.has(waiter.connectionId) || activeAdmissions.has(waiter.connectionId)) {
+    return;
+  }
+  queuedAdmissionWaiters.shift();
+  if (waiter.timer) clearTimeout(waiter.timer);
+
+  const token = Symbol(waiter.owner);
+  activeAdmissions.set(waiter.connectionId, token);
+
+  const admission: ChatGptWebRuntimeAdmission = {
+    release(): void {
+      if (activeAdmissions.get(waiter.connectionId) === token) {
+        activeAdmissions.delete(waiter.connectionId);
+        scheduleNextAdmissionWaiter();
+      }
+    },
+  };
+
+  waiter.resolve(admission);
+}
+
 function getActiveCount(): number {
   const allActive = new Set([...activeAdmissions.keys(), ...activeConnections.keys()]);
   return allActive.size;
@@ -104,9 +144,119 @@ export function acquireChatGptWebRuntimeAdmission(
     release(): void {
       if (activeAdmissions.get(normalizedConnectionId) === token) {
         activeAdmissions.delete(normalizedConnectionId);
+        scheduleNextAdmissionWaiter();
       }
     },
   };
+}
+
+export async function acquireQueuedChatGptWebRuntimeAdmission(
+  connectionId: string,
+  owner: "clean-room" | "codex" | "verification",
+  options: {
+    timeoutMs?: number;
+    signal?: AbortSignal | null;
+    maxQueueWaiters?: number;
+  } = {}
+): Promise<ChatGptWebRuntimeAdmission> {
+  const normalizedConnectionId = connectionId.trim();
+  if (options.signal?.aborted) {
+    throw new DOMException("Browser operation aborted", "AbortError");
+  }
+
+  const timeoutMs =
+    options.timeoutMs !== undefined
+      ? options.timeoutMs
+      : process.env.CHATGPT_WEB_QUEUE_TIMEOUT_MS !== undefined
+        ? Number(process.env.CHATGPT_WEB_QUEUE_TIMEOUT_MS)
+        : DEFAULT_QUEUE_TIMEOUT_MS;
+  const maxWaiters = options.maxQueueWaiters ?? DEFAULT_MAX_QUEUE_WAITERS;
+
+  const maxLeases = getMaxActiveLeases();
+  const isBusy =
+    activeConnections.has(normalizedConnectionId) ||
+    activeAdmissions.has(normalizedConnectionId) ||
+    getActiveCount() >= maxLeases;
+
+  if (!isBusy) {
+    const token = Symbol(owner);
+    activeAdmissions.set(normalizedConnectionId, token);
+    return {
+      release(): void {
+        if (activeAdmissions.get(normalizedConnectionId) === token) {
+          activeAdmissions.delete(normalizedConnectionId);
+          scheduleNextAdmissionWaiter();
+        }
+      },
+    };
+  }
+
+  if (timeoutMs <= 0) {
+    throw new ChatGptWebRuntimeGuardError(
+      "CHATGPT_BROWSER_BUSY",
+      `Browser capacity is occupied by another ${owner} operation; no prompt was sent. Retry after the active operation finishes.`
+    );
+  }
+
+  if (queuedAdmissionWaiters.length >= maxWaiters) {
+    throw new ChatGptWebRuntimeGuardError(
+      "CHATGPT_BROWSER_BUSY",
+      "Browser capacity is saturated. Please wait for the current turn to complete."
+    );
+  }
+
+  return new Promise<ChatGptWebRuntimeAdmission>((resolve, reject) => {
+    let settled = false;
+    const removeWaiter = (): void => {
+      const idx = queuedAdmissionWaiters.indexOf(waiter);
+      if (idx !== -1) queuedAdmissionWaiters.splice(idx, 1);
+    };
+
+    const waiter: AdmissionWaiter = {
+      connectionId: normalizedConnectionId,
+      owner,
+      resolve: (admission) => {
+        if (settled) return;
+        settled = true;
+        if (waiter.timer) clearTimeout(waiter.timer);
+        if (waiter.abortHandler && options.signal) {
+          options.signal.removeEventListener("abort", waiter.abortHandler);
+        }
+        resolve(admission);
+      },
+      reject: (err) => {
+        if (settled) return;
+        settled = true;
+        if (waiter.timer) clearTimeout(waiter.timer);
+        if (waiter.abortHandler && options.signal) {
+          options.signal.removeEventListener("abort", waiter.abortHandler);
+        }
+        removeWaiter();
+        reject(err);
+      },
+    };
+
+    if (timeoutMs > 0 && Number.isFinite(timeoutMs)) {
+      waiter.timer = setTimeout(() => {
+        waiter.reject(
+          new ChatGptWebRuntimeGuardError(
+            "CHATGPT_BROWSER_BUSY",
+            "Browser capacity is occupied; no prompt was sent. Retry after the active turn finishes."
+          )
+        );
+      }, timeoutMs);
+      waiter.timer.unref?.();
+    }
+
+    if (options.signal) {
+      waiter.abortHandler = () => {
+        waiter.reject(new DOMException("Browser operation aborted", "AbortError"));
+      };
+      options.signal.addEventListener("abort", waiter.abortHandler, { once: true });
+    }
+
+    queuedAdmissionWaiters.push(waiter);
+  });
 }
 
 const DEFAULT_MAX_ACTIVE_LEASES = 2;
@@ -195,6 +345,7 @@ export async function acquireChatGptWebCdpLease(
           activeLeases = Math.max(0, activeLeases - 1);
         }
         admission?.release();
+        scheduleNextAdmissionWaiter();
       }
     })();
     record.disposal = disposal;

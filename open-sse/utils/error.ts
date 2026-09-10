@@ -65,6 +65,7 @@ const SAFE_PUBLIC_ERROR_IDENTIFIERS = new Set([
   "body_exceeds_budget",
   "browser_stream_inconsistent",
   "capability_mismatch",
+  "chatgpt_capability_verification_failed",
   "cf_mitigated_challenge",
   "chat_admission_busy",
   "chat_history_too_large",

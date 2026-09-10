@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -19,6 +19,7 @@ import {
   ChatGptWebCodexExecutor,
 } from "../../open-sse/executors/chatgpt-web-codex.ts";
 import {
+  connectionRuntimePaths,
   cookieHeaderValue,
   finalizeValidatedChatGptWebCodexSecrets,
   parseCookies,
@@ -114,6 +115,40 @@ test("Test A — cookie structurally valid, browser/CDP offline", async () => {
     else delete process.env.CHATGPT_WEB_CODEX_DEFAULT_CHROME_PATHS;
     if (prevDataDir !== undefined) process.env.DATA_DIR = prevDataDir;
     else delete process.env.DATA_DIR;
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("existing connection validation persists browser state under the connection ID", async () => {
+  const previousDataDir = process.env.DATA_DIR;
+  const previousCdp = process.env.CHATGPT_WEB_CODEX_CDP_URL;
+  const previousChrome = process.env.CHATGPT_WEB_CODEX_CHROME_PATH;
+  const root = mkdtempSync(join(tmpdir(), "omniroute-cgw-owner-"));
+  const connectionId = "existing-chatgpt-web-codex-connection";
+  try {
+    process.env.DATA_DIR = root;
+    delete process.env.CHATGPT_WEB_CODEX_CDP_URL;
+    process.env.CHATGPT_WEB_CODEX_CHROME_PATH = "disabled";
+    const result = await validateChatGptWebCodexProvider({
+      apiKey: VALID_COOKIE,
+      connectionId,
+      providerSpecificData: { chromeExecutablePath: "disabled" },
+    });
+
+    assert.equal(result.valid, true);
+    assert.equal(result.pendingBrowserVerification, true);
+    assert.equal(
+      existsSync(connectionRuntimePaths(connectionId).storageStatePath),
+      true,
+      "existing connections must not write verification state under a temporary validation ID"
+    );
+  } finally {
+    if (previousDataDir === undefined) delete process.env.DATA_DIR;
+    else process.env.DATA_DIR = previousDataDir;
+    if (previousCdp === undefined) delete process.env.CHATGPT_WEB_CODEX_CDP_URL;
+    else process.env.CHATGPT_WEB_CODEX_CDP_URL = previousCdp;
+    if (previousChrome === undefined) delete process.env.CHATGPT_WEB_CODEX_CHROME_PATH;
+    else process.env.CHATGPT_WEB_CODEX_CHROME_PATH = previousChrome;
     rmSync(root, { recursive: true, force: true });
   }
 });
@@ -380,10 +415,10 @@ test("Test E1 — executor verifies pending Sol availability before browser subm
       },
     });
 
-    assert.equal(result.response.status, 400);
-    const json = (await result.response.json()) as { error?: { message?: string } };
-    assert.doesNotMatch(json.error?.message ?? "", /availability has not been verified/i);
-    assert.match(json.error?.message ?? "", /connect|browser/i);
+    assert.equal(result.response.status, 503);
+    const json = (await result.response.json()) as { error?: { message?: string; code?: string } };
+    assert.equal(json.error?.code, "chatgpt_capability_verification_failed");
+    assert.match(json.error?.message ?? "", /capability verification/i);
   } finally {
     if (previousCdp === undefined) delete process.env.CHATGPT_WEB_CODEX_CDP_URL;
     else process.env.CHATGPT_WEB_CODEX_CDP_URL = previousCdp;

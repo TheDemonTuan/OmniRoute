@@ -162,49 +162,23 @@ export async function detectChatGptAccountCapabilities(
   const menuExpanded = await effortButton.getAttribute("aria-expanded").catch(() => null);
   if (!menuVisible && menuExpanded !== "true") {
     await effortButton.click({ force: true }).catch(async () => {
+      await effortButton.dispatchEvent("pointerdown").catch(() => {});
       await effortButton.press("Enter").catch(() => {});
     });
   }
   try {
-    const efforts = menu.locator(CHATGPT_EFFORT_ITEM_SELECTOR);
     const { sliderContainer, slider } = chatGptEffortSlider(page);
-    const timeout = Math.min(options.selectorTimeoutMs ?? 15_000, 30_000);
-    const waitAbort = new AbortController();
-    try {
-      const effectiveTimeout = Math.min(timeout, Math.max(1, deadline - Date.now()));
-      const ready = await Promise.race([
-        efforts
-          .first()
-          .waitFor({ state: "visible", timeout: effectiveTimeout, signal: waitAbort.signal })
-          .then(() => "items" as const),
-        sliderContainer
-          .waitFor({ state: "visible", timeout: effectiveTimeout, signal: waitAbort.signal })
-          .then(() =>
-            slider.waitFor({
-              state: "attached",
-              timeout: effectiveTimeout,
-              signal: waitAbort.signal,
-            })
-          )
-          .then(() => "slider" as const),
-      ]);
-      const sliderActive =
-        ready === "slider" ||
-        (await sliderContainer.isVisible().catch(() => false)) ||
-        (await slider.isVisible().catch(() => false));
-      if (!sliderActive) {
-        return { solAvailable: true, proAvailable: (await efforts.count()) >= 5 };
-      }
-      const state = parseChatGptEffortSliderState(
-        await slider.getAttribute("aria-valuemin"),
-        await slider.getAttribute("aria-valuemax"),
-        await slider.getAttribute("aria-valuenow")
-      );
-      if (!state) throw new Error("ChatGPT effort slider exposed an invalid ARIA range");
-      return { solAvailable: true, proAvailable: state.max - state.min + 1 >= 5 };
-    } finally {
-      waitAbort.abort();
-    }
+    const timeout = Math.min(options.selectorTimeoutMs ?? 25_000, 30_000);
+    const effectiveTimeout = Math.min(timeout, Math.max(1, deadline - Date.now()));
+    await sliderContainer.waitFor({ state: "visible", timeout: effectiveTimeout });
+    await slider.waitFor({ state: "attached", timeout: effectiveTimeout });
+    const state = parseChatGptEffortSliderState(
+      await slider.getAttribute("aria-valuemin"),
+      await slider.getAttribute("aria-valuemax"),
+      await slider.getAttribute("aria-valuenow")
+    );
+    if (!state) throw new Error("ChatGPT effort slider exposed an invalid ARIA range");
+    return { solAvailable: true, proAvailable: state.max - state.min + 1 >= 5 };
   } finally {
     await page.keyboard.press("Escape").catch(() => {});
   }
