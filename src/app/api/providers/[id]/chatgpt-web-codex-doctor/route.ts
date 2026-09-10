@@ -67,6 +67,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       case "retry_verification": {
         const validation = await validateChatGptWebCodexProvider({
           apiKey: connection.apiKey,
+          connectionId: id,
           providerSpecificData: { ...providerSpecificData, verifyBrowserLogin: true },
         });
         if (validation.valid && validation.pendingBrowserVerification !== true) {

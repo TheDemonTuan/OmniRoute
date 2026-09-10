@@ -13,7 +13,7 @@ import {
   ensureConnectionStorageStateFromCredential,
 } from "@omniroute/open-sse/executors/chatgpt-web-codex/storageState.ts";
 import { sanitizeErrorMessage } from "@omniroute/open-sse/utils/error.ts";
-import { acquireChatGptWebRuntimeAdmission } from "@omniroute/open-sse/utils/chatgptWebRuntimeGuard.ts";
+import { acquireQueuedChatGptWebRuntimeAdmission } from "@omniroute/open-sse/utils/chatgptWebRuntimeGuard.ts";
 
 // detectChromeExecutable (executors/chatgpt-web-codex.ts) is imported
 // dynamically below, not statically here: this module is re-exported through
@@ -69,13 +69,15 @@ export async function validateChatGptWebCodexProvider({
       };
     }
     const validationId = `validation-${randomBytes(12).toString("hex")}`;
-    const paths = connectionRuntimePaths(validationId);
+    const runtimeConnectionId = connectionId?.trim() || validationId;
+    const usesTemporaryValidationState = runtimeConnectionId === validationId;
+    const paths = connectionRuntimePaths(runtimeConnectionId);
     const freshCookie = Boolean(secrets.cookie);
     try {
-      if (secrets.cookie) ensureConnectionStorageState(validationId, secrets.cookie);
-      else ensureConnectionStorageStateFromCredential(validationId, secrets);
+      if (secrets.cookie) ensureConnectionStorageState(runtimeConnectionId, secrets.cookie);
+      else ensureConnectionStorageStateFromCredential(runtimeConnectionId, secrets);
     } catch (storageError) {
-      rmSync(paths.root, { recursive: true, force: true });
+      if (usesTemporaryValidationState) rmSync(paths.root, { recursive: true, force: true });
       return {
         valid: false,
         error: sanitizeErrorMessage(
@@ -92,9 +94,8 @@ export async function validateChatGptWebCodexProvider({
     // Saving a connection must not wait for a remote ChatGPT page or its volatile UI.
     // An explicit connection test or request performs browser authentication.
     if (verifyBrowserLogin && runtime.available) {
-      const verificationConnectionId = connectionId?.trim() || validationId;
-      const admission = acquireChatGptWebRuntimeAdmission(
-        verificationConnectionId,
+      const admission = await acquireQueuedChatGptWebRuntimeAdmission(
+        runtimeConnectionId,
         "verification"
       );
       let capabilities: Awaited<ReturnType<typeof inspectBrowserLoginCapabilities>>;
@@ -114,7 +115,9 @@ export async function validateChatGptWebCodexProvider({
       } finally {
         admission.release();
       }
-      if (!freshCookie) rmSync(paths.root, { recursive: true, force: true });
+      if (usesTemporaryValidationState && !freshCookie) {
+        rmSync(paths.root, { recursive: true, force: true });
+      }
       const capabilitiesVerified =
         typeof capabilities.solAvailable === "boolean" &&
         typeof capabilities.proAvailable === "boolean";
@@ -149,7 +152,9 @@ export async function validateChatGptWebCodexProvider({
       };
     }
 
-    if (!freshCookie) rmSync(paths.root, { recursive: true, force: true });
+    if (usesTemporaryValidationState && !freshCookie) {
+      rmSync(paths.root, { recursive: true, force: true });
+    }
     return {
       valid: true,
       error: null,

@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   acquireChatGptWebCdpLease,
+  acquireQueuedChatGptWebRuntimeAdmission,
   chatGptWebCdpEndpoint,
   ChatGptWebRuntimeGuardError,
   requireChatGptWebDisplay,
@@ -166,6 +167,58 @@ test("runtime admission applies the global browser capacity across owner types",
   } finally {
     first.release();
     second.release();
+    if (previous === undefined) delete process.env.CHATGPT_WEB_MAX_BROWSER_TABS;
+    else process.env.CHATGPT_WEB_MAX_BROWSER_TABS = previous;
+  }
+});
+
+test("queued admissions are FIFO and release capacity without dropping waiters", async () => {
+  const previous = process.env.CHATGPT_WEB_MAX_BROWSER_TABS;
+  process.env.CHATGPT_WEB_MAX_BROWSER_TABS = "1";
+  const first = await acquireQueuedChatGptWebRuntimeAdmission("queue-first", "clean-room");
+  const order: string[] = [];
+  const second = acquireQueuedChatGptWebRuntimeAdmission("queue-second", "codex").then(
+    (admission) => {
+      order.push("second");
+      return admission;
+    }
+  );
+  const third = acquireQueuedChatGptWebRuntimeAdmission("queue-third", "verification").then(
+    (admission) => {
+      order.push("third");
+      return admission;
+    }
+  );
+  try {
+    first.release();
+    const secondAdmission = await second;
+    assert.deepEqual(order, ["second"]);
+    secondAdmission.release();
+    const thirdAdmission = await third;
+    assert.deepEqual(order, ["second", "third"]);
+    thirdAdmission.release();
+  } finally {
+    if (previous === undefined) delete process.env.CHATGPT_WEB_MAX_BROWSER_TABS;
+    else process.env.CHATGPT_WEB_MAX_BROWSER_TABS = previous;
+  }
+});
+
+test("queued admission abort removes its waiter and preserves capacity", async () => {
+  const previous = process.env.CHATGPT_WEB_MAX_BROWSER_TABS;
+  process.env.CHATGPT_WEB_MAX_BROWSER_TABS = "1";
+  const first = await acquireQueuedChatGptWebRuntimeAdmission("abort-active", "clean-room");
+  const controller = new AbortController();
+  const aborted = acquireQueuedChatGptWebRuntimeAdmission("abort-waiter", "codex", {
+    signal: controller.signal,
+  });
+  const next = acquireQueuedChatGptWebRuntimeAdmission("abort-next", "verification");
+  try {
+    controller.abort();
+    await assert.rejects(aborted, (error: unknown) => (error as Error).name === "AbortError");
+    first.release();
+    const nextAdmission = await next;
+    nextAdmission.release();
+  } finally {
     if (previous === undefined) delete process.env.CHATGPT_WEB_MAX_BROWSER_TABS;
     else process.env.CHATGPT_WEB_MAX_BROWSER_TABS = previous;
   }

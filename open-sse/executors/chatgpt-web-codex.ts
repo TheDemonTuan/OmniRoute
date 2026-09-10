@@ -7,7 +7,10 @@ import { isVerifiedNativeCodexRequest } from "../config/codexIdentity.ts";
 import { FORMATS } from "../translator/formats.ts";
 import { buildErrorBody, sanitizeErrorMessage } from "../utils/error.ts";
 import { ChatGptWebAdapterError } from "../vendor/codex-chatgpt-web/adapters/chatgpt-web/adapter-error.ts";
-import { acquireChatGptWebRuntimeAdmission } from "../utils/chatgptWebRuntimeGuard.ts";
+import {
+  acquireQueuedChatGptWebRuntimeAdmission,
+  type ChatGptWebRuntimeAdmission,
+} from "../utils/chatgptWebRuntimeGuard.ts";
 import {
   createChatGptWebAdapter,
   waitForChatGptWebTurnSettlement,
@@ -39,6 +42,7 @@ import {
   readConnectionStorageState,
 } from "./chatgpt-web-codex/storageState.ts";
 import {
+  chatGptWebCodexCredentialFingerprint,
   decodeChatGptWebCodexSecrets,
   encodeChatGptWebCodexSecrets,
 } from "./chatgpt-web-codex/credentials.ts";
@@ -51,6 +55,19 @@ const SSE_HEADERS = {
   Connection: "keep-alive",
   "Content-Type": "text/event-stream; charset=utf-8",
 };
+
+class ChatGptWebCapabilityVerificationError extends Error {
+  readonly code = "chatgpt_capability_verification_failed";
+  readonly statusCode = 503;
+
+  constructor(cause: unknown) {
+    super(
+      "ChatGPT browser capability verification did not complete. Retry after the browser becomes available."
+    );
+    this.name = "ChatGptWebCapabilityVerificationError";
+    this.cause = cause;
+  }
+}
 
 function errorResponse(status: number, message: unknown, code = "chatgpt_web_codex_error") {
   return new Response(
@@ -72,6 +89,19 @@ function wrapped(response: Response, body: unknown): ExecutorExecuteResult {
     transformedBody: body,
     transport: "chatgpt-web-browser",
   };
+}
+
+const inFlightCodexVerifications = new Map<
+  string,
+  Promise<Awaited<ReturnType<typeof inspectBrowserLoginCapabilities>>>
+>();
+
+function verificationKey(
+  connectionId: string,
+  credentialFingerprint: string,
+  runtimeIdentity: string
+): string {
+  return `${connectionId}:${credentialFingerprint}:${runtimeIdentity}`;
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -376,15 +406,32 @@ export class ChatGptWebCodexExecutor extends BaseExecutor {
       };
       let capabilities = storedBrowserLoginCapabilities(loginConfig);
       if (!browserLoginStateExists(loginConfig)) {
-        const verificationAdmission = acquireChatGptWebRuntimeAdmission(
+        const runtimeIdentity = cdpEndpoint ?? chromeExecutablePath ?? "unavailable";
+        const key = verificationKey(
           connectionId,
-          "verification"
+          chatGptWebCodexCredentialFingerprint(encodedCredentials),
+          runtimeIdentity
         );
-        try {
-          capabilities = await inspectBrowserLoginCapabilities(loginConfig);
-        } finally {
-          verificationAdmission.release();
+        let verificationPromise = inFlightCodexVerifications.get(key);
+        if (!verificationPromise) {
+          verificationPromise = (async () => {
+            const verificationAdmission = await acquireQueuedChatGptWebRuntimeAdmission(
+              connectionId,
+              "verification",
+              { signal: input.signal }
+            );
+            try {
+              return await inspectBrowserLoginCapabilities(loginConfig);
+            } catch (error) {
+              throw new ChatGptWebCapabilityVerificationError(error);
+            } finally {
+              verificationAdmission.release();
+              inFlightCodexVerifications.delete(key);
+            }
+          })();
+          inFlightCodexVerifications.set(key, verificationPromise);
         }
+        capabilities = await verificationPromise;
       }
       const capabilitiesVerified =
         typeof capabilities.solAvailable === "boolean" &&
@@ -436,9 +483,11 @@ export class ChatGptWebCodexExecutor extends BaseExecutor {
         abortSignal: input.signal ?? undefined,
       };
       const run = async () => {
-        let admission: ReturnType<typeof acquireChatGptWebRuntimeAdmission> | undefined;
+        let admission: ChatGptWebRuntimeAdmission | undefined;
         try {
-          admission = acquireChatGptWebRuntimeAdmission(connectionId, "codex");
+          admission = await acquireQueuedChatGptWebRuntimeAdmission(connectionId, "codex", {
+            signal: input.signal,
+          });
           await adapter.runTurn(parsed, incoming, (event) => events.push(event));
         } catch (error) {
           if (error instanceof ChatGptWebAdapterError) {
@@ -531,6 +580,9 @@ export class ChatGptWebCodexExecutor extends BaseExecutor {
         sanitizeErrorMessage(error instanceof Error ? error.message : error)
       );
       if (error instanceof ChatGptWebCodexRuntimeError) {
+        return wrapped(errorResponse(error.statusCode, error.message, error.code), input.body);
+      }
+      if (error instanceof ChatGptWebCapabilityVerificationError) {
         return wrapped(errorResponse(error.statusCode, error.message, error.code), input.body);
       }
       return wrapped(
