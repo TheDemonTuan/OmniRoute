@@ -35,7 +35,11 @@ export function chatGptWebCdpEndpoint(
       !["http:", "https:", "ws:", "wss:"].includes(url.protocol) ||
       url.username ||
       url.password ||
-      url.hash
+      url.hash ||
+      url.search ||
+      !url.hostname ||
+      url.port === "0" ||
+      url.pathname !== "/"
     )
       throw new Error();
     return endpoint;
@@ -54,26 +58,56 @@ export interface ChatGptWebCdpLease {
   dispose(): Promise<void>;
 }
 
+export interface ChatGptWebRuntimeAdmission {
+  release(): void;
+}
+
 interface ActiveLeaseRecord {
   disposal?: Promise<void>;
   acquiredAt: number;
+  token: symbol;
 }
 
 let activeLeases = 0;
 const activeConnections = new Map<string, ActiveLeaseRecord>();
+const activeAdmissions = new Map<string, symbol>();
 
-interface Waiter {
-  connectionId: string;
-  resolve: () => void;
-  reject: (err: Error) => void;
-  timer?: ReturnType<typeof setTimeout>;
-  abortHandler?: () => void;
+function getActiveCount(): number {
+  const allActive = new Set([...activeAdmissions.keys(), ...activeConnections.keys()]);
+  return allActive.size;
 }
 
-const queuedWaiters: Waiter[] = [];
-const reservedConnections = new Set<string>();
-const DEFAULT_MAX_QUEUE_WAITERS = 20;
-const DEFAULT_QUEUE_TIMEOUT_MS = 120_000;
+function ensureCapacity(connectionId: string): void {
+  if (activeConnections.has(connectionId) || getActiveCount() >= getMaxActiveLeases()) {
+    throw new ChatGptWebRuntimeGuardError(
+      "CHATGPT_BROWSER_BUSY",
+      "Browser capacity is occupied; no prompt was sent. Retry after the active turn finishes."
+    );
+  }
+}
+
+export function acquireChatGptWebRuntimeAdmission(
+  connectionId: string,
+  owner: "clean-room" | "codex" | "verification"
+): ChatGptWebRuntimeAdmission {
+  const normalizedConnectionId = connectionId.trim();
+  if (!normalizedConnectionId || activeAdmissions.has(normalizedConnectionId)) {
+    throw new ChatGptWebRuntimeGuardError(
+      "CHATGPT_BROWSER_BUSY",
+      `Browser capacity is occupied by another ${owner} operation; no prompt was sent. Retry after the active operation finishes.`
+    );
+  }
+  ensureCapacity(normalizedConnectionId);
+  const token = Symbol(owner);
+  activeAdmissions.set(normalizedConnectionId, token);
+  return {
+    release(): void {
+      if (activeAdmissions.get(normalizedConnectionId) === token) {
+        activeAdmissions.delete(normalizedConnectionId);
+      }
+    },
+  };
+}
 
 const DEFAULT_MAX_ACTIVE_LEASES = 2;
 function getMaxActiveLeases(): number {
@@ -109,11 +143,11 @@ export async function acquireChatGptWebCdpLease(
     connectionId: string;
     contextOptions: BrowserContextOptions;
     signal?: AbortSignal | null;
-    queueTimeoutMs?: number;
-    maxQueueWaiters?: number;
+    admission?: ChatGptWebRuntimeAdmission;
   }
 ): Promise<ChatGptWebCdpLease> {
   if (options.signal?.aborted) throw new DOMException("Browser operation aborted", "AbortError");
+  const admission = options.admission;
 
   // If the same connection has an existing lease that is already disposing, wait for it to settle
   const existing = activeConnections.get(options.connectionId);
@@ -125,92 +159,19 @@ export async function acquireChatGptWebCdpLease(
     }
   }
 
-  const queueTimeoutMs =
-    options.queueTimeoutMs !== undefined
-      ? options.queueTimeoutMs
-      : process.env.CHATGPT_WEB_QUEUE_TIMEOUT_MS !== undefined
-        ? Number(process.env.CHATGPT_WEB_QUEUE_TIMEOUT_MS)
-        : DEFAULT_QUEUE_TIMEOUT_MS;
-  const maxWaiters = options.maxQueueWaiters ?? DEFAULT_MAX_QUEUE_WAITERS;
-
-  const maxLeases = getMaxActiveLeases();
-  let acquiredViaQueue = false;
-
-  if (
-    activeConnections.has(options.connectionId) ||
-    reservedConnections.has(options.connectionId) ||
-    activeLeases >= maxLeases
-  ) {
-    if (queueTimeoutMs <= 0) {
-      throw new ChatGptWebRuntimeGuardError(
-        "CHATGPT_BROWSER_BUSY",
-        "Browser capacity is occupied; no prompt was sent. Retry after the active turn finishes."
-      );
-    }
-    if (queuedWaiters.length >= maxWaiters) {
-      throw new ChatGptWebRuntimeGuardError(
-        "CHATGPT_BROWSER_BUSY",
-        "Browser capacity is saturated. Please wait for the current turn to complete."
-      );
-    }
-
-    await new Promise<void>((resolve, reject) => {
-      let settled = false;
-      const removeWaiter = (): void => {
-        const index = queuedWaiters.indexOf(waiter);
-        if (index !== -1) queuedWaiters.splice(index, 1);
-      };
-      const waiter: Waiter = {
-        connectionId: options.connectionId,
-        resolve: () => {
-          if (settled) return;
-          settled = true;
-          if (waiter.timer) clearTimeout(waiter.timer);
-          if (waiter.abortHandler && options.signal) {
-            options.signal.removeEventListener("abort", waiter.abortHandler);
-          }
-          resolve();
-        },
-        reject: (err) => {
-          if (settled) return;
-          settled = true;
-          if (waiter.timer) clearTimeout(waiter.timer);
-          if (waiter.abortHandler && options.signal) {
-            options.signal.removeEventListener("abort", waiter.abortHandler);
-          }
-          removeWaiter();
-          reject(err);
-        },
-      };
-
-      if (queueTimeoutMs > 0 && Number.isFinite(queueTimeoutMs)) {
-        waiter.timer = setTimeout(() => {
-          waiter.reject(
-            new ChatGptWebRuntimeGuardError(
-              "CHATGPT_BROWSER_BUSY",
-              "Browser capacity is occupied; no prompt was sent. Retry after the active turn finishes."
-            )
-          );
-        }, queueTimeoutMs);
-        waiter.timer.unref?.();
-      }
-
-      if (options.signal) {
-        waiter.abortHandler = () => {
-          waiter.reject(new DOMException("Browser operation aborted", "AbortError"));
-        };
-        options.signal.addEventListener("abort", waiter.abortHandler, { once: true });
-      }
-
-      queuedWaiters.push(waiter);
-    });
-    reservedConnections.delete(options.connectionId);
-    acquiredViaQueue = true;
+  const connectionId = options.connectionId.trim();
+  const admissionOwnsConnection = activeAdmissions.has(connectionId);
+  if (activeConnections.has(connectionId) || (!admissionOwnsConnection && getActiveCount() >= getMaxActiveLeases())) {
+    admission?.release();
+    throw new ChatGptWebRuntimeGuardError(
+      "CHATGPT_BROWSER_BUSY",
+      "Browser capacity is occupied; no prompt was sent. Retry after the active turn finishes."
+    );
   }
 
-  if (!acquiredViaQueue) activeLeases++;
-  const record: ActiveLeaseRecord = { acquiredAt: Date.now() };
-  activeConnections.set(options.connectionId, record);
+  activeLeases++;
+  const record: ActiveLeaseRecord = { acquiredAt: Date.now(), token: Symbol("lease") };
+  activeConnections.set(connectionId, record);
 
   let browser: Browser | undefined;
   let context: BrowserContext | undefined;
@@ -229,30 +190,20 @@ export async function acquireChatGptWebCdpLease(
       } catch {
         /* connected browser: disconnect this client */
       } finally {
-        activeConnections.delete(options.connectionId);
-        const nextIndex = queuedWaiters.findIndex(
-          (waiter) =>
-            !activeConnections.has(waiter.connectionId) &&
-            !reservedConnections.has(waiter.connectionId)
-        );
-        if (nextIndex !== -1) {
-          const nextWaiter = queuedWaiters.splice(nextIndex, 1)[0]!;
-          reservedConnections.add(nextWaiter.connectionId);
-          nextWaiter.resolve();
-        } else {
+        if (activeConnections.get(connectionId) === record) {
+          activeConnections.delete(connectionId);
           activeLeases = Math.max(0, activeLeases - 1);
         }
+        admission?.release();
       }
     })();
     record.disposal = disposal;
     return disposal;
   };
 
-  // Stale lease watchdog: auto-dispose if a lease exceeds max turn duration
+  // The watchdog only begins retirement. Capacity is released in dispose() after cleanup settles.
   const watchdog = setTimeout(() => {
-    if (activeConnections.get(options.connectionId) === record) {
-      void dispose();
-    }
+    if (activeConnections.get(connectionId) === record) void dispose();
   }, MAX_LEASE_DURATION_MS);
   watchdog.unref?.();
 

@@ -15,7 +15,10 @@ export function connectionRuntimePaths(connectionId: string) {
   return {
     root,
     storageStatePath: join(root, "storage-state.json"),
-    brokerSocketPath: join(getConfigDir(), "runtime", "turn-broker.sock"),
+    brokerSocketPath:
+      process.platform === "win32"
+        ? `\\\\.\\pipe\\omniroute-turn-broker-${connectionSegment(connectionId)}`
+        : join(getConfigDir(), "runtime", "turn-broker.sock"),
     threadEnvironmentStatePath: join(root, "thread-environments.json"),
     lunaCheckpointStatePath: join(root, "luna-checkpoints.json"),
   };

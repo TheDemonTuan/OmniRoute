@@ -41,6 +41,16 @@ describe("round-robin extract guards", () => {
     assert.match(rr, /finally\s*\{[^}]*clearTimeout\(rrLoopSafetyTimer\)/s);
   });
 
+  it("returns submitted ChatGPT turn failures instead of falling back", () => {
+    const rr = readFileSync(rrPath, "utf8");
+    assert.match(rr, /submittedChatGptTurnFailure/);
+    assert.match(
+      rr,
+      /if \(submittedChatGptTurnFailure\) \{[\s\S]*?return result;/,
+      "a post-submit ChatGPT failure must stop the round-robin loop"
+    );
+  });
+
   it("calls releaseStickyPinOnFailure (injection: deleting the call goes red)", () => {
     const rr = readFileSync(rrPath, "utf8");
     assert.match(

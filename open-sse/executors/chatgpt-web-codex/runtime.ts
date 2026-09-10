@@ -29,6 +29,10 @@ export function getChatGptWebCodexRuntimeCounts(): {
   };
 }
 
+export async function drainChatGptWebCodexRuntime(timeoutMs = 25_000): Promise<boolean> {
+  return chatGptTurnSessions.drain(timeoutMs);
+}
+
 export async function stopChatGptWebCodexRuntime(): Promise<void> {
   chatGptTurnSessions.clear();
   const workers = [...activeWorkers];

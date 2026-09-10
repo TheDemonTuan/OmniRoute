@@ -794,6 +794,23 @@ export async function executeTargetAttempt(opts: {
           }
         : undefined;
     const scopedFailure = isScopedFailure(result, errorText, structuredError);
+    const submittedTurnFailure =
+      structuredError?.code === "chatgpt_submission_ambiguous" ||
+      structuredError?.code === "chatgpt_submitted_turn_failed";
+    if (submittedTurnFailure) {
+      state.observeFailure(false, target.executionKey);
+      state.lastError = errorText || String(result.status);
+      state.lastStatus = result.status;
+      state.comboErrors.push({
+        model: modelStr,
+        status: result.status,
+        error: errorText || String(result.status),
+        kind: classifyComboOutcome(result.status, errorText),
+      });
+      state.recordedAttempts++;
+      if (i > 0) state.fallbackCount++;
+      return { ok: false, response: result };
+    }
 
     // #8375: input-bound request-scoped failures (context_length_exceeded) are
     // deterministic for the same input — retrying on other accounts of the same

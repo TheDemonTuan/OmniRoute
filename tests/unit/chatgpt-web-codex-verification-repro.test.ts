@@ -7,40 +7,8 @@ import test from "node:test";
 import { getChatGptWebCodexDoctorStatus } from "../../open-sse/executors/chatgpt-web-codex/doctor.ts";
 import { connectionRuntimePaths } from "../../open-sse/executors/chatgpt-web-codex/storageState.ts";
 import { validateChatGptWebCodexProvider } from "../../src/lib/providers/validation/chatgptWebCodex.ts";
-import { acquireChatGptWebCdpLease } from "../../open-sse/utils/chatgptWebRuntimeGuard.ts";
-
 const VALID_COOKIE =
   "__Secure-next-auth.session-token=mock-token-abc123xyz; path=/; domain=.chatgpt.com";
-
-function createMockDriver() {
-  const events: string[] = [];
-  const page = { name: "fake-page" };
-  const context = {
-    async newPage() {
-      events.push("newPage");
-      return page;
-    },
-    async close() {
-      events.push("context.close");
-    },
-  };
-  const browser = {
-    async newContext() {
-      events.push("newContext");
-      return context;
-    },
-    async close() {
-      events.push("browser.close");
-    },
-  };
-  return {
-    events,
-    async connectOverCDP() {
-      events.push("connect");
-      return browser;
-    },
-  };
-}
 
 test("REPRO 1: Doctor must be read-only and NOT mutate storage-state.json on disk", async () => {
   const root = mkdtempSync(join(tmpdir(), "cgw-doctor-test-"));
@@ -75,40 +43,6 @@ test("REPRO 1: Doctor must be read-only and NOT mutate storage-state.json on dis
     process.env.DATA_DIR = prevDataDir;
     rmSync(root, { recursive: true, force: true });
   }
-});
-
-test("REPRO 2: Concurrent leases on same connection should queue instead of failing fast with CHATGPT_BROWSER_BUSY", async () => {
-  const driver = createMockDriver();
-  const leaseOpts = {
-    connectionId: "conn-queue-test",
-    contextOptions: { storageState: { cookies: [], origins: [] } },
-  };
-
-  const lease1 = await acquireChatGptWebCdpLease(
-    driver as unknown as import("playwright").ChromiumBrowserContext,
-    "http://127.0.0.1:9222",
-    leaseOpts
-  );
-
-  let lease2Acquired = false;
-  const lease2Promise = acquireChatGptWebCdpLease(
-    driver as unknown as import("playwright").ChromiumBrowserContext,
-    "http://127.0.0.1:9222",
-    leaseOpts
-  ).then((l) => {
-    lease2Acquired = true;
-    return l;
-  });
-
-  // Small tick to ensure lease2 has attempted to acquire
-  await new Promise((r) => setTimeout(r, 50));
-  assert.equal(lease2Acquired, false, "lease2 should be waiting in queue while lease1 is active");
-
-  // Dispose lease1 -> lease2 should now resolve
-  await lease1.dispose();
-  const lease2 = await lease2Promise;
-  assert.equal(lease2Acquired, true, "lease2 should be acquired after lease1 disposes");
-  await lease2.dispose();
 });
 
 test("REPRO 3: validateChatGptWebCodexProvider with verifyBrowserLogin returns updated providerSpecificData", async () => {

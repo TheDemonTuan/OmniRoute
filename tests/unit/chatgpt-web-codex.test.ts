@@ -26,6 +26,7 @@ import {
   ensureConnectionStorageState,
   readConnectionStorageState,
 } from "../../open-sse/executors/chatgpt-web-codex/storageState.ts";
+import { getChatGptWebCodexDoctorStatus } from "../../open-sse/executors/chatgpt-web-codex/doctor.ts";
 import {
   buildTunnelRuntimeStatusArgs,
   buildTunnelRuntimeStopArgs,
@@ -45,8 +46,12 @@ import {
   mergeChatGptRuntimeStorageState,
   resolveBrowserConfig,
 } from "../../open-sse/vendor/codex-chatgpt-web/adapters/chatgpt-web/browser-worker.ts";
+import { chromium } from "playwright-core";
 import {
+  browserLoginStateExists,
+  inspectBrowserLoginCapabilities,
   loginVerificationMarkerPath,
+  storedBrowserLoginCapabilities,
   writeVerificationMarker,
 } from "../../open-sse/vendor/codex-chatgpt-web/browser-login.ts";
 import {
@@ -57,6 +62,11 @@ import {
   CHATGPT_BIGGER_CONTEXT_PARTS,
   compileChatGptWebPrompt,
 } from "../../open-sse/vendor/codex-chatgpt-web/adapters/chatgpt-web/prompt.ts";
+import {
+  CHATGPT_WEB_BIGGER_CONTEXT_MULTIPLIER,
+  CHATGPT_WEB_PRO_MODEL_CONTEXT_WINDOW,
+  resolveChatGptWebContextLimits,
+} from "../../open-sse/vendor/codex-chatgpt-web/chatgpt-web-models.ts";
 import { parseRequest } from "../../open-sse/vendor/codex-chatgpt-web/responses/parser.ts";
 import {
   expandPreviousResponseInput,
@@ -287,11 +297,166 @@ test("verified capability refresh preserves the credential marker binding", () =
     writeVerificationMarker(statePath, { solAvailable: false, proAvailable: false });
     const marker = JSON.parse(readFileSync(markerPath, "utf8")) as Record<string, unknown>;
     assert.equal(marker.cookieFingerprint, "cookie-bound");
+    assert.equal(marker.capabilitiesVerified, true);
     assert.equal(marker.pendingBrowserVerification, false);
     assert.equal(marker.solAvailable, false);
     assert.equal(marker.proAvailable, false);
     assert.match(String(marker.storageStateFingerprint), /^[a-f0-9]{64}$/);
   } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("marker semantics safely distinguish unknown/unverified capabilities from verified false", () => {
+  const root = mkdtempSync(join(tmpdir(), "omniroute-chatgpt-web-unverified-marker-"));
+  const statePath = join(root, "storage-state.json");
+  const markerPath = loginVerificationMarkerPath(statePath);
+  try {
+    writeFileSync(statePath, `${JSON.stringify({ cookies: [], origins: [] })}\n`);
+    writeFileSync(
+      markerPath,
+      `${JSON.stringify({
+        version: 1,
+        authenticated: true,
+        verifiedAt: "2026-08-31T00:00:00.000Z",
+        pendingBrowserVerification: true,
+      })}\n`
+    );
+
+    // When capability probe produces no verified capabilities (unverified / unknown):
+    writeVerificationMarker(statePath, {});
+    const marker = JSON.parse(readFileSync(markerPath, "utf8")) as Record<string, unknown>;
+    assert.equal(marker.authenticated, true);
+    assert.equal(marker.capabilitiesVerified, false);
+    assert.equal(marker.pendingBrowserVerification, true);
+    assert.equal(marker.solAvailable, undefined);
+    assert.equal(marker.proAvailable, undefined);
+
+    const config = { storageStatePath: statePath, appName: "test" };
+    assert.equal(browserLoginStateExists(config), false);
+    assert.deepEqual(storedBrowserLoginCapabilities(config), {});
+
+    // Distinguish from verified false (e.g. Luna-only non-Pro account):
+    writeVerificationMarker(statePath, { solAvailable: false, proAvailable: false });
+    const verifiedFalseMarker = JSON.parse(readFileSync(markerPath, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    assert.equal(verifiedFalseMarker.capabilitiesVerified, true);
+    assert.equal(verifiedFalseMarker.pendingBrowserVerification, false);
+    assert.equal(verifiedFalseMarker.solAvailable, false);
+    assert.equal(verifiedFalseMarker.proAvailable, false);
+    assert.deepEqual(storedBrowserLoginCapabilities(config), {
+      solAvailable: false,
+      proAvailable: false,
+    });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("authenticated page with capability probe failure leaves capabilities unverified instead of optimistic fallback", async () => {
+  const root = mkdtempSync(join(tmpdir(), "omniroute-chatgpt-web-probe-fail-"));
+  const statePath = join(root, "storage-state.json");
+  const markerPath = loginVerificationMarkerPath(statePath);
+  const originalConnectOverCDP = chromium.connectOverCDP;
+
+  try {
+    writeFileSync(statePath, `${JSON.stringify({ cookies: [], origins: [] })}\n`);
+    writeFileSync(
+      markerPath,
+      `${JSON.stringify({
+        version: 1,
+        authenticated: true,
+        verifiedAt: "2026-08-31T00:00:00.000Z",
+        cookieFingerprint: "cookie-probe-fail",
+        pendingBrowserVerification: true,
+      })}\n`
+    );
+
+    const composerLocator = {
+      first: () => ({
+        waitFor: async () => {},
+      }),
+      last: () => ({
+        locator: () => {
+          throw new Error("Simulated capability probe failure");
+        },
+      }),
+      filter: () => ({
+        count: async () => 1,
+        last: () => ({
+          locator: () => {
+            throw new Error("Simulated capability probe failure");
+          },
+        }),
+      }),
+      count: async () => 1,
+      nth: () => ({
+        isVisible: async () => true,
+      }),
+    };
+
+    const dialogLocator = {
+      filter: () => ({
+        count: async () => 0,
+      }),
+    };
+
+    const mockPage = {
+      url: () => "https://chatgpt.com/?temporary-chat=true",
+      goto: async () => {},
+      locator: (selector: string) => {
+        if (selector.includes("dialog")) return dialogLocator;
+        return composerLocator;
+      },
+    };
+
+    const mockContext = {
+      newPage: async () => mockPage,
+      close: async () => {},
+    };
+
+    const mockBrowser = {
+      newContext: async () => mockContext,
+      close: async () => {},
+    };
+
+    chromium.connectOverCDP = (async () =>
+      mockBrowser as unknown as Awaited<
+        ReturnType<typeof chromium.connectOverCDP>
+      >) as typeof chromium.connectOverCDP;
+
+    const config = {
+      appName: "test",
+      storageStatePath: statePath,
+      cdpEndpoint: "http://127.0.0.1:9222",
+      headed: false,
+      proAvailable: false,
+      autoApproveToolCalls: false,
+      verificationTimeoutMs: 5_000,
+    };
+
+    const inspected = await inspectBrowserLoginCapabilities(config);
+
+    // Capabilities must NOT be optimistically marked as true:
+    assert.equal(inspected.solAvailable, undefined);
+    assert.equal(inspected.proAvailable, undefined);
+
+    // Marker must record authenticated login without false capability verification:
+    const marker = JSON.parse(readFileSync(markerPath, "utf8")) as Record<string, unknown>;
+    assert.equal(marker.authenticated, true);
+    assert.equal(marker.capabilitiesVerified, false);
+    assert.equal(marker.pendingBrowserVerification, true);
+    assert.equal(marker.cookieFingerprint, "cookie-probe-fail");
+    assert.equal(marker.solAvailable, undefined);
+    assert.equal(marker.proAvailable, undefined);
+
+    // The authenticated session remains pending until capabilities are proven.
+    assert.equal(browserLoginStateExists(config), false);
+    assert.deepEqual(storedBrowserLoginCapabilities(config), {});
+  } finally {
+    chromium.connectOverCDP = originalConnectOverCDP;
     rmSync(root, { recursive: true, force: true });
   }
 });
@@ -328,6 +493,19 @@ test("cookie-header storage state satisfies Playwright cookie requirements", () 
     else process.env.DATA_DIR = previousDataDir;
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("Bigger Context multiplies the selected ChatGPT context limit", () => {
+  const limits = resolveChatGptWebContextLimits("gpt-5.6-sol", "max", {
+    solAvailable: true,
+    proAvailable: true,
+    experimentalBiggerContext: true,
+  });
+
+  assert.equal(
+    limits.contextWindow,
+    CHATGPT_WEB_PRO_MODEL_CONTEXT_WINDOW * CHATGPT_WEB_BIGGER_CONTEXT_MULTIPLIER
+  );
 });
 
 test("explicit Responses reasoning effort is read for mismatch preflight", () => {
@@ -436,7 +614,10 @@ test("pins tunnel-client 0.0.13 and upgrades previously shipped builds", () => {
 
 test("turn broker holds a tool invocation and rejects wrong or duplicate results", async () => {
   const root = mkdtempSync(join(tmpdir(), "omniroute-cgw-broker-"));
-  const socketPath = join(root, "runtime", "turn-broker.sock");
+  const socketPath =
+    process.platform === "win32"
+      ? `\\\\.\\pipe\\omniroute-cgw-broker-${Date.now()}`
+      : join(root, "runtime", "turn-broker.sock");
   const broker = TurnBroker.forSocket(socketPath);
   try {
     const token = await broker.register(
@@ -483,7 +664,10 @@ test("turn broker holds a tool invocation and rejects wrong or duplicate results
 
 test("revoking a turn rejects a pending connector invocation", async () => {
   const root = mkdtempSync(join(tmpdir(), "omniroute-cgw-revoke-"));
-  const socketPath = join(root, "runtime", "turn-broker.sock");
+  const socketPath =
+    process.platform === "win32"
+      ? `\\\\.\\pipe\\omniroute-cgw-revoke-${Date.now()}`
+      : join(root, "runtime", "turn-broker.sock");
   const broker = TurnBroker.forSocket(socketPath);
   try {
     const token = await broker.register(
@@ -521,7 +705,10 @@ test("revoking a turn rejects a pending connector invocation", async () => {
 
 test("an explicitly bounded turn token expires closed", async () => {
   const root = mkdtempSync(join(tmpdir(), "omniroute-cgw-expiry-"));
-  const socketPath = join(root, "runtime", "turn-broker.sock");
+  const socketPath =
+    process.platform === "win32"
+      ? `\\\\.\\pipe\\omniroute-cgw-expiry-${Date.now()}`
+      : join(root, "runtime", "turn-broker.sock");
   const broker = TurnBroker.forSocket(socketPath);
   try {
     const token = await broker.register(
@@ -738,6 +925,46 @@ test("accepts inline input_file data URLs and rejects remote file URLs", () => {
       }),
     /supports inline data URLs only/i
   );
+});
+
+test("session registry drain waits for physical settlement and honors a timeout", async () => {
+  const sessions = new ChatGptTurnSessions();
+  let resolvePhysical: () => void = () => {};
+  const physicalSettlement = new Promise<void>((resolve) => {
+    resolvePhysical = resolve;
+  });
+  sessions.getOrCreate("drain-turn", () => ({
+    mode: "read-only",
+    browser: new Promise<string>(() => {}),
+    physicalSettlement,
+    trace: new ChatGptTraceFeed(),
+    text: new ChatGptTextFeed(),
+    cancel() {},
+  }));
+
+  assert.equal(await sessions.drain(1), false);
+  resolvePhysical();
+  assert.equal(await sessions.drain(100), true);
+});
+
+test("session registry waits for a retired turn's physical settlement", async () => {
+  const sessions = new ChatGptTurnSessions();
+  let resolvePhysical: () => void = () => {};
+  const physicalSettlement = new Promise<void>((resolve) => {
+    resolvePhysical = resolve;
+  });
+  const session = sessions.getOrCreate("retired-turn", () => ({
+    mode: "read-only",
+    browser: new Promise<string>(() => {}),
+    physicalSettlement,
+    trace: new ChatGptTraceFeed(),
+    text: new ChatGptTextFeed(),
+    cancel() {},
+  }));
+  sessions.retire("retired-turn", session);
+  const wait = sessions.waitForSettlement("retired-turn");
+  resolvePhysical();
+  await wait;
 });
 
 test("session registry reports waiting turns as settled retained sessions", async () => {
@@ -972,3 +1199,47 @@ test("a previous_response_id binding miss does not cool down the ChatGPT Web Cod
   assert.equal(result.cooldownMs, 0);
   assert.equal(result.skipProviderBreaker, true);
 });
+
+test("browserLoginStateExists detects stale marker TTL and storageState fingerprint mismatch", () => {
+  const root = mkdtempSync(join(tmpdir(), "cgw-marker-freshness-"));
+  const statePath = join(root, "storage-state.json");
+  const markerPath = loginVerificationMarkerPath(statePath);
+
+  try {
+    writeFileSync(statePath, JSON.stringify({ cookies: [{ name: "token", value: "abc" }] }));
+    writeVerificationMarker(statePath, { solAvailable: true, proAvailable: true });
+    assert.equal(browserLoginStateExists({ storageStatePath: statePath }), true);
+
+    // 1. Mutate storage-state -> fingerprint mismatch invalidates marker:
+    writeFileSync(statePath, JSON.stringify({ cookies: [{ name: "token", value: "different_value" }] }));
+    assert.equal(browserLoginStateExists({ storageStatePath: statePath }), false);
+
+    // 2. Restore matching content, but set verifiedAt to 8 days ago (> 7-day TTL):
+    writeFileSync(statePath, JSON.stringify({ cookies: [{ name: "token", value: "abc" }] }));
+    const validMarker = JSON.parse(readFileSync(markerPath, "utf8")) as Record<string, unknown>;
+    const staleDate = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString();
+    writeFileSync(markerPath, JSON.stringify({ ...validMarker, verifiedAt: staleDate }));
+    assert.equal(browserLoginStateExists({ storageStatePath: statePath }), false);
+
+    const futureDate = new Date(Date.now() + 60_000).toISOString();
+    writeFileSync(markerPath, JSON.stringify({ ...validMarker, verifiedAt: futureDate }));
+    assert.equal(browserLoginStateExists({ storageStatePath: statePath }), false);
+
+    writeFileSync(markerPath, JSON.stringify({ ...validMarker, storageStateFingerprint: undefined }));
+    assert.equal(browserLoginStateExists({ storageStatePath: statePath }), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("doctor status evaluates cleanly without ReferenceError for verified and unverified state", async () => {
+  const unverified = await getChatGptWebCodexDoctorStatus({
+    id: "conn-doctor-unverified",
+    apiKey: encodeChatGptWebCodexSecrets({ cookie: "__Secure-next-auth.session-token=TEST_ONLY" }),
+    providerSpecificData: {},
+  });
+  assert.equal(typeof unverified.verification.verified, "boolean");
+  assert.equal(unverified.verification.verified, false);
+  assert.equal(unverified.login.ready, false);
+});
+

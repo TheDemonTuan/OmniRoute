@@ -6,11 +6,17 @@ import {
 import { isVerifiedNativeCodexRequest } from "../config/codexIdentity.ts";
 import { FORMATS } from "../translator/formats.ts";
 import { buildErrorBody, sanitizeErrorMessage } from "../utils/error.ts";
-import { createChatGptWebAdapter } from "../vendor/codex-chatgpt-web/adapters/chatgpt-web/index.ts";
+import { ChatGptWebAdapterError } from "../vendor/codex-chatgpt-web/adapters/chatgpt-web/adapter-error.ts";
+import { acquireChatGptWebRuntimeAdmission } from "../utils/chatgptWebRuntimeGuard.ts";
+import {
+  createChatGptWebAdapter,
+  waitForChatGptWebTurnSettlement,
+} from "../vendor/codex-chatgpt-web/adapters/chatgpt-web/index.ts";
 import { ChatGptBrowserWorker } from "../vendor/codex-chatgpt-web/adapters/chatgpt-web/browser-worker.ts";
 import {
   browserLoginStateExists,
   inspectBrowserLoginCapabilities,
+  storedBrowserLoginCapabilities,
 } from "../vendor/codex-chatgpt-web/browser-login.ts";
 import { extractChatGptTurnIdentity } from "../vendor/codex-chatgpt-web/adapters/chatgpt-web/environment.ts";
 import { bridgeToResponsesSSE, buildResponseJSON } from "../vendor/codex-chatgpt-web/bridge.ts";
@@ -66,16 +72,6 @@ function wrapped(response: Response, body: unknown): ExecutorExecuteResult {
     transformedBody: body,
     transport: "chatgpt-web-browser",
   };
-}
-
-const inFlightCodexVerifications = new Map<string, Promise<ChatGptWebAccountCapabilities>>();
-
-function verificationKey(
-  connectionId: string,
-  storageStatePath: string,
-  runtimeIdentity: string
-): string {
-  return `${connectionId}:${storageStatePath}:${runtimeIdentity}`;
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -170,14 +166,49 @@ function toolModeRequired(parsed: CodexParsedRequest): boolean {
   return (parsed.context.tools?.length ?? 0) > 0;
 }
 
+function requireVerifiedRouteCapabilities(
+  route: ReturnType<typeof requireChatGptWebCodexRoute>,
+  data: Record<string, unknown>
+): void {
+  const solAvailable = data.solAvailable;
+  const proAvailable = data.proAvailable;
+  if (route.sol && solAvailable !== true) {
+    throw new Error(
+      solAvailable === false
+        ? "ChatGPT Sol models are not available for this Luna-only connection"
+        : "ChatGPT Sol model availability has not been verified for this connection"
+    );
+  }
+  if (!route.sol && solAvailable !== false) {
+    throw new Error(
+      solAvailable === true
+        ? "ChatGPT Luna models are only available for Luna-only connections"
+        : "ChatGPT Luna model availability has not been verified for this connection"
+    );
+  }
+  if (route.pro && proAvailable !== true) {
+    throw new Error(
+      proAvailable === false
+        ? `${route.id} is not available for this non-Pro connection`
+        : `${route.id} availability has not been verified for this connection`
+    );
+  }
+}
+
+export function assertChatGptWebCodexRouteAvailable(
+  model: string,
+  data: Record<string, unknown>
+): void {
+  requireVerifiedRouteCapabilities(requireChatGptWebCodexRoute(model), data);
+}
+
 function buildProviderConfig(
   input: ExecuteInput,
   parsed: CodexParsedRequest,
   storageStatePath: string,
-  connectionId: string,
-  verifiedData?: Record<string, unknown>
+  connectionId: string
 ): CodexProviderConfig {
-  const data = verifiedData ?? record(input.credentials.providerSpecificData);
+  const data = record(input.credentials.providerSpecificData);
   const route = requireChatGptWebCodexRoute(input.model);
   const paths = connectionRuntimePaths(connectionId);
   const browserRuntime = resolveChatGptWebCodexBrowserRuntime(data);
@@ -191,27 +222,9 @@ function buildProviderConfig(
   const cdpEndpoint = browserRuntime.cdpEndpoint;
   const chromeExecutablePath = browserRuntime.chromeExecutablePath;
 
-  const solAvailable = data.solAvailable !== false;
-  const proAvailable = data.proAvailable === true;
-
-  if (data.pendingBrowserVerification === true && data.browserVerified !== true) {
-    throw new ChatGptWebCodexRuntimeError(
-      "chatgpt_capability_unverified",
-      "ChatGPT Web model availability has not been verified for this connection. Please test or verify the connection first.",
-      503
-    );
-  }
-
-  if (route.sol !== solAvailable) {
-    throw new Error(
-      route.sol
-        ? "ChatGPT Sol models are not available for this Luna-only connection"
-        : "ChatGPT Luna models are only available for Luna-only connections"
-    );
-  }
-  if (route.pro && !proAvailable) {
-    throw new Error(`${route.id} is not available for this non-Pro connection`);
-  }
+  requireVerifiedRouteCapabilities(route, data);
+  const solAvailable = data.solAvailable as boolean;
+  const proAvailable = data.proAvailable as boolean;
 
   const hasTools = toolModeRequired(parsed);
   const connector =
@@ -361,37 +374,43 @@ export class ChatGptWebCodexExecutor extends BaseExecutor {
         proAvailable: providerData.proAvailable === true,
         autoApproveToolCalls: false,
       };
+      let capabilities = storedBrowserLoginCapabilities(loginConfig);
       if (!browserLoginStateExists(loginConfig)) {
-        const runtimeIdentity = cdpEndpoint ?? chromeExecutablePath ?? "unavailable";
-        const key = verificationKey(connectionId, storageStatePath, runtimeIdentity);
-        let verificationPromise = inFlightCodexVerifications.get(key);
-        if (!verificationPromise) {
-          verificationPromise = (async () => {
-            try {
-              return await inspectBrowserLoginCapabilities(loginConfig);
-            } finally {
-              inFlightCodexVerifications.delete(key);
-            }
-          })();
-          inFlightCodexVerifications.set(key, verificationPromise);
+        const verificationAdmission = acquireChatGptWebRuntimeAdmission(
+          connectionId,
+          "verification"
+        );
+        try {
+          capabilities = await inspectBrowserLoginCapabilities(loginConfig);
+        } finally {
+          verificationAdmission.release();
         }
-        const capabilities = await verificationPromise;
-        providerData.solAvailable = capabilities.solAvailable;
-        providerData.proAvailable = capabilities.proAvailable;
-        providerData.browserVerified = true;
-        providerData.pendingBrowserVerification = false;
-        if (chromeExecutablePath) providerData.chromeExecutablePath = chromeExecutablePath;
-        await input.onCredentialsRefreshed?.({
-          providerSpecificData: {
-            ...record(input.credentials.providerSpecificData),
-            solAvailable: capabilities.solAvailable,
-            proAvailable: capabilities.proAvailable,
-            browserVerified: true,
-            pendingBrowserVerification: false,
-            ...(chromeExecutablePath ? { chromeExecutablePath } : {}),
-          },
-        });
       }
+      const capabilitiesVerified =
+        typeof capabilities.solAvailable === "boolean" &&
+        typeof capabilities.proAvailable === "boolean";
+      providerData.solAvailable = capabilities.solAvailable;
+      providerData.proAvailable = capabilities.proAvailable;
+      providerData.browserVerified = capabilitiesVerified;
+      providerData.pendingBrowserVerification = !capabilitiesVerified;
+      if (chromeExecutablePath) providerData.chromeExecutablePath = chromeExecutablePath;
+      const verifiedProviderData = {
+        ...record(input.credentials.providerSpecificData),
+        solAvailable: capabilities.solAvailable,
+        proAvailable: capabilities.proAvailable,
+        browserVerified: capabilitiesVerified,
+        pendingBrowserVerification: !capabilitiesVerified,
+        ...(chromeExecutablePath ? { chromeExecutablePath } : {}),
+      };
+      input.credentials.providerSpecificData = verifiedProviderData;
+      await input.onCredentialsRefreshed?.({ providerSpecificData: verifiedProviderData });
+      requireVerifiedRouteCapabilities(route, providerData);
+      const provider = buildProviderConfig(
+        { ...input, credentials: { ...input.credentials, providerSpecificData: providerData } },
+        parsed,
+        storageStatePath,
+        connectionId
+      );
       const routeUsesTools = toolModeRequired(parsed);
       if (routeUsesTools) {
         const tunnelId =
@@ -407,15 +426,6 @@ export class ChatGptWebCodexExecutor extends BaseExecutor {
           brokerSocketPath: connectionRuntimePaths(connectionId).brokerSocketPath,
         });
       }
-      const provider = buildProviderConfig(
-        {
-          ...input,
-          credentials: { ...input.credentials, providerSpecificData: providerData },
-        },
-        parsed,
-        storageStatePath,
-        connectionId
-      );
       const adapter = createChatGptWebAdapter(provider);
       const worker = ChatGptBrowserWorker.forProvider(provider);
       trackChatGptWebCodexRuntime(worker, connectionRuntimePaths(connectionId).brokerSocketPath);
@@ -426,17 +436,39 @@ export class ChatGptWebCodexExecutor extends BaseExecutor {
         abortSignal: input.signal ?? undefined,
       };
       const run = async () => {
+        let admission: ReturnType<typeof acquireChatGptWebRuntimeAdmission> | undefined;
         try {
+          admission = acquireChatGptWebRuntimeAdmission(connectionId, "codex");
           await adapter.runTurn(parsed, incoming, (event) => events.push(event));
         } catch (error) {
-          events.push({
-            type: "error",
-            message: sanitizeErrorMessage(error instanceof Error ? error.message : error),
-            status: 502,
-            errorType: "provider_error",
-            code: "chatgpt_web_codex_turn_failed",
-          });
+          if (error instanceof ChatGptWebAdapterError) {
+            events.push({
+              type: "error",
+              message: sanitizeErrorMessage(error.message),
+              status: error.status,
+              errorType: error.errorType,
+              code: error.code,
+            });
+          } else {
+            events.push({
+              type: "error",
+              message: sanitizeErrorMessage(error instanceof Error ? error.message : error),
+              status: 502,
+              errorType: "provider_error",
+              code: "chatgpt_web_codex_turn_failed",
+            });
+          }
         } finally {
+          try {
+            await waitForChatGptWebTurnSettlement(provider, parsed);
+          } catch (settlementError) {
+            input.log?.warn?.(
+              "CHATGPT_WEB_CODEX",
+              sanitizeErrorMessage(
+                settlementError instanceof Error ? settlementError.message : settlementError
+              )
+            );
+          }
           try {
             const storageState = readConnectionStorageState(storageStatePath);
             await input.onCredentialsRefreshed?.({
@@ -453,6 +485,7 @@ export class ChatGptWebCodexExecutor extends BaseExecutor {
               )
             );
           }
+          admission?.release();
           events.close();
         }
       };
@@ -500,15 +533,8 @@ export class ChatGptWebCodexExecutor extends BaseExecutor {
       if (error instanceof ChatGptWebCodexRuntimeError) {
         return wrapped(errorResponse(error.statusCode, error.message, error.code), input.body);
       }
-      const message = sanitizeErrorMessage(error instanceof Error ? error.message : error);
-      const isCapabilityProbeFailure =
-        message.includes("capability probe") || message.includes("stable composer state");
       return wrapped(
-        errorResponse(
-          isCapabilityProbeFailure ? 503 : 400,
-          message,
-          isCapabilityProbeFailure ? "chatgpt_capability_verification_failed" : undefined
-        ),
+        errorResponse(400, error instanceof Error ? error.message : error),
         input.body
       );
     }

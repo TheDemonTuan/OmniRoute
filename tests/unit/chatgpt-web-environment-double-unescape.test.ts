@@ -13,8 +13,11 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
+import { resolve } from "node:path";
 
 import { extractChatGptTurnEnvironment } from "../../open-sse/vendor/codex-chatgpt-web/adapters/chatgpt-web/environment.ts";
+
+const expectedPath = (p: string) => resolve(p);
 
 function parsedRequestWithCwd(cwdLiteral: string) {
   const environmentText = [
@@ -56,7 +59,7 @@ test("decoding the trusted Codex environment does not double-unescape &amp;quot;
   const env = extractChatGptTurnEnvironment(parsedRequestWithCwd("/tmp/ws&amp;quot;dir"));
   assert.equal(
     env.cwd,
-    "/tmp/ws&quot;dir",
+    expectedPath("/tmp/ws&quot;dir"),
     '`&amp;quot;` must decode to the literal text `&quot;`, not to a double-unescaped `"`'
   );
 });
@@ -64,20 +67,29 @@ test("decoding the trusted Codex environment does not double-unescape &amp;quot;
 test("decoding the trusted Codex environment does not double-unescape &amp;lt; / &amp;#39;", () => {
   assert.equal(
     extractChatGptTurnEnvironment(parsedRequestWithCwd("/tmp/ws&amp;lt;dir")).cwd,
-    "/tmp/ws&lt;dir"
+    expectedPath("/tmp/ws&lt;dir")
   );
   assert.equal(
     extractChatGptTurnEnvironment(parsedRequestWithCwd("/tmp/ws&amp;#39;dir")).cwd,
-    "/tmp/ws&#39;dir"
+    expectedPath("/tmp/ws&#39;dir")
   );
 });
 
 test("single-level XML entities still decode normally", () => {
-  assert.equal(extractChatGptTurnEnvironment(parsedRequestWithCwd("/tmp/a&amp;b")).cwd, "/tmp/a&b");
+  assert.equal(
+    extractChatGptTurnEnvironment(parsedRequestWithCwd("/tmp/a&amp;b")).cwd,
+    expectedPath("/tmp/a&b")
+  );
   assert.equal(
     extractChatGptTurnEnvironment(parsedRequestWithCwd("/tmp/a&quot;b")).cwd,
-    '/tmp/a"b'
+    expectedPath('/tmp/a"b')
   );
-  assert.equal(extractChatGptTurnEnvironment(parsedRequestWithCwd("/tmp/a&#39;b")).cwd, "/tmp/a'b");
-  assert.equal(extractChatGptTurnEnvironment(parsedRequestWithCwd("/tmp/a&gt;b")).cwd, "/tmp/a>b");
+  assert.equal(
+    extractChatGptTurnEnvironment(parsedRequestWithCwd("/tmp/a&#39;b")).cwd,
+    expectedPath("/tmp/a'b")
+  );
+  assert.equal(
+    extractChatGptTurnEnvironment(parsedRequestWithCwd("/tmp/a&gt;b")).cwd,
+    expectedPath("/tmp/a>b")
+  );
 });

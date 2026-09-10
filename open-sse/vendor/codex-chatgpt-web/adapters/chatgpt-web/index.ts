@@ -162,6 +162,18 @@ export function chatGptWebTraceId(
     .slice(0, 12);
 }
 
+/**
+ * Wait for the browser side of this exact native turn to settle before releasing its runtime slot.
+ * A detached HTTP observer does not mean the browser has stopped handling the submitted prompt.
+ */
+export async function waitForChatGptWebTurnSettlement(
+  provider: CodexProviderConfig,
+  parsed: CodexParsedRequest
+): Promise<void> {
+  const executionKey = `${chatGptWebExecutionNamespace(provider)}:${chatGptTurnExecutionKey(parsed)}`;
+  await chatGptTurnSessions.waitForSettlement(executionKey);
+}
+
 function structuredContent(text: string): unknown | undefined {
   try {
     const parsed: unknown = JSON.parse(text);
@@ -274,8 +286,10 @@ function replayEvents(events: AdapterEvent[], emit: (event: AdapterEvent) => voi
 
 function submittedTurnFailure(session: ChatGptTurnSession, error: unknown): Error {
   const normalized = error instanceof Error ? error : new Error(String(error));
-  if (normalized instanceof ChatGptWebAdapterError) return normalized;
   const phase = session.runtime.submission?.phase;
+  if (normalized instanceof ChatGptWebAdapterError && (!phase || phase === "prepared")) {
+    return normalized;
+  }
   if (!phase || phase === "prepared") return normalized;
   const ambiguous = phase === "send_activated";
   return new ChatGptWebAdapterError(
@@ -337,6 +351,7 @@ export function createChatGptWebAdapter(
     localToolsEnabled: provider.chatgptWeb?.localToolsEnabled === true,
     solAvailable: provider.chatgptWeb?.solAvailable !== false,
     proAvailable: provider.chatgptWeb?.proAvailable === true,
+    experimentalBiggerContext: experimentalBiggerContext === true,
   };
   const executionNamespace = chatGptWebExecutionNamespace(provider);
   const retainedLauncherDescriptor =

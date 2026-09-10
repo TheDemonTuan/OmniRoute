@@ -24,7 +24,6 @@ import * as rot from "./rotationConfig.ts";
 import {
   getPassthroughProviders,
   getProviderCategory,
-  isLocalProvider,
 } from "../config/providerRegistry.ts";
 import {
   DEFAULT_RESILIENCE_SETTINGS,
@@ -527,7 +526,7 @@ export function isOAuthInvalidToken(errorText: string): boolean {
 
 // ─── Resilience Profile Helper ──────────────────────────────────────────────
 
-function asRecord(value: unknown): JsonRecord {
+function _asRecord(value: unknown): JsonRecord {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as JsonRecord) : {};
 }
 
@@ -1712,6 +1711,19 @@ export function checkFallbackError(
     };
   }
 
+  const chatgptSubmittedTurnFailed =
+    structuredError?.code === "chatgpt_submission_ambiguous" ||
+    structuredError?.code === "chatgpt_submitted_turn_failed" ||
+    /chatgpt_submission_ambiguous|chatgpt_submitted_turn_failed/.test(String(errorText || ""));
+  if (chatgptSubmittedTurnFailed) {
+    return {
+      shouldFallback: false,
+      cooldownMs: 0,
+      reason: structuredError?.code ?? "chatgpt_submitted_turn_failed",
+      skipProviderBreaker: true,
+    };
+  }
+
   const svc = serviceSupervisorCooldown(status, headers);
   if (svc) return svc;
   const rg = rot.gateFor(status, rotation?.account);
@@ -2455,7 +2467,7 @@ export { isAccountSemaphoreFull } from "./accountSemaphore.ts";
  */
 export function getAccountHealth(
   account: AccountState | null | undefined,
-  model?: unknown
+  _model?: unknown
 ): number {
   if (!account) return 0;
   let score = 100;

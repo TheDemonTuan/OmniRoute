@@ -13,6 +13,7 @@ import {
   ensureConnectionStorageStateFromCredential,
 } from "@omniroute/open-sse/executors/chatgpt-web-codex/storageState.ts";
 import { sanitizeErrorMessage } from "@omniroute/open-sse/utils/error.ts";
+import { acquireChatGptWebRuntimeAdmission } from "@omniroute/open-sse/utils/chatgptWebRuntimeGuard.ts";
 
 // detectChromeExecutable (executors/chatgpt-web-codex.ts) is imported
 // dynamically below, not statically here: this module is re-exported through
@@ -27,9 +28,11 @@ import { sanitizeErrorMessage } from "@omniroute/open-sse/utils/error.ts";
 export async function validateChatGptWebCodexProvider({
   apiKey,
   providerSpecificData = {},
+  connectionId,
 }: {
   apiKey?: string;
   providerSpecificData?: Record<string, unknown>;
+  connectionId?: string;
 }) {
   try {
     const secrets = decodeChatGptWebCodexSecrets(String(apiKey || ""));
@@ -89,37 +92,50 @@ export async function validateChatGptWebCodexProvider({
     // Saving a connection must not wait for a remote ChatGPT page or its volatile UI.
     // An explicit connection test or request performs browser authentication.
     if (verifyBrowserLogin && runtime.available) {
-      const capabilities = await inspectBrowserLoginCapabilities({
-        appName: connectorName,
-        ...(runtime.chromeExecutablePath
-          ? { chromeExecutablePath: runtime.chromeExecutablePath }
-          : {}),
-        ...(runtime.cdpEndpoint ? { cdpEndpoint: runtime.cdpEndpoint } : {}),
-        storageStatePath: paths.storageStatePath,
-        headed: CHATGPT_WEB_CODEX_RUNTIME_HEADED,
-        proAvailable: false,
-        autoApproveToolCalls: false,
-        verificationTimeoutMs: 25_000,
-      });
+      const verificationConnectionId = connectionId?.trim() || validationId;
+      const admission = acquireChatGptWebRuntimeAdmission(
+        verificationConnectionId,
+        "verification"
+      );
+      let capabilities: Awaited<ReturnType<typeof inspectBrowserLoginCapabilities>>;
+      try {
+        capabilities = await inspectBrowserLoginCapabilities({
+          appName: connectorName,
+          ...(runtime.chromeExecutablePath
+            ? { chromeExecutablePath: runtime.chromeExecutablePath }
+            : {}),
+          ...(runtime.cdpEndpoint ? { cdpEndpoint: runtime.cdpEndpoint } : {}),
+          storageStatePath: paths.storageStatePath,
+          headed: CHATGPT_WEB_CODEX_RUNTIME_HEADED,
+          proAvailable: false,
+          autoApproveToolCalls: false,
+          verificationTimeoutMs: 25_000,
+        });
+      } finally {
+        admission.release();
+      }
       if (!freshCookie) rmSync(paths.root, { recursive: true, force: true });
+      const capabilitiesVerified =
+        typeof capabilities.solAvailable === "boolean" &&
+        typeof capabilities.proAvailable === "boolean";
       return {
         valid: true,
         error: null,
-        pendingBrowserVerification: false,
+        pendingBrowserVerification: !capabilitiesVerified,
         method: runtime.cdpEndpoint ? "cdp-browser" : "headed-browser",
         capabilities: {
           browser: "ready",
           storageState: "verified",
           login: "authenticated",
           temporaryChats: "ready",
-          solAvailable: capabilities.solAvailable,
-          proAvailable: capabilities.proAvailable,
+          solAvailable: capabilities.solAvailable ?? null,
+          proAvailable: capabilities.proAvailable ?? null,
         },
         providerSpecificData: {
-          solAvailable: capabilities.solAvailable,
-          proAvailable: capabilities.proAvailable,
-          browserVerified: true,
-          pendingBrowserVerification: false,
+          solAvailable: capabilities.solAvailable ?? null,
+          proAvailable: capabilities.proAvailable ?? null,
+          browserVerified: capabilitiesVerified,
+          pendingBrowserVerification: !capabilitiesVerified,
           connectorName,
           ...(runtime.chromeExecutablePath
             ? { chromeExecutablePath: runtime.chromeExecutablePath }
@@ -144,10 +160,12 @@ export async function validateChatGptWebCodexProvider({
         storageState: "pending",
         login: "pending",
         temporaryChats: "pending",
-        solAvailable: true,
-        proAvailable: false,
+        solAvailable: null,
+        proAvailable: null,
       },
       providerSpecificData: {
+        solAvailable: null,
+        proAvailable: null,
         browserVerified: false,
         pendingBrowserVerification: true,
         connectorName,

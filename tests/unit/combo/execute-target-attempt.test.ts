@@ -107,6 +107,19 @@ function bodySpecific400(): Response {
   );
 }
 
+function submittedTurnFailure(): Response {
+  return new Response(
+    JSON.stringify({
+      error: {
+        message: "ChatGPT accepted the prompt but browser observation failed.",
+        type: "server_error",
+        code: "chatgpt_submitted_turn_failed",
+      },
+    }),
+    { status: 502, headers: { "Content-Type": "application/json" } }
+  );
+}
+
 test("remainderIsHomogeneous is true only when remaining targets share modelStr", async () => {
   const { remainderIsHomogeneous } =
     await import("../../../open-sse/services/combo/executeTargetClassify.ts");
@@ -169,6 +182,40 @@ test("shouldSurfaceBodySpecific400 matches #4279 invalid-format 400, not model-s
     }),
     false
   );
+});
+
+test("submitted ChatGPT turn failure stops retry and cross-target fallback", async () => {
+  const { executeTargetAttempt } =
+    await import("../../../open-sse/services/combo/executeTargetAttempt.ts");
+  let attempts = 0;
+  const target = modelTarget({
+    provider: "chatgpt-web-codex",
+    modelStr: "chatgpt-web-codex/high",
+  });
+  const deps = baseDeps({
+    maxRetries: 2,
+    handleSingleModelWithTimeout: async () => {
+      attempts += 1;
+      return submittedTurnFailure();
+    },
+  });
+  const state = emptyState({
+    orderedTargets: [target, modelTarget({ executionKey: "ek-next", modelStr: "openai/gpt-4o" })],
+    abortControllers: new Map([[0, new AbortController()]]),
+  });
+
+  const result = await executeTargetAttempt({
+    index: 0,
+    state,
+    deps,
+    targetForAttempt: target,
+    profile: {},
+    protectedPriorityTarget: false,
+  });
+
+  assert.equal(attempts, 1);
+  assert.equal(result?.ok, false);
+  assert.equal(result?.response.status, 502);
 });
 
 test("quality-rejected 200 calls releaseStickyPinOnFailure and records kind quality", async () => {
