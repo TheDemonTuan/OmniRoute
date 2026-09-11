@@ -4,7 +4,6 @@ import { POST as postResponses } from "@/app/api/v1/responses/route";
 import { POST as postAudioTranscription } from "@/app/api/v1/audio/transcriptions/route";
 import { handleValidatedEmbeddingRequestBody } from "@/app/api/v1/embeddings/route";
 import { POST as postRerank } from "@/app/api/v1/rerank/route";
-import { POST as postResponses } from "@/app/api/v1/responses/route";
 import {
   buildComboTestPrompt,
   buildComboTestRequestBody,
