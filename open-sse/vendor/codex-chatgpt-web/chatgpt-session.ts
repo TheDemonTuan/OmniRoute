@@ -1,4 +1,4 @@
-/* Adapted from miuuyy/codex-chatgpt-web commit 09877fa21ffdbf20979623ef501046fc02a750d7 (MIT). */
+/* Adapted from miuuyy/codex-chatgpt-web commit e85e3693fdb4e3e033348c08df0298c20fcdb612 (MIT). */
 import type { Locator, Page } from "playwright-core";
 import type { ChatGptWebAccountCapabilities } from "./chatgpt-web-models";
 
@@ -41,10 +41,11 @@ export interface ChatGptEffortSliderState {
   value: number;
 }
 
-function safeIntegerAttribute(value: string | null): number | undefined {
-  if (value === null || !/^-?\d+$/.test(value)) return undefined;
-  const parsed = Number(value);
-  return Number.isSafeInteger(parsed) ? parsed : undefined;
+export interface ChatGptEffortActivation {
+  method: "already-open" | "click" | "pointerdown";
+  menu: Locator;
+  sliderContainer: Locator;
+  slider: Locator;
 }
 
 export function chatGptEffortSlider(page: Page): { sliderContainer: Locator; slider: Locator } {
@@ -52,7 +53,95 @@ export function chatGptEffortSlider(page: Page): { sliderContainer: Locator; sli
     .locator(CHATGPT_EFFORT_SLIDER_CONTAINER_SELECTOR)
     .filter({ visible: true })
     .last();
+  // The current picker keeps ARIA values on a zero-width, aria-hidden semantic input.
+  // Its visible container proves the active surface; the input proves the effort range.
   return { sliderContainer, slider: sliderContainer.locator('[role="slider"]') };
+}
+
+function effortMenuSelectorForId(menuId: string): string {
+  return `[id=${JSON.stringify(menuId)}]`;
+}
+
+export async function chatGptEffortMenuForControl(page: Page, control: Locator): Promise<Locator> {
+  const menuId = await control.getAttribute("aria-controls").catch(() => null);
+  if (menuId) return page.locator(effortMenuSelectorForId(menuId));
+  return page.locator(CHATGPT_EFFORT_MENU_SELECTOR).filter({ visible: true }).last();
+}
+
+async function visibleEffortSurface(
+  page: Page,
+  control: Locator
+): Promise<Omit<ChatGptEffortActivation, "method"> | undefined> {
+  // The exit animation keeps a closed menu's slider visible after Escape. Read the
+  // owner state first: selecting that outgoing range races its removal from the DOM.
+  const expanded = await control.getAttribute("aria-expanded").catch(() => null);
+  const state = await control.getAttribute("data-state").catch(() => null);
+  if (expanded === "false" || state === "closed") return undefined;
+  const menu = await chatGptEffortMenuForControl(page, control);
+  const surface = chatGptEffortSlider(page);
+  if (
+    (await menu.isVisible().catch(() => false)) ||
+    (await surface.sliderContainer.isVisible().catch(() => false))
+  ) {
+    return { menu, ...surface };
+  }
+  return undefined;
+}
+
+async function waitForEffortSurface(
+  page: Page,
+  control: Locator,
+  timeoutMs: number
+): Promise<Omit<ChatGptEffortActivation, "method"> | undefined> {
+  const deadline = Date.now() + timeoutMs;
+  do {
+    const surface = await visibleEffortSurface(page, control);
+    if (surface) return surface;
+    if (Date.now() >= deadline) return undefined;
+    await new Promise((resolveSleep) => setTimeout(resolveSleep, 50));
+  } while (true);
+}
+
+async function clearGhostEffortState(page: Page, control: Locator): Promise<void> {
+  const expanded = await control.getAttribute("aria-expanded").catch(() => null);
+  const state = await control.getAttribute("data-state").catch(() => null);
+  if (expanded === "true" || state === "open") {
+    await page.keyboard.press("Escape").catch(() => {});
+  }
+}
+
+export async function activateChatGptEffortMenu(
+  page: Page,
+  control: Locator,
+  options: { settleMs?: number } = {}
+): Promise<ChatGptEffortActivation> {
+  const openSurface = await visibleEffortSurface(page, control);
+  if (openSurface) return { method: "already-open", ...openSurface };
+
+  const settleMs = options.settleMs ?? 3_000;
+  await clearGhostEffortState(page, control);
+  await control.click({ force: true, timeout: Math.max(1, settleMs) });
+  const clickedSurface = await waitForEffortSurface(page, control, settleMs);
+  if (clickedSurface) return { method: "click", ...clickedSurface };
+
+  await clearGhostEffortState(page, control);
+  await control.dispatchEvent("pointerdown", {
+    button: 0,
+    buttons: 1,
+    pointerType: "mouse",
+    isPrimary: true,
+  });
+  const pointerSurface = await waitForEffortSurface(page, control, settleMs);
+  if (pointerSurface) return { method: "pointerdown", ...pointerSurface };
+  throw new Error(
+    "ChatGPT effort control did not expose its owned menu or structural slider after click and primary pointerdown"
+  );
+}
+
+function safeIntegerAttribute(value: string | null): number | undefined {
+  if (value === null || !/^-?\d+$/.test(value)) return undefined;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : undefined;
 }
 
 export function parseChatGptEffortSliderState(
@@ -161,15 +250,24 @@ export async function detectChatGptAccountCapabilities(
   const menuVisible = await menu.isVisible().catch(() => false);
   const menuExpanded = await effortButton.getAttribute("aria-expanded").catch(() => null);
   if (!menuVisible && menuExpanded !== "true") {
-    await effortButton.click({ force: true }).catch(async () => {
-      await effortButton.dispatchEvent("pointerdown").catch(() => {});
-      await effortButton.press("Enter").catch(() => {});
-    });
+    if (typeof effortButton.press === "function") {
+      await effortButton.press("Enter").catch(async () => {
+        await effortButton.click({ force: true }).catch(async () => {
+          await effortButton.dispatchEvent("pointerdown").catch(() => {});
+        });
+      });
+    } else if (typeof effortButton.click === "function") {
+      await effortButton.click({ force: true }).catch(async () => {
+        await effortButton.dispatchEvent("pointerdown").catch(() => {});
+      });
+    }
   }
   try {
     const { sliderContainer, slider } = chatGptEffortSlider(page);
     const timeout = Math.min(options.selectorTimeoutMs ?? 25_000, 30_000);
     const effectiveTimeout = Math.min(timeout, Math.max(1, deadline - Date.now()));
+    // Model radio rows can hydrate before the effort control. They carry no evidence
+    // of the account's reasoning range, so an absent slider must fail, not cache false.
     await sliderContainer.waitFor({ state: "visible", timeout: effectiveTimeout });
     await slider.waitFor({ state: "attached", timeout: effectiveTimeout });
     const state = parseChatGptEffortSliderState(
@@ -177,7 +275,12 @@ export async function detectChatGptAccountCapabilities(
       await slider.getAttribute("aria-valuemax"),
       await slider.getAttribute("aria-valuenow")
     );
-    if (!state) throw new Error("ChatGPT effort slider exposed an invalid ARIA range");
+    if (!state) {
+      throw new Error(
+        "ChatGPT model controls are unavailable. Reload ChatGPT and run Repair again.",
+        { cause: new Error("ChatGPT effort slider exposed an invalid ARIA range") }
+      );
+    }
     return { solAvailable: true, proAvailable: state.max - state.min + 1 >= 5 };
   } finally {
     await page.keyboard.press("Escape").catch(() => {});

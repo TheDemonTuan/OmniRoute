@@ -28,3 +28,22 @@ export {
 } from "../executors/chatgpt-web-codex/browserRuntime.ts";
 export { getChatGptWebCodexRuntimeCounts } from "../executors/chatgpt-web-codex/runtime.ts";
 export { connectionRuntimePaths } from "../executors/chatgpt-web-codex/storageState.ts";
+export {
+  requireChatGptWebCodexRoute,
+  assertChatGptWebCodexRouteAvailable,
+  type ChatGptWebCodexModelRoute,
+} from "../executors/chatgpt-web-codex/models.ts";
+export {
+  verificationCoordinator,
+  getVerificationCoordinator,
+  ChatGPTWebCodexVerificationCoordinator,
+  buildVerificationKey,
+  classifyVerificationError,
+  ChatGptWebVerificationError,
+  ChatGptWebAuthVerificationError,
+  ChatGptWebRuntimeVerificationError,
+  ChatGptWebTimeoutVerificationError,
+  type VerificationOptions,
+  type VerificationResult,
+  type VerificationCapabilities,
+} from "./chatgptWebCodexVerification.ts";

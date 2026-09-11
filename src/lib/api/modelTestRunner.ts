@@ -28,6 +28,7 @@ const DOLA_PRO_TEST_TIMEOUT_MS = 90_000;
 const DOUBAO_WEB_PROVIDER_ID = "doubao-web";
 const ZAI_WEB_PROVIDER_ID = "zai-web";
 const ZAI_WEB_TEST_TIMEOUT_MS = 60_000;
+const CHATGPT_WEB_CODEX_TEST_TIMEOUT_MS = 240_000;
 const SLOW_WEB_TEST_MODELS = new Set(["dola-pro"]);
 const STREAMING_CHAT_TEST_MAX_TOKENS = 64;
 
@@ -112,6 +113,11 @@ export function resolveModelTestTimeoutMs(
 
   if (normalizedProviderId === DOUBAO_WEB_PROVIDER_ID && SLOW_WEB_TEST_MODELS.has(modelLeafId)) {
     return Math.max(requestedTimeoutMs, DOLA_PRO_TEST_TIMEOUT_MS);
+  }
+
+  // Cold browser verification and the model turn have separate admission waits.
+  if (normalizedProviderId === "chatgpt-web-codex") {
+    return Math.max(requestedTimeoutMs, CHATGPT_WEB_CODEX_TEST_TIMEOUT_MS);
   }
 
   if (normalizedProviderId === ZAI_WEB_PROVIDER_ID) {

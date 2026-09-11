@@ -348,3 +348,232 @@ test("same connection waits for in-flight disposal and acquires without CHATGPT_
   assert.ok(lease2);
   await lease2.dispose();
 });
+
+test("queue head-of-line: capacity=2 with active A and B; when A2 and C queue and B releases, C must run while A2 waits for A", async () => {
+  const previous = process.env.CHATGPT_WEB_MAX_BROWSER_TABS;
+  process.env.CHATGPT_WEB_MAX_BROWSER_TABS = "2";
+  try {
+    const admissionA = await acquireQueuedChatGptWebRuntimeAdmission("conn-a", "clean-room");
+    const admissionB = await acquireQueuedChatGptWebRuntimeAdmission("conn-b", "codex");
+
+    let a2Started = false;
+    const a2Promise = acquireQueuedChatGptWebRuntimeAdmission("conn-a", "clean-room", {
+      timeoutMs: 1000,
+    }).then((adm) => {
+      a2Started = true;
+      return adm;
+    });
+
+    let cStarted = false;
+    const cPromise = acquireQueuedChatGptWebRuntimeAdmission("conn-c", "verification", {
+      timeoutMs: 1000,
+    }).then((adm) => {
+      cStarted = true;
+      return adm;
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    assert.equal(a2Started, false, "A2 should not run yet because connection A is active");
+    assert.equal(cStarted, false, "C should not run yet because capacity (2) is saturated");
+
+    // B releases: C must run! (A2 must remain waiting because connection A is still active)
+    admissionB.release();
+
+    const admissionC = await cPromise;
+    assert.equal(cStarted, true, "C must run when B releases capacity");
+    assert.equal(a2Started, false, "A2 must still wait because connection A is still active");
+
+    // When A releases, A2 must run
+    admissionA.release();
+    const admissionA2 = await a2Promise;
+    assert.equal(a2Started, true, "A2 must run after connection A releases");
+
+    admissionC.release();
+    admissionA2.release();
+  } finally {
+    if (previous === undefined) delete process.env.CHATGPT_WEB_MAX_BROWSER_TABS;
+    else process.env.CHATGPT_WEB_MAX_BROWSER_TABS = previous;
+  }
+});
+
+test("same-connection FIFO: multiple waiters for same connection are served in FIFO order", async () => {
+  const previous = process.env.CHATGPT_WEB_MAX_BROWSER_TABS;
+  process.env.CHATGPT_WEB_MAX_BROWSER_TABS = "2";
+  try {
+    const admA = await acquireQueuedChatGptWebRuntimeAdmission("conn-a", "clean-room");
+    const admB = await acquireQueuedChatGptWebRuntimeAdmission("conn-b", "codex");
+
+    const order: string[] = [];
+    const pA2 = acquireQueuedChatGptWebRuntimeAdmission("conn-a", "clean-room").then((adm) => {
+      order.push("A2");
+      return adm;
+    });
+    const pC = acquireQueuedChatGptWebRuntimeAdmission("conn-c", "verification").then((adm) => {
+      order.push("C");
+      return adm;
+    });
+    const pA3 = acquireQueuedChatGptWebRuntimeAdmission("conn-a", "clean-room").then((adm) => {
+      order.push("A3");
+      return adm;
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    // Release B: C should run (HOL bypass for C). A2 and A3 must wait for connection A.
+    admB.release();
+    const admC = await pC;
+    assert.deepEqual(order, ["C"]);
+
+    // Release A: A2 must run next, not A3!
+    admA.release();
+    const admA2 = await pA2;
+    assert.deepEqual(order, ["C", "A2"]);
+
+    // Release A2: now A3 can run!
+    admA2.release();
+    const admA3 = await pA3;
+    assert.deepEqual(order, ["C", "A2", "A3"]);
+
+    admC.release();
+    admA3.release();
+  } finally {
+    if (previous === undefined) delete process.env.CHATGPT_WEB_MAX_BROWSER_TABS;
+    else process.env.CHATGPT_WEB_MAX_BROWSER_TABS = previous;
+  }
+});
+
+test("abort draining: aborted waiter at queue head triggers drain for next eligible waiter", async () => {
+  const previous = process.env.CHATGPT_WEB_MAX_BROWSER_TABS;
+  process.env.CHATGPT_WEB_MAX_BROWSER_TABS = "2";
+  try {
+    const admA = await acquireQueuedChatGptWebRuntimeAdmission("conn-a", "clean-room");
+    const admB = await acquireQueuedChatGptWebRuntimeAdmission("conn-b", "codex");
+
+    const abortController = new AbortController();
+    const pA2 = acquireQueuedChatGptWebRuntimeAdmission("conn-a", "clean-room", {
+      signal: abortController.signal,
+    });
+    const pC = acquireQueuedChatGptWebRuntimeAdmission("conn-c", "verification");
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    // Abort A2: C must still be scheduled when B releases
+    abortController.abort();
+    await assert.rejects(pA2, (err: unknown) => (err as Error).name === "AbortError");
+
+    admB.release();
+    const admC = await pC;
+    assert.ok(admC);
+
+    admA.release();
+    admC.release();
+  } finally {
+    if (previous === undefined) delete process.env.CHATGPT_WEB_MAX_BROWSER_TABS;
+    else process.env.CHATGPT_WEB_MAX_BROWSER_TABS = previous;
+  }
+});
+
+test("timeout draining: timed-out waiter in queue triggers drain for next eligible waiter", async () => {
+  const previous = process.env.CHATGPT_WEB_MAX_BROWSER_TABS;
+  process.env.CHATGPT_WEB_MAX_BROWSER_TABS = "2";
+  try {
+    const admA = await acquireQueuedChatGptWebRuntimeAdmission("conn-a", "clean-room");
+    const admB = await acquireQueuedChatGptWebRuntimeAdmission("conn-b", "codex");
+
+    const pA2 = acquireQueuedChatGptWebRuntimeAdmission("conn-a", "clean-room", {
+      timeoutMs: 30,
+    });
+    const pC = acquireQueuedChatGptWebRuntimeAdmission("conn-c", "verification", {
+      timeoutMs: 5000,
+    });
+
+    await assert.rejects(
+      pA2,
+      (err: unknown) => (err as ChatGptWebRuntimeGuardError).code === "CHATGPT_BROWSER_BUSY"
+    );
+
+    admB.release();
+    const admC = await pC;
+    assert.ok(admC);
+
+    admA.release();
+    admC.release();
+  } finally {
+    if (previous === undefined) delete process.env.CHATGPT_WEB_MAX_BROWSER_TABS;
+    else process.env.CHATGPT_WEB_MAX_BROWSER_TABS = previous;
+  }
+});
+
+test("queue fairness: new incoming request does not bypass eligible queued waiter", async () => {
+  const previous = process.env.CHATGPT_WEB_MAX_BROWSER_TABS;
+  process.env.CHATGPT_WEB_MAX_BROWSER_TABS = "1";
+  try {
+    const admA = await acquireQueuedChatGptWebRuntimeAdmission("conn-a", "clean-room");
+
+    const order: string[] = [];
+    const pB = acquireQueuedChatGptWebRuntimeAdmission("conn-b", "codex").then((adm) => {
+      order.push("B");
+      return adm;
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    // When A releases, B is queued and eligible.
+    // If request D arrives, it should not jump ahead of B.
+    const pD = acquireQueuedChatGptWebRuntimeAdmission("conn-d", "verification").then((adm) => {
+      order.push("D");
+      return adm;
+    });
+
+    admA.release();
+
+    const admB = await pB;
+    assert.deepEqual(order, ["B"]);
+
+    admB.release();
+    const admD = await pD;
+    assert.deepEqual(order, ["B", "D"]);
+
+    admD.release();
+  } finally {
+    if (previous === undefined) delete process.env.CHATGPT_WEB_MAX_BROWSER_TABS;
+    else process.env.CHATGPT_WEB_MAX_BROWSER_TABS = previous;
+  }
+});
+
+test("multi-slot drain: multiple eligible waiters in queue drain up to available capacity", async () => {
+  const previous = process.env.CHATGPT_WEB_MAX_BROWSER_TABS;
+  process.env.CHATGPT_WEB_MAX_BROWSER_TABS = "2";
+  try {
+    const admA = await acquireQueuedChatGptWebRuntimeAdmission("conn-a", "clean-room");
+    const admB = await acquireQueuedChatGptWebRuntimeAdmission("conn-b", "codex");
+
+    const order: string[] = [];
+    const pC = acquireQueuedChatGptWebRuntimeAdmission("conn-c", "clean-room").then((adm) => {
+      order.push("C");
+      return adm;
+    });
+    const pD = acquireQueuedChatGptWebRuntimeAdmission("conn-d", "verification").then((adm) => {
+      order.push("D");
+      return adm;
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    // Release both A and B: both C and D should be admitted concurrently
+    admA.release();
+    admB.release();
+
+    const [admC, admD] = await Promise.all([pC, pD]);
+    assert.ok(admC);
+    assert.ok(admD);
+    assert.equal(order.length, 2);
+
+    admC.release();
+    admD.release();
+  } finally {
+    if (previous === undefined) delete process.env.CHATGPT_WEB_MAX_BROWSER_TABS;
+    else process.env.CHATGPT_WEB_MAX_BROWSER_TABS = previous;
+  }
+});

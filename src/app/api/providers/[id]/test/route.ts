@@ -850,6 +850,10 @@ async function testApiKeyConnection(connection: any) {
       ? await validateChatGptWebCodexProvider({
           apiKey: connection.apiKey,
           connectionId: connection.id,
+          model:
+            typeof providerSpecificData.validationModelId === "string"
+              ? providerSpecificData.validationModelId
+              : undefined,
           providerSpecificData: { ...providerSpecificData, verifyBrowserLogin: true },
         })
       : await validateProviderApiKey({

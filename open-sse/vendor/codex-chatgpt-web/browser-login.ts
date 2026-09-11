@@ -29,6 +29,7 @@ export type BrowserLoginConfig = Pick<
   chromeExecutablePath?: string;
   cdpEndpoint?: string;
   verificationTimeoutMs?: number;
+  signal?: AbortSignal;
 };
 
 interface LoginVerificationMarker {
@@ -91,6 +92,9 @@ async function inspectStoredState(
   config: BrowserLoginConfig,
   storageState: NonNullable<BrowserContextOptions["storageState"]>
 ): Promise<Partial<ChatGptWebAccountCapabilities> & { url: string }> {
+  if (config.signal?.aborted) {
+    throw config.signal.reason ?? new DOMException("Verification aborted", "AbortError");
+  }
   if (!config.cdpEndpoint && !config.chromeExecutablePath) {
     throw new Error("ChatGPT browser verification requires Chrome or a CDP endpoint");
   }
@@ -102,6 +106,16 @@ async function inspectStoredState(
         ignoreDefaultArgs: ["--password-store=basic", "--use-mock-keychain"],
         args: ["--no-first-run", "--no-default-browser-check"],
       });
+  const onAbort = () => {
+    verifierBrowser.close().catch(() => {});
+  };
+  if (config.signal) {
+    if (config.signal.aborted) {
+      await verifierBrowser.close().catch(() => {});
+      throw config.signal.reason ?? new DOMException("Verification aborted", "AbortError");
+    }
+    config.signal.addEventListener("abort", onAbort, { once: true });
+  }
   try {
     const verifierContext = await verifierBrowser.newContext({ storageState });
     try {
@@ -120,13 +134,16 @@ async function inspectStoredState(
       await assertAuthenticatedChatGptPage(verifierPage);
       const capabilities = await detectChatGptAccountCapabilities(verifierPage, {
         selectorTimeoutMs: Math.min(25_000, remainingMs()),
-        stableAbsenceMs: 2_000,
+        stableAbsenceMs: 3_000,
       });
       return { ...capabilities, url: verifierPage.url() };
     } finally {
       await verifierContext.close();
     }
   } finally {
+    if (config.signal) {
+      config.signal.removeEventListener("abort", onAbort);
+    }
     await verifierBrowser.close();
   }
 }
@@ -247,7 +264,18 @@ export async function loginToChatGpt(
   }
 }
 
-const LOGIN_VERIFICATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+export const LOGIN_VERIFICATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+export function invalidateVerificationMarker(storageStatePath: string): void {
+  const markerPath = loginVerificationMarkerPath(storageStatePath);
+  if (existsSync(markerPath)) {
+    try {
+      rmSync(markerPath, { force: true });
+    } catch {
+      // ignore
+    }
+  }
+}
 
 export function browserLoginStateExists(
   config: Pick<BrowserLoginConfig, "storageStatePath">
@@ -274,7 +302,10 @@ export function browserLoginStateExists(
     if (typeof marker.storageStateFingerprint !== "string" || !marker.storageStateFingerprint) {
       return false;
     }
-    const state = JSON.parse(readFileSync(config.storageStatePath, "utf8")) as Record<string, unknown>;
+    const state = JSON.parse(readFileSync(config.storageStatePath, "utf8")) as Record<
+      string,
+      unknown
+    >;
     const currentFingerprint = createHash("sha256").update(JSON.stringify(state)).digest("hex");
     if (currentFingerprint !== marker.storageStateFingerprint) return false;
     return true;

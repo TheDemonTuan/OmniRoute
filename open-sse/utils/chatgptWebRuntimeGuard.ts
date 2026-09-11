@@ -76,40 +76,65 @@ interface AdmissionWaiter {
   connectionId: string;
   owner: "clean-room" | "codex" | "verification";
   resolve: (admission: ChatGptWebRuntimeAdmission) => void;
-  reject: (err: Error) => void;
+  reject: (err: unknown) => void;
   timer?: ReturnType<typeof setTimeout>;
   abortHandler?: () => void;
+  signal?: AbortSignal | null;
 }
 
 const queuedAdmissionWaiters: AdmissionWaiter[] = [];
 const DEFAULT_MAX_QUEUE_WAITERS = 20;
 const DEFAULT_QUEUE_TIMEOUT_MS = 120_000;
 
+let isScheduling = false;
 function scheduleNextAdmissionWaiter(): void {
-  if (queuedAdmissionWaiters.length === 0) return;
-  const maxLeases = getMaxActiveLeases();
-  if (getActiveCount() >= maxLeases) return;
-
-  const waiter = queuedAdmissionWaiters[0];
-  if (!waiter || activeConnections.has(waiter.connectionId) || activeAdmissions.has(waiter.connectionId)) {
-    return;
-  }
-  queuedAdmissionWaiters.shift();
-  if (waiter.timer) clearTimeout(waiter.timer);
-
-  const token = Symbol(waiter.owner);
-  activeAdmissions.set(waiter.connectionId, token);
-
-  const admission: ChatGptWebRuntimeAdmission = {
-    release(): void {
-      if (activeAdmissions.get(waiter.connectionId) === token) {
-        activeAdmissions.delete(waiter.connectionId);
-        scheduleNextAdmissionWaiter();
+  if (isScheduling) return;
+  isScheduling = true;
+  try {
+    const maxLeases = getMaxActiveLeases();
+    while (getActiveCount() < maxLeases && queuedAdmissionWaiters.length > 0) {
+      let eligibleIndex = -1;
+      for (let i = 0; i < queuedAdmissionWaiters.length; i++) {
+        const candidate = queuedAdmissionWaiters[i];
+        if (candidate.signal?.aborted) {
+          queuedAdmissionWaiters.splice(i, 1);
+          candidate.reject(new DOMException("Browser operation aborted", "AbortError"));
+          i--;
+          continue;
+        }
+        if (
+          !activeConnections.has(candidate.connectionId) &&
+          !activeAdmissions.has(candidate.connectionId)
+        ) {
+          eligibleIndex = i;
+          break;
+        }
       }
-    },
-  };
 
-  waiter.resolve(admission);
+      if (eligibleIndex === -1) {
+        break;
+      }
+
+      const [waiter] = queuedAdmissionWaiters.splice(eligibleIndex, 1);
+      if (waiter.timer) clearTimeout(waiter.timer);
+
+      const token = Symbol(waiter.owner);
+      activeAdmissions.set(waiter.connectionId, token);
+
+      const admission: ChatGptWebRuntimeAdmission = {
+        release(): void {
+          if (activeAdmissions.get(waiter.connectionId) === token) {
+            activeAdmissions.delete(waiter.connectionId);
+            scheduleNextAdmissionWaiter();
+          }
+        },
+      };
+
+      waiter.resolve(admission);
+    }
+  } finally {
+    isScheduling = false;
+  }
 }
 
 function getActiveCount(): number {
@@ -173,9 +198,17 @@ export async function acquireQueuedChatGptWebRuntimeAdmission(
   const maxWaiters = options.maxQueueWaiters ?? DEFAULT_MAX_QUEUE_WAITERS;
 
   const maxLeases = getMaxActiveLeases();
+  const hasQueuedSameConn = queuedAdmissionWaiters.some(
+    (w) => w.connectionId === normalizedConnectionId
+  );
+  const hasEligibleQueued = queuedAdmissionWaiters.some(
+    (w) => !activeConnections.has(w.connectionId) && !activeAdmissions.has(w.connectionId)
+  );
   const isBusy =
     activeConnections.has(normalizedConnectionId) ||
     activeAdmissions.has(normalizedConnectionId) ||
+    hasQueuedSameConn ||
+    hasEligibleQueued ||
     getActiveCount() >= maxLeases;
 
   if (!isBusy) {
@@ -215,8 +248,12 @@ export async function acquireQueuedChatGptWebRuntimeAdmission(
     const waiter: AdmissionWaiter = {
       connectionId: normalizedConnectionId,
       owner,
+      signal: options.signal,
       resolve: (admission) => {
-        if (settled) return;
+        if (settled) {
+          admission.release();
+          return;
+        }
         settled = true;
         if (waiter.timer) clearTimeout(waiter.timer);
         if (waiter.abortHandler && options.signal) {
@@ -233,6 +270,7 @@ export async function acquireQueuedChatGptWebRuntimeAdmission(
         }
         removeWaiter();
         reject(err);
+        scheduleNextAdmissionWaiter();
       },
     };
 
@@ -256,6 +294,7 @@ export async function acquireQueuedChatGptWebRuntimeAdmission(
     }
 
     queuedAdmissionWaiters.push(waiter);
+    scheduleNextAdmissionWaiter();
   });
 }
 
@@ -311,7 +350,10 @@ export async function acquireChatGptWebCdpLease(
 
   const connectionId = options.connectionId.trim();
   const admissionOwnsConnection = activeAdmissions.has(connectionId);
-  if (activeConnections.has(connectionId) || (!admissionOwnsConnection && getActiveCount() >= getMaxActiveLeases())) {
+  if (
+    activeConnections.has(connectionId) ||
+    (!admissionOwnsConnection && getActiveCount() >= getMaxActiveLeases())
+  ) {
     admission?.release();
     throw new ChatGptWebRuntimeGuardError(
       "CHATGPT_BROWSER_BUSY",
