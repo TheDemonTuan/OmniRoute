@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import {
+  getProviderConnectionFamilyIds,
   isClaudeCodeCompatibleProvider,
   isAnthropicCompatibleProvider,
   isOpenAICompatibleProvider,
@@ -2365,7 +2366,7 @@ export async function GET(
 
       const data = await response.json();
       let pageModels = config.parseResponse(data);
-      if (provider === "alibaba" || provider === "alibaba-cn") {
+      if (getProviderConnectionFamilyIds("alibaba").includes(provider)) {
         const { parseAlibabaModelStudioModelsForConnection } =
           await import("./discovery/providerModelsConfig.ts");
         pageModels = parseAlibabaModelStudioModelsForConnection(
@@ -2394,7 +2395,7 @@ export async function GET(
       );
     }
 
-    if (provider === "alibaba" || provider === "alibaba-cn") {
+    if (getProviderConnectionFamilyIds("alibaba").includes(provider)) {
       const { shouldUseLiveAlibabaFreeModelDiscovery } =
         await import("@omniroute/open-sse/services/alibabaFreeTier.ts");
       const { scheduleAlibabaFreeTierProbeRefresh } =
