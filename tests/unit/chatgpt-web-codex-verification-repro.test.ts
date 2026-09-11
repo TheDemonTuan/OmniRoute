@@ -7,6 +7,11 @@ import test from "node:test";
 import { getChatGptWebCodexDoctorStatus } from "../../open-sse/executors/chatgpt-web-codex/doctor.ts";
 import { connectionRuntimePaths } from "../../open-sse/executors/chatgpt-web-codex/storageState.ts";
 import { validateChatGptWebCodexProvider } from "../../src/lib/providers/validation/chatgptWebCodex.ts";
+import { resetDbInstance } from "../../src/lib/db/core.ts";
+
+test.after(() => {
+  resetDbInstance();
+});
 const VALID_COOKIE =
   "__Secure-next-auth.session-token=mock-token-abc123xyz; path=/; domain=.chatgpt.com";
 

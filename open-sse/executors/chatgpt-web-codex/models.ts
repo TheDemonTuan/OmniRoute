@@ -43,3 +43,33 @@ export function reasoningEffortOf(body: Record<string, unknown>): string | undef
   const effort = body.reasoning_effort;
   return typeof effort === "string" ? effort : undefined;
 }
+
+export function assertChatGptWebCodexRouteAvailable(
+  model: string,
+  data: Record<string, unknown>
+): void {
+  const route = requireChatGptWebCodexRoute(model);
+  const solAvailable = data.solAvailable;
+  const proAvailable = data.proAvailable;
+  if (route.sol && solAvailable !== true) {
+    throw new Error(
+      solAvailable === false
+        ? "ChatGPT Sol models are not available for this Luna-only connection"
+        : "ChatGPT Sol model availability has not been verified for this connection"
+    );
+  }
+  if (!route.sol && solAvailable !== false) {
+    throw new Error(
+      solAvailable === true
+        ? "ChatGPT Luna models are only available for Luna-only connections"
+        : "ChatGPT Luna model availability has not been verified for this connection"
+    );
+  }
+  if (route.pro && proAvailable !== true) {
+    throw new Error(
+      proAvailable === false
+        ? `${route.id} is not available for this non-Pro connection`
+        : `${route.id} availability has not been verified for this connection`
+    );
+  }
+}

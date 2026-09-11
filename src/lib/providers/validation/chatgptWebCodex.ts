@@ -5,15 +5,16 @@ import {
   CHATGPT_WEB_CODEX_CONNECTOR_NAME,
   CHATGPT_WEB_CODEX_RUNTIME_HEADED,
 } from "@/shared/constants/chatgptWebCodex";
-import { inspectBrowserLoginCapabilities } from "@omniroute/open-sse/vendor/codex-chatgpt-web/browser-login.ts";
-import { decodeChatGptWebCodexSecrets } from "@omniroute/open-sse/executors/chatgpt-web-codex/credentials.ts";
+import {
+  decodeChatGptWebCodexSecrets,
+  chatGptWebCodexCredentialFingerprint,
+} from "@omniroute/open-sse/executors/chatgpt-web-codex/credentials.ts";
 import {
   connectionRuntimePaths,
   ensureConnectionStorageState,
   ensureConnectionStorageStateFromCredential,
 } from "@omniroute/open-sse/executors/chatgpt-web-codex/storageState.ts";
 import { sanitizeErrorMessage } from "@omniroute/open-sse/utils/error.ts";
-import { acquireQueuedChatGptWebRuntimeAdmission } from "@omniroute/open-sse/utils/chatgptWebRuntimeGuard.ts";
 
 // detectChromeExecutable (executors/chatgpt-web-codex.ts) is imported
 // dynamically below, not statically here: this module is re-exported through
@@ -29,11 +30,19 @@ export async function validateChatGptWebCodexProvider({
   apiKey,
   providerSpecificData = {},
   connectionId,
+  signal,
+  model,
+  forceVerification,
 }: {
   apiKey?: string;
   providerSpecificData?: Record<string, unknown>;
   connectionId?: string;
+  signal?: AbortSignal;
+  model?: string;
+  forceVerification?: boolean;
 }) {
+  let usesTemporaryValidationState = false;
+  let paths: ReturnType<typeof connectionRuntimePaths> | undefined;
   try {
     const secrets = decodeChatGptWebCodexSecrets(String(apiKey || ""));
     if (!secrets.cookie && !secrets.storageState) {
@@ -68,10 +77,33 @@ export async function validateChatGptWebCodexProvider({
         error: "Tunnel-ID und Runtime-Key müssen gemeinsam gültig konfiguriert werden.",
       };
     }
+
+    const {
+      resolveChatGptWebCodexBrowserRuntime,
+      verificationCoordinator,
+      requireChatGptWebCodexRoute,
+      assertChatGptWebCodexRouteAvailable,
+    } = await import("@omniroute/open-sse/services/chatgptWebCodexAdmin.ts");
+
+    if (model) {
+      try {
+        requireChatGptWebCodexRoute(model);
+      } catch (modelError) {
+        return {
+          valid: false,
+          error: sanitizeErrorMessage(
+            modelError instanceof Error ? modelError.message : modelError
+          ),
+          statusCode: 400,
+          errorCode: "unsupported_model",
+        };
+      }
+    }
+
     const validationId = `validation-${randomBytes(12).toString("hex")}`;
     const runtimeConnectionId = connectionId?.trim() || validationId;
-    const usesTemporaryValidationState = runtimeConnectionId === validationId;
-    const paths = connectionRuntimePaths(runtimeConnectionId);
+    usesTemporaryValidationState = runtimeConnectionId === validationId;
+    paths = connectionRuntimePaths(runtimeConnectionId);
     const freshCookie = Boolean(secrets.cookie);
     try {
       if (secrets.cookie) ensureConnectionStorageState(runtimeConnectionId, secrets.cookie);
@@ -86,21 +118,17 @@ export async function validateChatGptWebCodexProvider({
       };
     }
 
-    const { resolveChatGptWebCodexBrowserRuntime } =
-      await import("@omniroute/open-sse/services/chatgptWebCodexAdmin.ts");
     const runtime = resolveChatGptWebCodexBrowserRuntime(providerSpecificData);
     const verifyBrowserLogin = providerSpecificData.verifyBrowserLogin === true;
 
     // Saving a connection must not wait for a remote ChatGPT page or its volatile UI.
     // An explicit connection test or request performs browser authentication.
     if (verifyBrowserLogin && runtime.available) {
-      const admission = await acquireQueuedChatGptWebRuntimeAdmission(
-        runtimeConnectionId,
-        "verification"
-      );
-      let capabilities: Awaited<ReturnType<typeof inspectBrowserLoginCapabilities>>;
-      try {
-        capabilities = await inspectBrowserLoginCapabilities({
+      const verification = await verificationCoordinator.coordinateVerification({
+        connectionId: runtimeConnectionId,
+        credentialFingerprint: chatGptWebCodexCredentialFingerprint(String(apiKey || "")),
+        runtimeIdentity: runtime.cdpEndpoint ?? runtime.chromeExecutablePath ?? "unavailable",
+        loginConfig: {
           appName: connectorName,
           ...(runtime.chromeExecutablePath
             ? { chromeExecutablePath: runtime.chromeExecutablePath }
@@ -110,17 +138,37 @@ export async function validateChatGptWebCodexProvider({
           headed: CHATGPT_WEB_CODEX_RUNTIME_HEADED,
           proAvailable: false,
           autoApproveToolCalls: false,
-          verificationTimeoutMs: 25_000,
-        });
-      } finally {
-        admission.release();
-      }
+          // Connection tests must cover cold navigation plus capability discovery.
+          verificationTimeoutMs: 60_000,
+          signal,
+        },
+        signal,
+        force: forceVerification === true,
+      });
+
       if (usesTemporaryValidationState && !freshCookie) {
         rmSync(paths.root, { recursive: true, force: true });
       }
-      const capabilitiesVerified =
-        typeof capabilities.solAvailable === "boolean" &&
-        typeof capabilities.proAvailable === "boolean";
+      const capabilities = verification.capabilities;
+      const capabilitiesVerified = verification.capabilitiesVerified;
+
+      if (model && capabilitiesVerified) {
+        try {
+          assertChatGptWebCodexRouteAvailable(model, {
+            solAvailable: capabilities.solAvailable,
+            proAvailable: capabilities.proAvailable,
+          });
+        } catch (routeErr) {
+          return {
+            valid: false,
+            error: sanitizeErrorMessage(routeErr instanceof Error ? routeErr.message : routeErr),
+            statusCode: 400,
+            errorCode: "unsupported_model_route",
+            pendingBrowserVerification: !capabilitiesVerified,
+          };
+        }
+      }
+
       return {
         valid: true,
         error: null,
@@ -133,6 +181,16 @@ export async function validateChatGptWebCodexProvider({
           temporaryChats: "ready",
           solAvailable: capabilities.solAvailable ?? null,
           proAvailable: capabilities.proAvailable ?? null,
+          browserVerified: capabilitiesVerified,
+          pendingBrowserVerification: !capabilitiesVerified,
+          connectorName,
+          ...(runtime.chromeExecutablePath
+            ? { chromeExecutablePath: runtime.chromeExecutablePath }
+            : {}),
+          ...(runtime.cdpEndpoint ? { browserCdpEndpoint: runtime.cdpEndpoint } : {}),
+          ...(runtimeKey ? { runtimeKey } : {}),
+          ...(tunnelId ? { tunnelId } : {}),
+          ...(freshCookie ? { validationId } : {}),
         },
         providerSpecificData: {
           solAvailable: capabilities.solAvailable ?? null,
@@ -155,6 +213,24 @@ export async function validateChatGptWebCodexProvider({
     if (usesTemporaryValidationState && !freshCookie) {
       rmSync(paths.root, { recursive: true, force: true });
     }
+
+    if (
+      model &&
+      (providerSpecificData.browserVerified === true ||
+        typeof providerSpecificData.solAvailable === "boolean")
+    ) {
+      try {
+        assertChatGptWebCodexRouteAvailable(model, providerSpecificData);
+      } catch (routeErr) {
+        return {
+          valid: false,
+          error: sanitizeErrorMessage(routeErr instanceof Error ? routeErr.message : routeErr),
+          statusCode: 400,
+          errorCode: "unsupported_model_route",
+        };
+      }
+    }
+
     return {
       valid: true,
       error: null,
@@ -187,9 +263,36 @@ export async function validateChatGptWebCodexProvider({
         : { available: false, reason: "browser_unavailable" },
     };
   } catch (error) {
+    if (usesTemporaryValidationState && paths) {
+      try {
+        rmSync(paths.root, { recursive: true, force: true });
+      } catch {
+        // ignore
+      }
+    }
+    const { classifyVerificationError, ChatGptWebVerificationError } =
+      await import("@omniroute/open-sse/services/chatgptWebCodexAdmin.ts");
+    if (!(error instanceof ChatGptWebVerificationError)) {
+      const msg = sanitizeErrorMessage(error instanceof Error ? error.message : error);
+      const isRouteError =
+        msg.includes("route") ||
+        msg.includes("model") ||
+        msg.includes("Luna") ||
+        msg.includes("Sol") ||
+        msg.includes("Pro");
+      return {
+        valid: false,
+        error: msg,
+        statusCode: 400,
+        errorCode: isRouteError ? "unsupported_model_route" : "chatgpt_web_codex_validation_failed",
+      };
+    }
+    const typed = classifyVerificationError(error);
     return {
       valid: false,
-      error: sanitizeErrorMessage(error instanceof Error ? error.message : error),
+      error: sanitizeErrorMessage(typed.message),
+      statusCode: typed.statusCode,
+      errorCode: typed.code,
     };
   }
 }

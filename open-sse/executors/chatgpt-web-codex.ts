@@ -16,11 +16,6 @@ import {
   waitForChatGptWebTurnSettlement,
 } from "../vendor/codex-chatgpt-web/adapters/chatgpt-web/index.ts";
 import { ChatGptBrowserWorker } from "../vendor/codex-chatgpt-web/adapters/chatgpt-web/browser-worker.ts";
-import {
-  browserLoginStateExists,
-  inspectBrowserLoginCapabilities,
-  storedBrowserLoginCapabilities,
-} from "../vendor/codex-chatgpt-web/browser-login.ts";
 import { extractChatGptTurnIdentity } from "../vendor/codex-chatgpt-web/adapters/chatgpt-web/environment.ts";
 import { bridgeToResponsesSSE, buildResponseJSON } from "../vendor/codex-chatgpt-web/bridge.ts";
 import { AsyncEventQueue } from "../vendor/codex-chatgpt-web/event-queue.ts";
@@ -48,6 +43,10 @@ import {
 } from "./chatgpt-web-codex/credentials.ts";
 import { ensureTunnelRuntimeReady } from "./chatgpt-web-codex/tunnelClient.ts";
 import { trackChatGptWebCodexRuntime } from "./chatgpt-web-codex/runtime.ts";
+import {
+  verificationCoordinator,
+  ChatGptWebVerificationError,
+} from "../services/chatgptWebCodexVerification.ts";
 
 const JSON_HEADERS = { "Content-Type": "application/json" };
 const SSE_HEADERS = {
@@ -55,19 +54,6 @@ const SSE_HEADERS = {
   Connection: "keep-alive",
   "Content-Type": "text/event-stream; charset=utf-8",
 };
-
-class ChatGptWebCapabilityVerificationError extends Error {
-  readonly code = "chatgpt_capability_verification_failed";
-  readonly statusCode = 503;
-
-  constructor(cause: unknown) {
-    super(
-      "ChatGPT browser capability verification did not complete. Retry after the browser becomes available."
-    );
-    this.name = "ChatGptWebCapabilityVerificationError";
-    this.cause = cause;
-  }
-}
 
 function errorResponse(status: number, message: unknown, code = "chatgpt_web_codex_error") {
   return new Response(
@@ -89,19 +75,6 @@ function wrapped(response: Response, body: unknown): ExecutorExecuteResult {
     transformedBody: body,
     transport: "chatgpt-web-browser",
   };
-}
-
-const inFlightCodexVerifications = new Map<
-  string,
-  Promise<Awaited<ReturnType<typeof inspectBrowserLoginCapabilities>>>
->();
-
-function verificationKey(
-  connectionId: string,
-  credentialFingerprint: string,
-  runtimeIdentity: string
-): string {
-  return `${connectionId}:${credentialFingerprint}:${runtimeIdentity}`;
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -404,35 +377,15 @@ export class ChatGptWebCodexExecutor extends BaseExecutor {
         proAvailable: providerData.proAvailable === true,
         autoApproveToolCalls: false,
       };
-      let capabilities = storedBrowserLoginCapabilities(loginConfig);
-      if (!browserLoginStateExists(loginConfig)) {
-        const runtimeIdentity = cdpEndpoint ?? chromeExecutablePath ?? "unavailable";
-        const key = verificationKey(
-          connectionId,
-          chatGptWebCodexCredentialFingerprint(encodedCredentials),
-          runtimeIdentity
-        );
-        let verificationPromise = inFlightCodexVerifications.get(key);
-        if (!verificationPromise) {
-          verificationPromise = (async () => {
-            const verificationAdmission = await acquireQueuedChatGptWebRuntimeAdmission(
-              connectionId,
-              "verification",
-              { signal: input.signal }
-            );
-            try {
-              return await inspectBrowserLoginCapabilities(loginConfig);
-            } catch (error) {
-              throw new ChatGptWebCapabilityVerificationError(error);
-            } finally {
-              verificationAdmission.release();
-              inFlightCodexVerifications.delete(key);
-            }
-          })();
-          inFlightCodexVerifications.set(key, verificationPromise);
-        }
-        capabilities = await verificationPromise;
-      }
+      const runtimeIdentity = cdpEndpoint ?? chromeExecutablePath ?? "unavailable";
+      const verification = await verificationCoordinator.coordinateVerification({
+        connectionId,
+        credentialFingerprint: chatGptWebCodexCredentialFingerprint(encodedCredentials),
+        runtimeIdentity,
+        loginConfig,
+        signal: input.signal,
+      });
+      const capabilities = verification.capabilities;
       const capabilitiesVerified =
         typeof capabilities.solAvailable === "boolean" &&
         typeof capabilities.proAvailable === "boolean";
@@ -579,10 +532,10 @@ export class ChatGptWebCodexExecutor extends BaseExecutor {
         "CHATGPT_WEB_CODEX",
         sanitizeErrorMessage(error instanceof Error ? error.message : error)
       );
-      if (error instanceof ChatGptWebCodexRuntimeError) {
+      if (error instanceof ChatGptWebVerificationError) {
         return wrapped(errorResponse(error.statusCode, error.message, error.code), input.body);
       }
-      if (error instanceof ChatGptWebCapabilityVerificationError) {
+      if (error instanceof ChatGptWebCodexRuntimeError) {
         return wrapped(errorResponse(error.statusCode, error.message, error.code), input.body);
       }
       return wrapped(

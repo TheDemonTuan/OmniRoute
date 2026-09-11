@@ -339,6 +339,16 @@ test("resolveModelTestTimeoutMs defaults ordinary model checks to 30 seconds", (
   assert.equal(resolveModelTestTimeoutMs("openai", "gpt-4.1"), 30_000);
 });
 
+test("Codex model tests allow cold verification and a serialized browser turn", () => {
+  assert.equal(resolveModelTestTimeoutMs("chatgpt-web-codex", "luna"), 240_000);
+  assert.equal(
+    resolveModelTestTimeoutMs("CHATGPT-WEB-CODEX", "chatgpt-web-codex/sol", 30_000),
+    240_000
+  );
+  assert.equal(resolveModelTestTimeoutMs("chatgpt-web-codex", "pro", 300_000), 300_000);
+  assert.equal(resolveModelTestTimeoutMs("openai", "sol", 30_000), 30_000);
+});
+
 test("resolveModelTestTimeoutMs gives zai-web checks up to 60 seconds", () => {
   assert.equal(resolveModelTestTimeoutMs("zai-web", "glm-5.2", 30_000), 60_000);
   assert.equal(resolveModelTestTimeoutMs("zai-web", "zai-web/glm-5.3-flash", 90_000), 90_000);

@@ -1026,3 +1026,291 @@ export function getHeaderIconProviderId(
   }
   return providerInfoId;
 }
+
+// ---------------------------------------------------------------------------
+// Connection status projection & pending verification helpers
+// ---------------------------------------------------------------------------
+
+export interface ConnectionStatusCheckInput {
+  provider?: string;
+  testStatus?: string;
+  isActive?: boolean;
+  rateLimitedUntil?: string;
+  lastError?: string;
+  lastErrorType?: string;
+  errorCode?: string | number;
+  providerSpecificData?: Record<string, unknown> | null;
+}
+
+export function inferConnectionErrorType(
+  connection: ConnectionStatusCheckInput,
+  isCooldown?: boolean
+): string | null {
+  if (isCooldown) return "upstream_rate_limited";
+  if (connection.testStatus === "banned") return "banned";
+  if (connection.testStatus === "credits_exhausted") return "credits_exhausted";
+  if (connection.lastErrorType) return connection.lastErrorType;
+
+  const code = Number(connection.errorCode);
+  if (code === 401 || code === 403) return "upstream_auth_error";
+  if (code === 429) return "upstream_rate_limited";
+  if (code >= 500) return "upstream_unavailable";
+
+  const msg = (connection.lastError || "").toLowerCase();
+  if (!msg) return null;
+  if (
+    msg.includes("runtime") ||
+    msg.includes("not runnable") ||
+    msg.includes("not installed") ||
+    msg.includes("healthcheck")
+  )
+    return "runtime_error";
+  if (msg.includes("refresh failed")) return "token_refresh_failed";
+  if (msg.includes("token expired") || msg.includes("expired")) return "token_expired";
+  if (
+    msg.includes("invalid api key") ||
+    msg.includes("token invalid") ||
+    msg.includes("revoked") ||
+    msg.includes("access denied") ||
+    msg.includes("unauthorized")
+  )
+    return "upstream_auth_error";
+  if (
+    msg.includes("rate limit") ||
+    msg.includes("quota") ||
+    msg.includes("too many requests") ||
+    msg.includes("429")
+  )
+    return "upstream_rate_limited";
+  if (
+    msg.includes("fetch failed") ||
+    msg.includes("network") ||
+    msg.includes("timeout") ||
+    msg.includes("econn") ||
+    msg.includes("enotfound")
+  )
+    return "network_error";
+  if (msg.includes("not supported")) return "unsupported";
+  return "upstream_error";
+}
+
+export function isConnectionPendingVerification(
+  connection: ConnectionStatusCheckInput,
+  isCooldown?: boolean
+): boolean {
+  // Explicitly disabled connection is never pending verification
+  if (connection.isActive === false) return false;
+
+  // Real errors, cooldowns, or failure statuses take precedence over pending metadata
+  const errorType = inferConnectionErrorType(connection, isCooldown);
+  if (errorType) return false;
+  if (connection.lastError || connection.errorCode) return false;
+
+  const s = connection.testStatus;
+  if (
+    s === "failed" ||
+    s === "error" ||
+    s === "unavailable" ||
+    s === "banned" ||
+    s === "credits_exhausted"
+  ) {
+    return false;
+  }
+
+  // Pending verification check
+  if (connection.testStatus === "pending") return true;
+
+  const psd =
+    connection.providerSpecificData && typeof connection.providerSpecificData === "object"
+      ? (connection.providerSpecificData as Record<string, unknown>)
+      : null;
+  if (connection.provider === "chatgpt-web-codex" && psd?.pendingBrowserVerification === true) {
+    return true;
+  }
+
+  return false;
+}
+
+export interface ConnectionStatusPresentationResult {
+  statusVariant: "default" | "success" | "warning" | "error" | "info";
+  statusLabel: string;
+  errorType: string | null;
+  errorBadge: {
+    labelKey: string;
+    variant: "error" | "default" | "warning" | "success" | "info" | "primary";
+    fallback?: string;
+  } | null;
+  errorTextClass: string;
+}
+
+export function getConnectionStatusPresentation(
+  connection: ConnectionStatusCheckInput,
+  effectiveStatus: string | undefined,
+  isCooldown: boolean,
+  t: ProviderMessageTranslator
+): ConnectionStatusPresentationResult {
+  // 1. Explicitly disabled connections always present as disabled
+  if (connection.isActive === false) {
+    return {
+      statusVariant: "default",
+      statusLabel: t("statusDisabled"),
+      errorType: null,
+      errorBadge: null,
+      errorTextClass: "text-text-muted",
+    };
+  }
+
+  // 2. Error / cooldown / reauth / failure conditions take precedence over pending metadata
+  const errorType = inferConnectionErrorType(connection, isCooldown);
+  const errorBadge = errorType ? ERROR_TYPE_LABELS[errorType] || null : null;
+  const hasError =
+    Boolean(errorType) ||
+    Boolean(connection.lastError) ||
+    Boolean(connection.errorCode) ||
+    effectiveStatus === "failed" ||
+    effectiveStatus === "error" ||
+    effectiveStatus === "unavailable" ||
+    connection.testStatus === "failed" ||
+    connection.testStatus === "error" ||
+    connection.testStatus === "unavailable" ||
+    connection.testStatus === "banned" ||
+    connection.testStatus === "credits_exhausted";
+
+  if (hasError) {
+    if (errorType === "runtime_error") {
+      return {
+        statusVariant: "warning",
+        statusLabel: t("statusRuntimeIssue"),
+        errorType,
+        errorBadge,
+        errorTextClass: "text-yellow-600 dark:text-yellow-400",
+      };
+    }
+
+    if (errorType === "account_deactivated") {
+      return {
+        statusVariant: "error",
+        statusLabel: providerText(t, "statusDeactivated", "Deactivated"),
+        errorType,
+        errorBadge,
+        errorTextClass: "text-red-600 font-bold",
+      };
+    }
+
+    if (
+      errorType === "upstream_auth_error" ||
+      errorType === "auth_missing" ||
+      errorType === "token_refresh_failed" ||
+      errorType === "token_expired"
+    ) {
+      return {
+        statusVariant: "error",
+        statusLabel: t("statusAuthFailed"),
+        errorType,
+        errorBadge,
+        errorTextClass: "text-red-500",
+      };
+    }
+
+    if (errorType === "upstream_rate_limited") {
+      return {
+        statusVariant: "warning",
+        statusLabel: t("statusRateLimited"),
+        errorType,
+        errorBadge,
+        errorTextClass: "text-yellow-600 dark:text-yellow-400",
+      };
+    }
+
+    if (errorType === "network_error") {
+      return {
+        statusVariant: "warning",
+        statusLabel: t("statusNetworkIssue"),
+        errorType,
+        errorBadge,
+        errorTextClass: "text-yellow-600 dark:text-yellow-400",
+      };
+    }
+
+    if (errorType === "unsupported") {
+      return {
+        statusVariant: "default",
+        statusLabel: t("statusTestUnsupported"),
+        errorType,
+        errorBadge,
+        errorTextClass: "text-text-muted",
+      };
+    }
+
+    if (errorType === "banned") {
+      return {
+        statusVariant: "error",
+        statusLabel: providerText(t, "statusBanned", "Banned (403)"),
+        errorType,
+        errorBadge,
+        errorTextClass: "text-red-600 font-bold",
+      };
+    }
+
+    if (errorType === "credits_exhausted") {
+      return {
+        statusVariant: "warning",
+        statusLabel: providerText(t, "statusCreditsExhausted", "Out of Credits"),
+        errorType,
+        errorBadge,
+        errorTextClass: "text-amber-500",
+      };
+    }
+
+    const fallbackStatusMap: Record<string, string> = {
+      unavailable: t("statusUnavailable"),
+      failed: t("statusFailed"),
+      error: t("statusError"),
+    };
+
+    return {
+      statusVariant: "error",
+      statusLabel: fallbackStatusMap[effectiveStatus ?? ""] || effectiveStatus || t("statusError"),
+      errorType,
+      errorBadge,
+      errorTextClass: "text-red-500",
+    };
+  }
+
+  // 3. Genuine pending verification on save (active, error-free)
+  if (isConnectionPendingVerification(connection, isCooldown)) {
+    return {
+      statusVariant: "warning",
+      statusLabel: providerText(t, "statusPendingVerification", "Pending Verification"),
+      errorType: "pending_verification",
+      errorBadge: null,
+      errorTextClass: "text-yellow-600 dark:text-yellow-400",
+    };
+  }
+
+  // 4. Connected / active
+  if (effectiveStatus === "active" || effectiveStatus === "success") {
+    return {
+      statusVariant: "success",
+      statusLabel: t("statusConnected"),
+      errorType: null,
+      errorBadge: null,
+      errorTextClass: "text-text-muted",
+    };
+  }
+
+  // 5. Fallback
+  const fallbackStatusMap: Record<string, string> = {
+    unavailable: t("statusUnavailable"),
+    failed: t("statusFailed"),
+    error: t("statusError"),
+  };
+
+  return {
+    statusVariant: "error",
+    statusLabel: fallbackStatusMap[effectiveStatus ?? ""] || effectiveStatus || t("statusError"),
+    errorType,
+    errorBadge,
+    errorTextClass: "text-red-500",
+  };
+}
