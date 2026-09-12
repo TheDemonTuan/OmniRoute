@@ -75,6 +75,8 @@ export const KIRO_STREAMING_TARGET =
 
 export const CURSOR_REGISTRY_VERSION = "3.9";
 
+export const CODEBUDDY_CN_USER_AGENT = "CLI/2.108.1 CodeBuddy/2.108.1";
+
 export function getGitHubCopilotChatHeaders(
   accept = "application/json",
   initiator = GITHUB_COPILOT_DEFAULT_INITIATOR,
