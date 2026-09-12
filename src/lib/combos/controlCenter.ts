@@ -1,6 +1,6 @@
 import { normalizeComboModels, type ComboStep } from "./steps";
 import { resolveComboTargetModelStr } from "../../../open-sse/services/combo/opencodeTargetAlias.ts";
-import { resolveProviderAlias } from "../../../open-sse/services/model.ts";
+import { AI_PROVIDERS } from "@/shared/constants/providers";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -108,6 +108,27 @@ function toString(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
 
+const CLIENT_SAFE_PROVIDER_ALIASES: Record<string, string> = {
+  oc: "opencode",
+  opencode: "opencode-zen",
+  agy: "antigravity",
+  aq: "amazon-q",
+  xiaomi: "xiaomi-mimo",
+  llamacpp: "llama-cpp",
+};
+
+function resolveClientSafeProviderAlias(aliasOrId: string): string {
+  if (CLIENT_SAFE_PROVIDER_ALIASES[aliasOrId]) {
+    return CLIENT_SAFE_PROVIDER_ALIASES[aliasOrId];
+  }
+  const provider = (AI_PROVIDERS as Record<string, { alias?: string }>)[aliasOrId];
+  if (provider) return aliasOrId;
+  for (const [id, entry] of Object.entries(AI_PROVIDERS)) {
+    if (entry.alias === aliasOrId) return id;
+  }
+  return aliasOrId;
+}
+
 function providerFromModel(model: string | null | undefined): string | null {
   if (!model) return null;
   // #11912: resolve through the same "opencode" -> "oc" combo-target alias
@@ -118,7 +139,7 @@ function providerFromModel(model: string | null | undefined): string | null {
   const slashIndex = normalized.indexOf("/");
   if (slashIndex <= 0) return null;
   const prefix = normalized.slice(0, slashIndex);
-  return resolveProviderAlias(prefix) || prefix;
+  return resolveClientSafeProviderAlias(prefix);
 }
 
 function normalizeSuccessRate(value: unknown): number {
