@@ -21,10 +21,9 @@ export function splitCodexReasoningSuffix(model: unknown): {
   effort: CodexEffortLevel | null;
 } {
   const modelId = typeof model === "string" ? model : "";
-  const aliasMatch =
-    /^(gpt-(?:5\.6-(?:sol|terra|luna)|6-astra))(?:-(max|ultra)|\((max|ultra)\))$/.exec(modelId);
-  if (aliasMatch) {
-    const [, baseModel, hyphenEffort, parenthesizedEffort] = aliasMatch;
+  const maxTierMatch = /^(.+?)(?:-(max|ultra)|\((max|ultra)\))$/.exec(modelId);
+  if (maxTierMatch) {
+    const [, baseModel, hyphenEffort, parenthesizedEffort] = maxTierMatch;
     const effort = hyphenEffort ?? parenthesizedEffort;
     const supportedModels = parenthesizedEffort
       ? CODEX_MAX_ALIAS_MODELS
