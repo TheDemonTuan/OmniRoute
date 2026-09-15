@@ -91,7 +91,7 @@ export async function handleResponsesCore({
     createSseHeartbeatTransform({
       signal,
       intervalMs: SSE_HEARTBEAT_INTERVAL_MS,
-      shape: HEARTBEAT_SHAPES.OPENAI_RESPONSES_IN_PROGRESS,
+      shape: HEARTBEAT_SHAPES.OPENAI_RESPONSES_KEEPALIVE,
     })
   );
 
