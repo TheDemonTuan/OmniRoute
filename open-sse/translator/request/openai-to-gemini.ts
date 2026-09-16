@@ -17,6 +17,7 @@ import {
   getDefaultThinkingBudget,
 } from "../../../src/lib/modelCapabilities.ts";
 import { getModelSpec } from "../../../src/shared/constants/modelSpecs.ts";
+import { gemini38ThinkingConfig, isGemini38Model } from "../../services/thinkingBudget.ts";
 
 import {
   DEFAULT_SAFETY_SETTINGS,
@@ -32,7 +33,6 @@ import {
   buildChangedToolNameMap,
   extractClientThoughtSignature,
   deepCleanUndefined,
-  getGeminiThinkingLevel,
   applyAntigravityGenerationDefaults,
   stringifyHistoricalToolArguments,
   buildInertHistoricalToolCallText,
@@ -215,20 +215,14 @@ function openaiToGeminiBase(
   if (model.startsWith("gemma-4")) {
     // gemma-4 models returns - 400: Thinking budget is not supported for this model
   } else {
-    const thinkingLevel = getGeminiThinkingLevel(model, body.reasoning_effort);
-    if (thinkingLevel) {
-      result.generationConfig.thinkingConfig = {
-        thinkingLevel,
-        includeThoughts: body.reasoning_effort !== "none",
-      };
-    } else if (body.reasoning_effort) {
-      // 1. OpenAI format: reasoning_effort (none/low/medium/high/auto/max/xhigh)
-      // "auto", "max", and "xhigh" are clamped to the high-tier budget because Gemini
-      // does not accept these strings directly. "auto" signals "use max reasonable effort"
-      // which maps to high. "max"/"xhigh" exceed Gemini's accepted range and are clamped.
-      // "none" maps to budget 0 — an explicit, documented off-switch (#6813 defect 2),
-      // distinct from the no-knob-at-all default-injection case below (#4170).
-      // Port of decolua/9router#2043 by @nguyenxvotanminh3.
+    // 1. OpenAI format: reasoning_effort (none/low/medium/high/auto/max/xhigh)
+    // "auto", "max", and "xhigh" are clamped to the high-tier budget because Gemini
+    // does not accept these strings directly. "auto" signals "use max reasonable effort"
+    // which maps to high. "max"/"xhigh" exceed Gemini's accepted range and are clamped.
+    // "none" maps to budget 0 — an explicit, documented off-switch (#6813 defect 2),
+    // distinct from the no-knob-at-all default-injection case below (#4170).
+    // Port of decolua/9router#2043 by @nguyenxvotanminh3.
+    if (body.reasoning_effort) {
       const highBudget = capThinkingBudget(model, 32768);
       const budgetMap: Record<string, number> = {
         none: 0,
@@ -248,34 +242,37 @@ function openaiToGeminiBase(
       // the pre-#6943 native-defaults contract (thinkingBudget 0 / includeThoughts
       // false must still be present) and crashed callers that read
       // .thinkingConfig.thinkingBudget unconditionally.
-      result.generationConfig.thinkingConfig = {
-        thinkingBudget: budget,
-        includeThoughts: budget !== 0,
-      };
-    } else {
-      // 2. Claude format: thinking (type: enabled, budget_tokens)
-      // Use an explicit numeric check (not truthy) so an explicit `budget_tokens: 0` — the
-      // natural way to disable thinking — is honored as thinkingBudget 0 instead of being
-      // dropped and falling through to the default injection below (#6813). A zero budget
-      // yields no thoughts, so includeThoughts is only set for a non-zero budget.
-      const thinking = body.thinking as { type?: string; budget_tokens?: number } | undefined;
-      if (thinking?.type === "enabled" && typeof thinking.budget_tokens === "number") {
-        // typeof check ensures only numeric budget_tokens triggers thinking path;
-        // non-numeric values (e.g. string "auto") fall through to the effort-based path.
-        const cappedBudget = capThinkingBudget(model, thinking.budget_tokens);
-        // Only send thinkingConfig if the model supports thinking via budget.
-        // Models with thinkingBudgetCap:0 (e.g. gemini-3-flash) reject
-        // thinkingConfig even when capped to 0. The supportsThinking flag
-        // tracks thinkingLevel support, not thinkingBudget; use thinkingBudgetCap
-        // as the reliable indicator (gemini-2.5-flash has supportsThinking:false
-        // but thinkingBudgetCap:24576, meaning it supports thinking via budget).
-        // Models not in MODEL_SPECS (thinkingBudgetCap=undefined) default to allowed.
-        if (cappedBudget > 0 || getModelSpec(model)?.thinkingBudgetCap !== 0) {
-          result.generationConfig.thinkingConfig = {
-            thinkingBudget: cappedBudget,
-            includeThoughts: cappedBudget !== 0,
+      result.generationConfig.thinkingConfig = isGemini38Model(model)
+        ? gemini38ThinkingConfig(model, budget, body)
+        : {
+            thinkingBudget: budget,
+            includeThoughts: budget !== 0,
           };
-        }
+    }
+    // 2. Claude format: thinking (type: enabled, budget_tokens)
+    // Use an explicit numeric check (not truthy) so an explicit `budget_tokens: 0` — the
+    // natural way to disable thinking — is honored as thinkingBudget 0 instead of being
+    // dropped and falling through to the default injection below (#6813). A zero budget
+    // yields no thoughts, so includeThoughts is only set for a non-zero budget.
+    const thinking = body.thinking as { type?: string; budget_tokens?: number } | undefined;
+    if (thinking?.type === "enabled" && typeof thinking.budget_tokens === "number") {
+      // typeof check ensures only numeric budget_tokens triggers thinking path;
+      // non-numeric values (e.g. string "auto") fall through to the effort-based path.
+      const cappedBudget = capThinkingBudget(model, thinking.budget_tokens);
+      // Only send thinkingConfig if the model supports thinking via budget.
+      // Models with thinkingBudgetCap:0 (e.g. gemini-3-flash) reject
+      // thinkingConfig even when capped to 0. The supportsThinking flag
+      // tracks thinkingLevel support, not thinkingBudget; use thinkingBudgetCap
+      // as the reliable indicator (gemini-2.5-flash has supportsThinking:false
+      // but thinkingBudgetCap:24576, meaning it supports thinking via budget).
+      // Models not in MODEL_SPECS (thinkingBudgetCap=undefined) default to allowed.
+      if (cappedBudget > 0 || getModelSpec(model)?.thinkingBudgetCap !== 0) {
+        result.generationConfig.thinkingConfig = isGemini38Model(model)
+          ? gemini38ThinkingConfig(model, cappedBudget, body)
+          : {
+              thinkingBudget: cappedBudget,
+              includeThoughts: cappedBudget !== 0,
+            };
       }
     }
   }
@@ -289,32 +286,29 @@ function openaiToGeminiBase(
   // unconditional (no-knob-at-all still gets includeThoughts:true); the explicit
   // "reasoning_effort: none" off-switch above (#6813) is the supported opt-out.
   if (!result.generationConfig.thinkingConfig) {
-    const thinkingLevel = getGeminiThinkingLevel(model);
-    if (thinkingLevel) {
-      result.generationConfig.thinkingConfig = {
-        thinkingLevel,
-        includeThoughts: true,
-      };
-    } else {
-      const modelLower = model.toLowerCase();
-      if (
-        modelLower.includes("gemini") &&
-        !modelLower.includes("gemini-1") &&
-        (!modelLower.includes("gemini-2.0") || modelLower.includes("thinking")) &&
-        // Skip thinkingConfig for models that don't support thinking via budget.
-        // Models with thinkingBudgetCap:0 (e.g. gemini-3-flash) reject
-        // thinkingConfig. Use thinkingBudgetCap (not supportsThinking) as the
-        // reliable indicator; gemini-2.5-flash has supportsThinking:false but
-        // thinkingBudgetCap:24576, meaning it supports thinking via budget.
-        // Models with thinkingLevel (like 3.8) are handled above and omit thinkingBudget.
-        getModelSpec(model)?.thinkingBudgetCap !== 0 &&
-        getModelSpec(model)?.thinkingBudgetCap !== undefined
-      ) {
-        result.generationConfig.thinkingConfig = {
-          thinkingBudget: getDefaultThinkingBudget(model) || capThinkingBudget(model, 24576),
-          includeThoughts: true,
-        };
-      }
+    const modelLower = model.toLowerCase();
+    if (
+      modelLower.includes("gemini") &&
+      !modelLower.includes("gemini-1") &&
+      (!modelLower.includes("gemini-2.0") || modelLower.includes("thinking")) &&
+      // Skip thinkingConfig for models that don't support thinking via budget.
+      // Models with thinkingBudgetCap:0 (e.g. gemini-3-flash) reject
+      // thinkingConfig. Use thinkingBudgetCap (not supportsThinking) as the
+      // reliable indicator; gemini-2.5-flash has supportsThinking:false but
+      // thinkingBudgetCap:24576, meaning it supports thinking via budget.
+      // Models not in MODEL_SPECS (thinkingBudgetCap=undefined) default to allowed.
+      getModelSpec(model)?.thinkingBudgetCap !== 0
+    ) {
+      const defaultBudget =
+        /(?:^|\/)gemini-3\.8-flash(?:-tiered)?$/i.test(model)
+          ? 8192
+          : getDefaultThinkingBudget(model) || capThinkingBudget(model, 24576);
+      result.generationConfig.thinkingConfig = isGemini38Model(model)
+        ? gemini38ThinkingConfig(model, defaultBudget, body)
+        : {
+            thinkingBudget: defaultBudget,
+            includeThoughts: true,
+          };
     }
   }
 
@@ -357,8 +351,7 @@ function openaiToGeminiBase(
 
   // Convert messages
   if (messages && Array.isArray(messages)) {
-    for (let msgIndex = 0; msgIndex < messages.length; msgIndex++) {
-      const msg = messages[msgIndex];
+    for (const msg of messages) {
       const role = msg.role;
       const content = msg.content;
 
@@ -494,47 +487,20 @@ function openaiToGeminiBase(
             result.contents.push({ role: "model", parts });
           }
 
-          // Collect turn-specific tool responses: in standard OpenAI chat format, tool responses
-          // immediately follow the assistant message that requested them.
-          const turnToolResponses: Record<string, unknown> = {};
-          for (let j = msgIndex + 1; j < messages.length; j++) {
-            const later = messages[j];
-            if (later.role === "assistant" || later.role === "user") break;
-            if (later.role === "tool" && later.tool_call_id) {
-              turnToolResponses[later.tool_call_id as string] = later.content;
-            }
-          }
-
-          // Build a turn-specific map of tool call IDs to function names from this assistant message's toolCalls.
-          // This prevents cross-turn ID collisions where an identical tool_call_id reused in a later turn
-          // would otherwise overwrite the function name and content of an earlier turn (#e59118).
-          const turnTcID2Name: Record<string, string> = {};
-          for (const tc of toolCalls) {
-            const fn = tc.function as { name?: string } | undefined;
-            if (tc.type === "function" && tc.id && fn?.name) {
-              turnTcID2Name[tc.id as string] = fn.name;
-            }
-          }
-
-          const resolveToolResponse = (id: string): unknown =>
-            turnToolResponses[id] !== undefined ? turnToolResponses[id] : toolResponses[id];
-          const hasToolResponse = (id: string): boolean => resolveToolResponse(id) !== undefined;
-
           // Check if there are actual tool responses in the next messages
           const hasSignaturelessTextResponses =
             contextualizeSignaturelessToolResponses &&
             toolCalls.some((tc) => {
               const id = tc.id as string;
-              return tc.type === "function" && !resolvedSignatures.has(id) && hasToolResponse(id);
+              return tc.type === "function" && !resolvedSignatures.has(id) && toolResponses[id];
             });
           const hasActualResponses =
-            toolCallIds.some((fid) => hasToolResponse(fid)) || hasSignaturelessTextResponses;
+            toolCallIds.some((fid) => toolResponses[fid]) || hasSignaturelessTextResponses;
 
           if (hasActualResponses) {
             const toolParts: GeminiPart[] = [];
             for (const fid of toolCallIds) {
-              const resp = resolveToolResponse(fid);
-              if (resp === undefined) continue;
+              if (!toolResponses[fid]) continue;
               if (
                 !toolNameOptions.supportsSignatureBypass &&
                 contextualizeSignaturelessToolResponses &&
@@ -542,7 +508,7 @@ function openaiToGeminiBase(
               )
                 continue;
 
-              let name = turnTcID2Name[fid] || tcID2Name[fid];
+              let name = tcID2Name[fid];
               if (!name) {
                 const idParts = fid.split("-");
                 if (idParts.length > 2) {
@@ -552,6 +518,8 @@ function openaiToGeminiBase(
                 }
               }
               name = sanitizeToolName(name);
+
+              const resp = toolResponses[fid];
 
               toolParts.push({
                 functionResponse: {
@@ -575,10 +543,10 @@ function openaiToGeminiBase(
               for (const tc of toolCalls) {
                 const id = tc.id as string;
                 if (tc.type !== "function" || !id) continue;
-                const resp = resolveToolResponse(id);
-                if (!resolvedSignatures.has(id) && resp !== undefined) {
+                if (!resolvedSignatures.has(id) && toolResponses[id]) {
                   const fn = tc.function as { name?: string } | undefined;
-                  const name = turnTcID2Name[id] || tcID2Name[id] || fn?.name || "unknown";
+                  const name = tcID2Name[id] || fn?.name || "unknown";
+                  const resp = toolResponses[id];
                   toolParts.push({
                     text:
                       signaturelessToolCallMode === "text"
@@ -741,10 +709,7 @@ function wrapInCloudCodeEnvelope(model, cloudCodeRequest, credentials = null) {
       sessionId: getAntigravitySessionId(credentials),
       contents: cloudCodeRequest.contents,
       systemInstruction: cloudCodeRequest.systemInstruction,
-      generationConfig: applyAntigravityGenerationDefaults(
-        cloudCodeRequest.generationConfig,
-        cleanModel
-      ),
+      generationConfig: applyAntigravityGenerationDefaults(cloudCodeRequest.generationConfig),
       tools: cloudCodeRequest.tools,
       safetySettings: cloudCodeRequest.safetySettings,
     },

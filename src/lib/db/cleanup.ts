@@ -283,6 +283,19 @@ export async function cleanupMemoryEntries(): Promise<CleanupResult> {
       }
     }
 
+    // optimize only merges segments; it does not drop tombstones from
+    // access-count UPDATEs that already reindexed. rebuild from the
+    // content table on every pass so a bloated index cannot wait for
+    // a memory-row delete that may never happen.
+    if (tableExists("memory_fts")) {
+      try {
+        db.exec("INSERT INTO memory_fts(memory_fts) VALUES('rebuild')");
+      } catch (err: unknown) {
+        console.error("[Cleanup] FTS5 rebuild after memory retention failed:", err);
+        result.errors++;
+      }
+    }
+
     console.log(
       `[Cleanup] Deleted ${result.deleted} memory_entries older than ${retentionDays} days`
     );
