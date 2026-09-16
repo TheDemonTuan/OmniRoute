@@ -36,5 +36,16 @@ export function buildAntigravityUpstreamError(status: number, statusText: string
       upstreamDetails
     );
   }
-  return buildErrorBody(status, `Antigravity upstream error (${status})${suffix}`, upstreamDetails);
+  const upstreamMessage =
+    upstreamDetails && typeof upstreamDetails === "object" && !Array.isArray(upstreamDetails)
+      ? (upstreamDetails as { error?: { message?: unknown } }).error?.message
+      : undefined;
+  const message = `Antigravity upstream error (${status})${suffix}`;
+  return buildErrorBody(
+    status,
+    typeof upstreamMessage === "string" && upstreamMessage.trim()
+      ? `${message}: ${upstreamMessage}`
+      : message,
+    upstreamDetails
+  );
 }
