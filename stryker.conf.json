@@ -316,6 +316,7 @@
       "tests/unit/no-memory-header.test.ts",
       "tests/unit/noauth-autocombo-lockout-7623.test.ts",
       "tests/unit/noauth-model-lockout.test.ts",
+      "tests/unit/provider-401-ambiguous-runtime.test.ts",
       "tests/unit/ollama-404-model-lockout-11071.test.ts",
       "tests/unit/non-streaming-client-translate.test.ts",
       "tests/unit/non-streaming-provider-leg.test.ts",
