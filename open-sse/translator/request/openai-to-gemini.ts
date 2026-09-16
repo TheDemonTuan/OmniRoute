@@ -299,10 +299,9 @@ function openaiToGeminiBase(
       // Models not in MODEL_SPECS (thinkingBudgetCap=undefined) default to allowed.
       getModelSpec(model)?.thinkingBudgetCap !== 0
     ) {
-      const defaultBudget =
-        /(?:^|\/)gemini-3\.8-flash(?:-tiered)?$/i.test(model)
-          ? 8192
-          : getDefaultThinkingBudget(model) || capThinkingBudget(model, 24576);
+      const defaultBudget = /(?:^|\/)gemini-3\.8-flash(?:-tiered)?$/i.test(model)
+        ? 8192
+        : getDefaultThinkingBudget(model) || capThinkingBudget(model, 24576);
       result.generationConfig.thinkingConfig = isGemini38Model(model)
         ? gemini38ThinkingConfig(model, defaultBudget, body)
         : {
@@ -312,8 +311,6 @@ function openaiToGeminiBase(
     }
   }
 
-  // Build tool_call_id -> name map
-  const tcID2Name: Record<string, string> = {};
   // #7752: strip any non-trailing tool_call whose id has no matching tool_result
   // anywhere in history — same guard `BaseExecutor.execute()` applies for the mainline
   // Claude path (#2382/#4714) and `antigravityToOpenAIRequest` applies for the mirror
@@ -325,33 +322,10 @@ function openaiToGeminiBase(
     rawMessages && Array.isArray(rawMessages)
       ? (fixToolPairs(rawMessages) as Array<Record<string, unknown>>)
       : rawMessages;
-  if (messages && Array.isArray(messages)) {
-    for (const msg of messages) {
-      const toolCalls = msg.tool_calls as Array<Record<string, unknown>> | undefined;
-      if (msg.role === "assistant" && toolCalls) {
-        for (const tc of toolCalls) {
-          const fn = tc.function as { name?: string } | undefined;
-          if (tc.type === "function" && tc.id && fn?.name) {
-            tcID2Name[tc.id as string] = fn.name;
-          }
-        }
-      }
-    }
-  }
-
-  // Build tool responses cache
-  const toolResponses: Record<string, unknown> = {};
-  if (messages && Array.isArray(messages)) {
-    for (const msg of messages) {
-      if (msg.role === "tool" && msg.tool_call_id) {
-        toolResponses[msg.tool_call_id as string] = msg.content;
-      }
-    }
-  }
-
   // Convert messages
   if (messages && Array.isArray(messages)) {
-    for (const msg of messages) {
+    for (let msgIndex = 0; msgIndex < messages.length; msgIndex++) {
+      const msg = messages[msgIndex];
       const role = msg.role;
       const content = msg.content;
 
@@ -487,20 +461,38 @@ function openaiToGeminiBase(
             result.contents.push({ role: "model", parts });
           }
 
+          const turnToolResponses = new Map<string, unknown>();
+          for (let next = msgIndex + 1; next < messages.length; next++) {
+            const later = messages[next];
+            if (later.role === "assistant" || later.role === "user") break;
+            if (later.role === "tool" && later.tool_call_id) {
+              turnToolResponses.set(later.tool_call_id as string, later.content);
+            }
+          }
+          const turnToolNames = new Map<string, string>();
+          for (const tc of toolCalls) {
+            const name = (tc.function as { name?: string } | undefined)?.name;
+            if (tc.type === "function" && tc.id && name) {
+              turnToolNames.set(tc.id as string, name);
+            }
+          }
+
           // Check if there are actual tool responses in the next messages
           const hasSignaturelessTextResponses =
             contextualizeSignaturelessToolResponses &&
             toolCalls.some((tc) => {
               const id = tc.id as string;
-              return tc.type === "function" && !resolvedSignatures.has(id) && toolResponses[id];
+              return (
+                tc.type === "function" && !resolvedSignatures.has(id) && turnToolResponses.has(id)
+              );
             });
           const hasActualResponses =
-            toolCallIds.some((fid) => toolResponses[fid]) || hasSignaturelessTextResponses;
+            toolCallIds.some((fid) => turnToolResponses.has(fid)) || hasSignaturelessTextResponses;
 
           if (hasActualResponses) {
             const toolParts: GeminiPart[] = [];
             for (const fid of toolCallIds) {
-              if (!toolResponses[fid]) continue;
+              if (!turnToolResponses.has(fid)) continue;
               if (
                 !toolNameOptions.supportsSignatureBypass &&
                 contextualizeSignaturelessToolResponses &&
@@ -508,7 +500,7 @@ function openaiToGeminiBase(
               )
                 continue;
 
-              let name = tcID2Name[fid];
+              let name = turnToolNames.get(fid);
               if (!name) {
                 const idParts = fid.split("-");
                 if (idParts.length > 2) {
@@ -519,7 +511,7 @@ function openaiToGeminiBase(
               }
               name = sanitizeToolName(name);
 
-              const resp = toolResponses[fid];
+              const resp = turnToolResponses.get(fid);
 
               toolParts.push({
                 functionResponse: {
@@ -543,10 +535,10 @@ function openaiToGeminiBase(
               for (const tc of toolCalls) {
                 const id = tc.id as string;
                 if (tc.type !== "function" || !id) continue;
-                if (!resolvedSignatures.has(id) && toolResponses[id]) {
+                if (!resolvedSignatures.has(id) && turnToolResponses.has(id)) {
                   const fn = tc.function as { name?: string } | undefined;
-                  const name = tcID2Name[id] || fn?.name || "unknown";
-                  const resp = toolResponses[id];
+                  const name = turnToolNames.get(id) || fn?.name || "unknown";
+                  const resp = turnToolResponses.get(id);
                   toolParts.push({
                     text:
                       signaturelessToolCallMode === "text"
