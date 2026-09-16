@@ -993,6 +993,10 @@
   "featureFlagExposeCcDiscoveryAliasesDescription": "Anuncie os ids de espelho claude/&lt;provider&gt;/&lt;model&gt; em /v1/models para que a descoberta de modelos do gateway Claude Code liste modelos não Claude. Aviso: duplica entradas de catálogo para todos os clientes quando ativado globalmente.",
   "featureFlagNoThinkingAliasEnabledDescription": "__MISSING__:Master switch for the no-think/&lt;provider&gt;/&lt;model&gt; gateway aliases. On (default): /v1/models advertises a no-thinking variant for every eligible thinking-capable Claude model, and a no-think/ id sent on a request resolves back to the real model with reasoning suppressed. Off: no variants are advertised and a no-think/ id is treated like any other unknown model id. The per-model ModelSpec.noThinkingAlias opt-in/opt-out still applies while this is on.",
   "featureFlagChatVirtualLanesEnabledDescription": "Ative filas de admissão virtuais adaptativas por tenant para o encaminhamento de fornecedores (#9654): um pico de tráfego de um tenant já não gera 503 noutro. A variável de ambiente OMNIROUTE_CHAT_VIRTUAL_LANES sobrepõe-se a esta definição do painel; as alterações entram em vigor ao reiniciar o servidor.",
+  "featureFlagFreeBadgeRequiresProviderFreeTierDescription": "Dashboard provider pages: show the Free badge only on signals the provider honors — drops the display-name heuristic, non-boolean free fields and :free suffixes on registered providers without a documented free tier. Off keeps the historical badge rule.",
+  "featureFlagProxySkipRecentlyFailedDescription": "__MISSING__:Proxy pools and the per-account rotation of opencode stop re-serving a proxy that just failed (refused TCP probe, or a 429 received through it) for a per-process period that doubles on each repeat, up to a cap. No proxy status is written; with every candidate set aside the choice is unchanged. Off by default: selection order is exactly the plain rotation.",
+  "featureFlagProxyPoolEgressObservationDescription": "__MISSING__:Show, under a proxy pool in the dashboard, how many observed egress IPs served its members over the last 24 h, how many connections used them and the most seen behind one IP. Read-only, computed from the proxy log, never used for routing. Off by default: the pool editor is unchanged and the observation route answers null.",
+  "featureFlagProxyHealthBlockedResetsStreakDescription": "__MISSING__:In the proxy health sweep, let a probe the target refused (401/403/429: the proxy relayed, the destination refused this egress IP) reset the consecutive-failure streak of the proxy, like a served probe. Off by default: a refusal stays neutral and keeps the streak. A 5xx stays inconclusive either way, and a refusal never removes, disables or re-activates a proxy.",
   "sidebar": {
     "home": "Página inicial",
     "dashboard": "Painel",
@@ -10958,6 +10962,9 @@
     "strategyLatency": "Otimizado para latência",
     "poolMembersLabel": "Membros do pool ({count})",
     "poolNoMembers": "Ainda não existem proxies neste pool.",
+    "poolEgressObservation": "__MISSING__:{exits, plural, one {# exit} other {# exits}} used by {connections, plural, one {# connection} other {# connections}} · up to {max} on one exit · last {hours} h",
+    "poolEgressObservationEmpty": "__MISSING__:No traffic observed in the last {hours} h",
+    "poolEgressObservationHint": "__MISSING__:Counted from the proxy log over the window: distinct egress IPs observed for the members of this pool, and the OmniRoute connections that used them. \"On one exit\" means over the window, not at the same time. The per-IP 429 lockout only pauses connections of the same provider family.",
     "poolRemove": "Remover",
     "poolRemoveFailed": "Falha ao remover o proxy do pool",
     "poolAddLabel": "Adicionar um proxy",
@@ -12978,6 +12985,12 @@
       "STREAM_RECOVERY_MIDSTREAM_ENABLED": {
         "description": "Permitir que a recuperação de stream solicite a resposta novamente e a junte após os bytes já terem chegado ao cliente."
       },
+      "STREAM_RECOVERY_TOOLCALL_ORDER_FIX": {
+        "description": "__MISSING__:Make mid-stream continuation tool-call safe: never resume a cut stream after a tool call was sent (still in progress or already finished), and stop after one empty continuation instead of using the whole retry budget."
+      },
+      "STREAM_EARLY_EOF_SIBLING_FAILOVER_ENABLED": {
+        "description": "Fazer failover uma única vez para uma ligação irmã quando um stream fecha antes de emitir qualquer frame útil e a nova tentativa limitada na mesma ligação já foi usada. Sem ligação irmã utilizável, é devolvido o erro early-EOF original. Desligado: o early-EOF mantém-se terminal após a nova tentativa."
+      },
       "MODEL_CATALOG_INCLUDE_NAMES": {
         "description": "Incluir campos de nome fáceis de ler nas respostas de /v1/models. Desative isto para clientes que aceitam apenas IDs de modelo."
       },
@@ -13010,6 +13023,14 @@
       },
       "SKILLS_SANDBOX_NETWORK_ENABLED": {
         "description": "Ativar o acesso à rede na sandbox de competências."
+      },
+      "RETRY_AFTER_PROVENANCE_ENABLED": {
+        "label": "__MISSING__:Retry-After Provenance",
+        "description": "__MISSING__:On aggregated 429/503 unavailable responses, omit Retry-After when no concrete future retry time is known instead of sending a synthetic 1s, add error.retry_after_provenance, and read prose retry hints on combo drain paths."
+      },
+      "PROTECTED_PRIORITY_INFRA_502_ENABLED": {
+        "label": "__MISSING__:Protected-Priority Infra Stops as 502",
+        "description": "__MISSING__:Answer 502 instead of 503 when a quota-only-fallback priority target stops the combo for a cause that is provably not quota: an open provider circuit breaker or a predictive latency skip."
       }
     }
   },
@@ -13623,6 +13644,7 @@
   },
   "featureFlagCapabilityFilterEnabledDescription": "Rejeitar pedidos antes do envio quando o modelo de destino não tiver as capacidades necessárias (visão, ferramentas, saída estruturada, janela de contexto). Protege pedidos diretos de um único fornecedor que contornam o filtro de compatibilidade da camada combinada.",
   "featureFlagDisableContextWindowChecksDescription": "Skip OmniRoute's local context-window and max-input-token check for direct single-model requests. Upstream providers still enforce their actual limits. Prompt compression and output-token caps remain active.",
+  "featureFlagSearchStatsHideDeletedConnectionsDescription": "Search stats and recent searches only count providers that still have a live connection (keyless providers such as duckduckgo-free always count). Off keeps every retained search row with a provider id.",
   "publicSystem": {
     "notFound": {
       "title": "Página não encontrada",

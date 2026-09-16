@@ -436,11 +436,12 @@ export const INSTANCE_SWEEP_CHUNK = 200;
  * widening the sweep, and a scope carrying BOTH `apiKeyId` and `allTenants` is
  * rejected rather than widened.
  *
- * Batches whose `api_key_id` IS NULL are intentionally OUT of a key-scoped sweep.
- * This diverges from `scopeCheck` in `src/app/api/v1/batches/[id]/route.ts`,
- * which lets any key read/delete a single unowned batch by id: a bulk destructive
- * sweep must never reach records the key does not own, so unowned batches are
- * only swept by `{ allTenants: true }`.
+ * Batches whose `api_key_id` IS NULL are intentionally OUT of a key-scoped sweep:
+ * a bulk destructive sweep must never reach records the key does not own, so
+ * unowned batches are only swept by `{ allTenants: true }`. The single-item routes
+ * apply the same rule through `canAccessOwnedRecord` in
+ * `src/app/api/v1/_helpers/apiKeyScope.ts` (a null owner is denied to every
+ * non-session caller — GHSA-2jm2-mpx8-6523).
  *
  * In key mode the file half is owner-scoped too: only files whose api_key_id is
  * the caller's are soft-deleted; a referenced file another tenant owns (or an

@@ -992,6 +992,10 @@
   "featureFlagExposeCcDiscoveryAliasesDescription": "/v1/models에서 Claude Code 게이트웨이 모델 검색 목록에 비Claude 모델이 포함되도록 claude/&lt;provider&gt;/&lt;model&gt; 미러 ID를 광고합니다. 경고: 전역적으로 활성화하면 모든 클라이언트에 대해 카탈로그 항목이 두 배로 증가합니다.",
   "featureFlagNoThinkingAliasEnabledDescription": "__MISSING__:Master switch for the no-think/&lt;provider&gt;/&lt;model&gt; gateway aliases. On (default): /v1/models advertises a no-thinking variant for every eligible thinking-capable Claude model, and a no-think/ id sent on a request resolves back to the real model with reasoning suppressed. Off: no variants are advertised and a no-think/ id is treated like any other unknown model id. The per-model ModelSpec.noThinkingAlias opt-in/opt-out still applies while this is on.",
   "featureFlagChatVirtualLanesEnabledDescription": "공급자 디스패치를 위해 테넌트별 적응형 가상 승인 레인을 활성화합니다(#9654): 한 테넌트의 폭증이 더 이상 다른 테넌트에 503을 반환하지 않습니다. OMNIROUTE_CHAT_VIRTUAL_LANES 환경 변수가 이 대시보드 설정보다 우선하며, 변경 사항은 서버 재시작 시 적용됩니다.",
+  "featureFlagFreeBadgeRequiresProviderFreeTierDescription": "Dashboard provider pages: show the Free badge only on signals the provider honors — drops the display-name heuristic, non-boolean free fields and :free suffixes on registered providers without a documented free tier. Off keeps the historical badge rule.",
+  "featureFlagProxySkipRecentlyFailedDescription": "__MISSING__:Proxy pools and the per-account rotation of opencode stop re-serving a proxy that just failed (refused TCP probe, or a 429 received through it) for a per-process period that doubles on each repeat, up to a cap. No proxy status is written; with every candidate set aside the choice is unchanged. Off by default: selection order is exactly the plain rotation.",
+  "featureFlagProxyPoolEgressObservationDescription": "__MISSING__:Show, under a proxy pool in the dashboard, how many observed egress IPs served its members over the last 24 h, how many connections used them and the most seen behind one IP. Read-only, computed from the proxy log, never used for routing. Off by default: the pool editor is unchanged and the observation route answers null.",
+  "featureFlagProxyHealthBlockedResetsStreakDescription": "__MISSING__:In the proxy health sweep, let a probe the target refused (401/403/429: the proxy relayed, the destination refused this egress IP) reset the consecutive-failure streak of the proxy, like a served probe. Off by default: a refusal stays neutral and keeps the streak. A 5xx stays inconclusive either way, and a refusal never removes, disables or re-activates a proxy.",
   "sidebar": {
     "home": "홈",
     "dashboard": "대시보드",
@@ -10957,6 +10961,9 @@
     "strategyLatency": "지연 시간 최적화",
     "poolMembersLabel": "풀 멤버 ({count})",
     "poolNoMembers": "이 풀에 아직 프록시가 없습니다.",
+    "poolEgressObservation": "__MISSING__:{exits, plural, one {# exit} other {# exits}} used by {connections, plural, one {# connection} other {# connections}} · up to {max} on one exit · last {hours} h",
+    "poolEgressObservationEmpty": "__MISSING__:No traffic observed in the last {hours} h",
+    "poolEgressObservationHint": "__MISSING__:Counted from the proxy log over the window: distinct egress IPs observed for the members of this pool, and the OmniRoute connections that used them. \"On one exit\" means over the window, not at the same time. The per-IP 429 lockout only pauses connections of the same provider family.",
     "poolRemove": "제거",
     "poolRemoveFailed": "풀에서 프록시를 제거하지 못했습니다",
     "poolAddLabel": "프록시 추가",
@@ -12977,6 +12984,12 @@
       "STREAM_RECOVERY_MIDSTREAM_ENABLED": {
         "description": "바이트가 이미 클라이언트에 도달한 후에도 스트림 복구가 응답을 다시 요청하고 이어 붙일 수 있도록 허용합니다."
       },
+      "STREAM_RECOVERY_TOOLCALL_ORDER_FIX": {
+        "description": "__MISSING__:Make mid-stream continuation tool-call safe: never resume a cut stream after a tool call was sent (still in progress or already finished), and stop after one empty continuation instead of using the whole retry budget."
+      },
+      "STREAM_EARLY_EOF_SIBLING_FAILOVER_ENABLED": {
+        "description": "스트림이 유용한 프레임을 보내기 전에 닫히고 같은 연결에서의 제한된 재시도도 소진되면 형제 연결로 한 번만 페일오버합니다. 사용할 수 있는 형제 연결이 없으면 원래의 early-EOF 오류를 반환합니다. 끄기: 재시도 후 early-EOF는 그대로 종료로 처리됩니다."
+      },
       "MODEL_CATALOG_INCLUDE_NAMES": {
         "description": "/v1/models 응답에 표시용 이름 필드를 포함합니다. 모델 ID만 허용하는 클라이언트의 경우 이 설정을 비활성화하세요."
       },
@@ -13009,6 +13022,14 @@
       },
       "SKILLS_SANDBOX_NETWORK_ENABLED": {
         "description": "스킬 샌드박스에서 네트워크 액세스를 활성화합니다."
+      },
+      "RETRY_AFTER_PROVENANCE_ENABLED": {
+        "label": "__MISSING__:Retry-After Provenance",
+        "description": "__MISSING__:On aggregated 429/503 unavailable responses, omit Retry-After when no concrete future retry time is known instead of sending a synthetic 1s, add error.retry_after_provenance, and read prose retry hints on combo drain paths."
+      },
+      "PROTECTED_PRIORITY_INFRA_502_ENABLED": {
+        "label": "__MISSING__:Protected-Priority Infra Stops as 502",
+        "description": "__MISSING__:Answer 502 instead of 503 when a quota-only-fallback priority target stops the combo for a cause that is provably not quota: an open provider circuit breaker or a predictive latency skip."
       }
     }
   },
@@ -13622,6 +13643,7 @@
   },
   "featureFlagCapabilityFilterEnabledDescription": "대상 모델에 필수 기능(비전, 도구, 구조화된 출력, 컨텍스트 창)이 부족할 경우 요청을 발송 전에 거부합니다. 콤보 레이어 호환성 필터를 우회하는 직접 단일 공급자 요청을 보호합니다.",
   "featureFlagDisableContextWindowChecksDescription": "Skip OmniRoute's local context-window and max-input-token check for direct single-model requests. Upstream providers still enforce their actual limits. Prompt compression and output-token caps remain active.",
+  "featureFlagSearchStatsHideDeletedConnectionsDescription": "Search stats and recent searches only count providers that still have a live connection (keyless providers such as duckduckgo-free always count). Off keeps every retained search row with a provider id.",
   "publicSystem": {
     "notFound": {
       "title": "페이지를 찾을 수 없습니다",

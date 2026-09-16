@@ -904,7 +904,10 @@ function createManagedDbBackup(db: SqliteDatabase, reason: string): boolean {
         ? parsePositiveInt(process.env.DB_BACKUP_MAX_FILES, MAX_DB_BACKUPS)
         : MAX_DB_BACKUPS;
       const retentionDays = process.env.DB_BACKUP_RETENTION_DAYS
-        ? parseNonNegativeInt(process.env.DB_BACKUP_RETENTION_DAYS, DEFAULT_DB_BACKUP_RETENTION_DAYS)
+        ? parseNonNegativeInt(
+            process.env.DB_BACKUP_RETENTION_DAYS,
+            DEFAULT_DB_BACKUP_RETENTION_DAYS
+          )
         : DEFAULT_DB_BACKUP_RETENTION_DAYS;
       pruneBackupDirectory({ backupDir, maxFiles, retentionDays });
     } catch {

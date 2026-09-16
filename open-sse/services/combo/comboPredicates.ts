@@ -248,6 +248,7 @@ const REQUEST_SCOPED_UPSTREAM_ERROR_CODES: Record<string, true> = {
   rate_limit_queue_timeout: true,
   rate_limit_queue_full: true,
   rate_limit_queue_wedged: true,
+  token_limit_exceeded: true,
   // #10360: our own executor-result contract violation. An internal defect, not
   // a provider/account fault — it must never cool a connection or trip a breaker.
   [EXECUTOR_CONTRACT_VIOLATION_CODE]: true,

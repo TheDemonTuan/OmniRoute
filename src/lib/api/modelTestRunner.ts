@@ -530,6 +530,10 @@ export async function runSingleModelTest(
       modelId: fullModelStr,
       status: "error",
       latencyMs: 0,
+      // 422, not the 409 the managed-lease return above uses: the request is valid, but this
+      // model's modality cannot be exercised by a chat test. The route passes httpStatus
+      // straight to NextResponse — omitting it made Next answer 200 for a skipped test.
+      httpStatus: 422,
       error:
         "Skipped: non-chat generation model (images/music/video) — use the corresponding generation endpoint instead",
     };

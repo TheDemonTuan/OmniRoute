@@ -12,6 +12,8 @@ import {
   errorResponse,
   unavailableResponse,
   errorResponseWithComboDiagnostics,
+  logRetryHintUnreadable,
+  readProseRetryAfter,
 } from "../../utils/error.ts";
 import { buildRecoveryHint } from "./pinRecovery.ts";
 import { formatExhaustedConnectionKey } from "./comboDiagFormat.ts";
@@ -112,6 +114,7 @@ import {
   resolveComboTargets,
 } from "./comboStructure.ts";
 import { releaseStickyPinOnFailure, clearStaleLKGP } from "../combo.ts";
+import { resolveComboDailyReset } from "./comboDailyResetClock.ts";
 
 /** Per-connection TPM budget for quota reservation. Undefined = store keeps prior limit. */
 async function resolveTargetTokenLimit(target: {
@@ -811,10 +814,12 @@ export async function handleRoundRobinCombo({
           let errorText = result.statusText || "";
           let retryAfter: ComboRetryAfter | null = null;
           let errorBody: ComboErrorBody = null;
+          let bodyText = "";
           try {
             const cloned = result.clone();
             try {
               const text = await cloned.text();
+              bodyText = text;
               if (text) {
                 errorText = text.substring(0, 500);
                 errorBody = JSON.parse(text);
@@ -827,11 +832,12 @@ export async function handleRoundRobinCombo({
                 retryAfter = errorBody?.retryAfter || null;
               }
             } catch {
-              /* Clone parse failed */
+              logRetryHintUnreadable(log, "COMBO-RR", modelStr, result.status, "unparseable body");
             }
           } catch {
-            /* Clone failed */
+            logRetryHintUnreadable(log, "COMBO-RR", modelStr, result.status, "clone failed");
           }
+          retryAfter ||= readProseRetryAfter(bodyText); // #13672 opt-in prose hints
 
           if (result.status === 499) {
             log.info(
@@ -921,7 +927,9 @@ export async function handleRoundRobinCombo({
             provider,
             result.headers,
             profile,
-            structuredError
+            structuredError,
+            null,
+            await resolveComboDailyReset(provider)
           );
           const { cooldownMs } = fallbackResult;
           const submittedChatGptTurnFailure =

@@ -292,6 +292,10 @@ export function ensureProxyLogsColumns(db: SqliteDatabase) {
       db.exec("ALTER TABLE proxy_logs ADD COLUMN egress_ip TEXT");
       console.log("[DB] Added proxy_logs.egress_ip column");
     }
+    if (!columnNames.has("upstream_status")) {
+      db.exec("ALTER TABLE proxy_logs ADD COLUMN upstream_status INTEGER");
+      console.log("[DB] Added proxy_logs.upstream_status column");
+    }
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     console.warn("[DB] Failed to verify proxy_logs schema:", message);

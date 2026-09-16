@@ -992,6 +992,10 @@
   "featureFlagExposeCcDiscoveryAliasesDescription": "/v1/models ਉੱਤੇ claude/&lt;provider&gt;/&lt;model&gt; ਮਿਰਰ IDs ਦਾ ਪ੍ਰਚਾਰ ਕਰੋ, ਤਾਂ ਜੋ Claude Code ਗੇਟਵੇ ਮਾਡਲ ਖੋਜ ਵਿੱਚ ਗੈਰ-Claude ਮਾਡਲ ਸੂਚੀਬੱਧ ਹੋਣ। ਚੇਤਾਵਨੀ: ਗਲੋਬਲ ਤੌਰ 'ਤੇ ਸਮਰੱਥ ਕਰਨ 'ਤੇ ਇਹ ਸਾਰੇ ਕਲਾਇੰਟਾਂ ਲਈ ਕੈਟਾਲਾਗ ਐਂਟਰੀਆਂ ਨੂੰ ਦੁੱਗਣਾ ਕਰ ਦਿੰਦਾ ਹੈ।",
   "featureFlagNoThinkingAliasEnabledDescription": "no-think/&lt;provider&gt;/&lt;model&gt; ਗੇਟਵੇ ਉਪਨਾਮਾਂ ਲਈ ਮੁੱਖ ਸਵਿੱਚ। ਚਾਲੂ (ਡਿਫਾਲਟ): /v1/models ਹਰ ਯੋਗ, ਸੋਚਣ-ਸਮਰੱਥ Claude ਮਾਡਲ ਲਈ ਇੱਕ ਬਿਨਾਂ-ਸੋਚ ਵਾਲਾ ਰੂਪ ਦਰਸਾਉਂਦਾ ਹੈ, ਅਤੇ ਬੇਨਤੀ ਵਿੱਚ ਭੇਜਿਆ ਗਿਆ no-think/ ID ਤਰਕ ਨੂੰ ਦਬਾ ਕੇ ਮੁੜ ਅਸਲ ਮਾਡਲ ਵਿੱਚ ਹੱਲ ਹੁੰਦਾ ਹੈ। ਬੰਦ: ਕੋਈ ਰੂਪ ਦਰਸਾਏ ਨਹੀਂ ਜਾਂਦੇ ਅਤੇ no-think/ ID ਨੂੰ ਕਿਸੇ ਹੋਰ ਅਣਜਾਣ ਮਾਡਲ ID ਵਾਂਗ ਮੰਨਿਆ ਜਾਂਦਾ ਹੈ। ਜਦੋਂ ਇਹ ਚਾਲੂ ਹੋਵੇ, ਤਾਂ ਪ੍ਰਤੀ-ਮਾਡਲ ModelSpec.noThinkingAlias ਔਪਟ-ਇਨ/ਔਪਟ-ਆਉਟ ਫਿਰ ਵੀ ਲਾਗੂ ਹੁੰਦਾ ਹੈ।",
   "featureFlagChatVirtualLanesEnabledDescription": "ਪ੍ਰਦਾਤਾ ਡਿਸਪੈਚ (#9654) ਲਈ ਪ੍ਰਤੀ-ਟੈਨੈਂਟ ਅਨੁਕੂਲ ਵਰਚੁਅਲ ਐਡਮਿਸ਼ਨ ਲੇਨ ਸਮਰੱਥ ਕਰੋ: ਹੁਣ ਇੱਕ ਟੈਨੈਂਟ ਦਾ ਅਚਾਨਕ ਵਧਿਆ ਲੋਡ ਦੂਜੇ ਲਈ 503 ਪੈਦਾ ਨਹੀਂ ਕਰੇਗਾ। OMNIROUTE_CHAT_VIRTUAL_LANES env var ਨੂੰ ਇਸ ਡੈਸ਼ਬੋਰਡ ਓਵਰਰਾਈਡ ਉੱਤੇ ਤਰਜੀਹ ਮਿਲਦੀ ਹੈ; ਤਬਦੀਲੀਆਂ ਸਰਵਰ ਮੁੜ ਚਾਲੂ ਹੋਣ 'ਤੇ ਲਾਗੂ ਹੁੰਦੀਆਂ ਹਨ।",
+  "featureFlagFreeBadgeRequiresProviderFreeTierDescription": "Dashboard provider pages: show the Free badge only on signals the provider honors — drops the display-name heuristic, non-boolean free fields and :free suffixes on registered providers without a documented free tier. Off keeps the historical badge rule.",
+  "featureFlagProxySkipRecentlyFailedDescription": "__MISSING__:Proxy pools and the per-account rotation of opencode stop re-serving a proxy that just failed (refused TCP probe, or a 429 received through it) for a per-process period that doubles on each repeat, up to a cap. No proxy status is written; with every candidate set aside the choice is unchanged. Off by default: selection order is exactly the plain rotation.",
+  "featureFlagProxyPoolEgressObservationDescription": "__MISSING__:Show, under a proxy pool in the dashboard, how many observed egress IPs served its members over the last 24 h, how many connections used them and the most seen behind one IP. Read-only, computed from the proxy log, never used for routing. Off by default: the pool editor is unchanged and the observation route answers null.",
+  "featureFlagProxyHealthBlockedResetsStreakDescription": "__MISSING__:In the proxy health sweep, let a probe the target refused (401/403/429: the proxy relayed, the destination refused this egress IP) reset the consecutive-failure streak of the proxy, like a served probe. Off by default: a refusal stays neutral and keeps the streak. A 5xx stays inconclusive either way, and a refusal never removes, disables or re-activates a proxy.",
   "sidebar": {
     "home": "ਮੁੱਖ ਪੰਨਾ",
     "dashboard": "ਡੈਸ਼ਬੋਰਡ",
@@ -1807,6 +1811,9 @@
     "healthMonitor": "ਸਿਹਤ ਨਿਗਰਾਨ",
     "reportIssue": "ਸਮੱਸਿਆ ਦੀ ਰਿਪੋਰਟ ਕਰੋ",
     "activeError": "{active} ਸਰਗਰਮ · {errors} ਗਲਤੀ",
+    "topologyLegendActive": "ਸਰਗਰਮ",
+    "topologyLegendRecent": "ਹਾਲੀਆ",
+    "topologyLegendError": "ਗਲਤੀ",
     "oauthLabel": "OAuth",
     "apiKeyLabel": "API ਕੁੰਜੀ",
     "requestsShort": "{count} ਬੇਨਤੀਆਂ",
@@ -7741,6 +7748,10 @@
     "legacyJsonImportSuccess": "ਪੁਰਾਣਾ JSON ਸਫਲਤਾਪੂਰਵਕ ਆਯਾਤ ਕੀਤਾ ਗਿਆ!",
     "jsonImportFailed": "JSON ਆਯਾਤ ਕਰਨ ਵਿੱਚ ਅਸਫਲ",
     "jsonImportError": "JSON ਆਯਾਤ ਦੌਰਾਨ ਗਲਤੀ",
+    "jsonImportAuthRequired": "ਪੁਰਾਣੀ JSON ਸੰਰਚਨਾ ਨੂੰ ਆਯਾਤ ਕਰਨ ਲਈ ਪ੍ਰਮਾਣੀਕਰਨ ਲੋੜੀਂਦਾ ਹੈ। ਕਿਰਪਾ ਕਰਕੇ ਪਹਿਲਾਂ ਸਾਈਨ ਇਨ ਕਰੋ ਜਾਂ ਸੈਟਅੱਪ ਪੂਰਾ ਕਰੋ।",
+    "databaseSettingsAuthRequiredTitle": "ਪ੍ਰਮਾਣੀਕਰਨ ਲੋੜੀਂਦਾ ਹੈ",
+    "databaseSettingsAuthRequiredBody": "ਡਾਟਾਬੇਸ ਸੈਟਿੰਗਾਂ ਅਤੇ JSON ਆਯਾਤ ਸਿਰਫ਼ ਪ੍ਰਮਾਣਿਤ ਐਡਮਿਨ ਲਈ ਉਪਲਬਧ ਹਨ। ਉਹਨਾਂ ਨੂੰ ਵੇਖਣ ਅਤੇ ਸੋਧਣ ਲਈ ਸਾਈਨ ਇਨ ਕਰੋ ਜਾਂ ਸੈਟਅੱਪ ਪੂਰਾ ਕਰੋ।",
+    "databaseSettingsAuthRequiredCta": "ਸਾਈਨ ਇਨ ਕਰੋ",
     "storagePurgeData": "ਡਾਟਾ ਪੂਰੀ ਤਰ੍ਹਾਂ ਮਿਟਾਓ",
     "storagePurgeDataDesc": "ਸੰਭਾਲ ਜਾਂਚਾਂ ਲਾਗੂ ਕੀਤੇ ਬਿਨਾਂ ਤੁਰੰਤ ਸਾਰੇ ਰਿਕਾਰਡ ਮਿਟਾਓ। ਸਾਵਧਾਨੀ ਨਾਲ ਵਰਤੋ।",
     "storageRetentionCleanup": "ਸੰਭਾਲ ਮਿਆਦ ਸੈਟਿੰਗਾਂ",
@@ -8657,6 +8668,8 @@
     "contextEditingNote": "ਵਰਤਮਾਨ ਵਿੱਚ ਸਿਰਫ਼ Claude (Anthropic) ਲਈ ਉਪਲਬਧ ਹੈ। ਇਹ ਇੱਕ ਸੌਂਪਿਆ ਹੋਇਆ ਮੋਡ ਹੈ: ਪ੍ਰਦਾਤਾ ਸਰਵਰ ਪਾਸੇ ਪੁਰਾਣੇ ਟੂਲ-ਵਰਤੋਂ ਬਲਾਕ ਸਾਫ਼ ਕਰਦਾ ਹੈ — ਅਸੀਂ ਸੁਨੇਹਾ ਮੁੜ ਨਹੀਂ ਲਿਖਦੇ। ਇਹ ਹੋਰ ਪ੍ਰਦਾਤਾਵਾਂ ਨੂੰ ਪ੍ਰਭਾਵਿਤ ਨਹੀਂ ਕਰਦਾ।",
     "namedCombos": "ਨਾਮਿਤ ਕੌਂਬੋ",
     "namedCombosDescription": "ਵੱਖ-ਵੱਖ ਪਾਈਪਲਾਈਨਾਂ ਸੰਭਾਲੋ ਅਤੇ ਉਨ੍ਹਾਂ ਨੂੰ ਖ਼ਾਸ ਰੂਟਿੰਗ ਕੌਂਬੋ ਲਈ ਨਿਰਧਾਰਤ ਕਰੋ।",
+    "activeProfileMasterSwitchOffWarning": "ਹੇਠਾਂ ਦਿੱਤੀ ਸਰਗਰਮ ਪ੍ਰੋਫ਼ਾਈਲ ਉਦੋਂ ਤੱਕ ਨਹੀਂ ਚੱਲੇਗੀ ਜਦੋਂ ਤੱਕ ਮੁੱਖ \"Prompt Compression\" ਸਵਿੱਚ ਚਾਲੂ ਨਹੀਂ ਕੀਤਾ ਜਾਂਦਾ।",
+    "activeProfileMasterSwitchOffCta": "ਇਸਨੂੰ ਸੈਟਿੰਗਾਂ ਵਿੱਚ ਚਾਲੂ ਕਰੋ",
     "comboNamePlaceholder": "ਕੌਂਬੋ ਦਾ ਨਾਮ",
     "descriptionPlaceholder": "ਵੇਰਵਾ",
     "nameRequired": "ਸੰਭਾਲਣ ਤੋਂ ਪਹਿਲਾਂ ਕੌਂਬੋ ਦਾ ਨਾਮ ਦਾਖ਼ਲ ਕਰੋ।",
@@ -8699,6 +8712,7 @@
     "run": "ਚਲਾਓ",
     "laneRejected": "ਅਸਵੀਕਾਰ ਕੀਤਾ ਗਿਆ: {reason}",
     "error": "ਗਲਤੀ",
+    "combinedError": "ਸੰਯੁਕਤ ਪਾਈਪਲਾਈਨ ਪੂਰਵਦਰਸ਼ਨ ਅਸਫਲ ਰਿਹਾ: {reason}",
     "combinedFlow": "ਸੰਯੁਕਤ ਪ੍ਰਵਾਹ",
     "eachLayer": "ਹਰੇਕ ਪਰਤ ਵੱਖਰੇ ਤੌਰ 'ਤੇ",
     "diff": "ਅੰਤਰ",
@@ -10954,6 +10968,9 @@
     "strategyLatency": "ਲੇਟੈਂਸੀ-ਅਨੁਕੂਲਿਤ",
     "poolMembersLabel": "ਪੂਲ ਮੈਂਬਰ ({count})",
     "poolNoMembers": "ਇਸ ਪੂਲ ਵਿੱਚ ਹਾਲੇ ਕੋਈ ਪ੍ਰੌਕਸੀ ਨਹੀਂ ਹੈ।",
+    "poolEgressObservation": "__MISSING__:{exits, plural, one {# exit} other {# exits}} used by {connections, plural, one {# connection} other {# connections}} · up to {max} on one exit · last {hours} h",
+    "poolEgressObservationEmpty": "__MISSING__:No traffic observed in the last {hours} h",
+    "poolEgressObservationHint": "__MISSING__:Counted from the proxy log over the window: distinct egress IPs observed for the members of this pool, and the OmniRoute connections that used them. \"On one exit\" means over the window, not at the same time. The per-IP 429 lockout only pauses connections of the same provider family.",
     "poolRemove": "ਹਟਾਓ",
     "poolRemoveFailed": "ਪੂਲ ਵਿੱਚੋਂ ਪ੍ਰੌਕਸੀ ਹਟਾਉਣ ਵਿੱਚ ਅਸਫਲ",
     "poolAddLabel": "ਇੱਕ ਪ੍ਰੌਕਸੀ ਜੋੜੋ",
@@ -12974,6 +12991,12 @@
       "STREAM_RECOVERY_MIDSTREAM_ENABLED": {
         "description": "ਬਾਈਟਾਂ ਦੇ ਕਲਾਇੰਟ ਤੱਕ ਪਹੁੰਚ ਜਾਣ ਤੋਂ ਬਾਅਦ ਵੀ ਸਟ੍ਰੀਮ ਰਿਕਵਰੀ ਨੂੰ ਜਵਾਬ ਦੁਬਾਰਾ ਮੰਗਣ ਅਤੇ ਉਸਨੂੰ ਜੋੜਨ ਦੀ ਇਜਾਜ਼ਤ ਦਿਓ।"
       },
+      "STREAM_RECOVERY_TOOLCALL_ORDER_FIX": {
+        "description": "__MISSING__:Make mid-stream continuation tool-call safe: never resume a cut stream after a tool call was sent (still in progress or already finished), and stop after one empty continuation instead of using the whole retry budget."
+      },
+      "STREAM_EARLY_EOF_SIBLING_FAILOVER_ENABLED": {
+        "description": "ਜਦੋਂ ਸਟ੍ਰੀਮ ਕੋਈ ਉਪਯੋਗੀ ਫ੍ਰੇਮ ਭੇਜਣ ਤੋਂ ਪਹਿਲਾਂ ਬੰਦ ਹੋ ਜਾਵੇ ਅਤੇ ਉਸੇ ਕਨੈਕਸ਼ਨ 'ਤੇ ਸੀਮਤ ਮੁੜ-ਕੋਸ਼ਿਸ਼ ਖਤਮ ਹੋ ਜਾਵੇ, ਤਾਂ ਇੱਕ ਵਾਰ ਸਹੋਦਰ ਕਨੈਕਸ਼ਨ 'ਤੇ ਫੇਲਓਵਰ ਕਰੋ। ਵਰਤੋਂਯੋਗ ਸਹੋਦਰ ਕਨੈਕਸ਼ਨ ਨਾ ਹੋਣ 'ਤੇ ਮੂਲ early-EOF ਗਲਤੀ ਵਾਪਸ ਕੀਤੀ ਜਾਂਦੀ ਹੈ। ਬੰਦ: ਮੁੜ-ਕੋਸ਼ਿਸ਼ ਤੋਂ ਬਾਅਦ early-EOF ਅੰਤਿਮ ਰਹਿੰਦਾ ਹੈ।"
+      },
       "MODEL_CATALOG_INCLUDE_NAMES": {
         "description": "/v1/models ਜਵਾਬਾਂ ਵਿੱਚ ਪ੍ਰਦਰਸ਼ਨ-ਅਨੁਕੂਲ ਨਾਮ ਫੀਲਡਾਂ ਸ਼ਾਮਲ ਕਰੋ। ਸਿਰਫ਼ ਮਾਡਲ IDs ਸਵੀਕਾਰ ਕਰਨ ਵਾਲੇ ਕਲਾਇੰਟਾਂ ਲਈ ਇਸਨੂੰ ਅਸਮਰੱਥ ਕਰੋ।"
       },
@@ -13010,6 +13033,14 @@
       "SERVER_OWNED_TOOL_LOOP_ENABLED": {
         "label": "ਸਰਵਰ-ਮਲਕੀਅਤ ਵਾਲਾ ਟੂਲ ਲੂਪ",
         "description": "ਸਰਵਰ-ਮਲਕੀਅਤ ਵਾਲੀਆਂ ਗੈਰ-ਸਟ੍ਰੀਮਿੰਗ ਟੂਲ ਕਾਲਾਂ ਨੂੰ ਉਦੋਂ ਤੱਕ ਜਾਰੀ ਰੱਖੋ ਜਦੋਂ ਤੱਕ ਮਾਡਲ ਕਲਾਇੰਟ ਲਈ ਵਰਤਣਯੋਗ ਜਵਾਬ ਨਾ ਦੇਵੇ।"
+      },
+      "RETRY_AFTER_PROVENANCE_ENABLED": {
+        "label": "__MISSING__:Retry-After Provenance",
+        "description": "__MISSING__:On aggregated 429/503 unavailable responses, omit Retry-After when no concrete future retry time is known instead of sending a synthetic 1s, add error.retry_after_provenance, and read prose retry hints on combo drain paths."
+      },
+      "PROTECTED_PRIORITY_INFRA_502_ENABLED": {
+        "label": "__MISSING__:Protected-Priority Infra Stops as 502",
+        "description": "__MISSING__:Answer 502 instead of 503 when a quota-only-fallback priority target stops the combo for a cause that is provably not quota: an open provider circuit breaker or a predictive latency skip."
       }
     }
   },
@@ -13623,6 +13654,7 @@
   },
   "featureFlagCapabilityFilterEnabledDescription": "ਜਦੋਂ ਟਾਰਗੇਟ ਮਾਡਲ ਵਿੱਚ ਲੋੜੀਂਦੀਆਂ ਸਮਰੱਥਾਵਾਂ (ਵਿਜ਼ਨ, ਟੂਲ, ਸਟ੍ਰਕਚਰਡ ਆਉਟਪੁੱਟ, ਕਾਂਟੈਕਸਟ ਵਿੰਡੋ) ਨਾ ਹੋਣ, ਤਾਂ ਡਿਸਪੈਚ ਤੋਂ ਪਹਿਲਾਂ ਬੇਨਤੀਆਂ ਅਸਵੀਕਾਰ ਕਰੋ। ਇਹ ਉਹਨਾਂ ਸਿੱਧੀਆਂ ਸਿੰਗਲ-ਪ੍ਰੋਵਾਈਡਰ ਬੇਨਤੀਆਂ ਦੀ ਸੁਰੱਖਿਆ ਕਰਦਾ ਹੈ ਜੋ ਕੌਂਬੋ-ਲੇਅਰ ਅਨੁਕੂਲਤਾ ਫਿਲਟਰ ਨੂੰ ਬਾਈਪਾਸ ਕਰਦੀਆਂ ਹਨ।",
   "featureFlagDisableContextWindowChecksDescription": "ਸਿੱਧੀਆਂ ਸਿੰਗਲ-ਮਾਡਲ ਬੇਨਤੀਆਂ ਲਈ OmniRoute ਦੀ ਸਥਾਨਕ ਕਾਂਟੈਕਸਟ-ਵਿੰਡੋ ਅਤੇ ਅਧਿਕਤਮ-ਇਨਪੁੱਟ-ਟੋਕਨ ਜਾਂਚ ਨੂੰ ਛੱਡੋ। ਅੱਪਸਟ੍ਰੀਮ ਪ੍ਰੋਵਾਈਡਰ ਫਿਰ ਵੀ ਆਪਣੀਆਂ ਅਸਲ ਸੀਮਾਵਾਂ ਲਾਗੂ ਕਰਦੇ ਹਨ। ਪ੍ਰੌਂਪਟ ਕੰਪ੍ਰੈਸ਼ਨ ਅਤੇ ਆਉਟਪੁੱਟ-ਟੋਕਨ ਸੀਮਾਵਾਂ ਸਰਗਰਮ ਰਹਿੰਦੀਆਂ ਹਨ।",
+  "featureFlagSearchStatsHideDeletedConnectionsDescription": "Search stats and recent searches only count providers that still have a live connection (keyless providers such as duckduckgo-free always count). Off keeps every retained search row with a provider id.",
   "publicSystem": {
     "notFound": {
       "title": "ਪੰਨਾ ਨਹੀਂ ਮਿਲਿਆ",

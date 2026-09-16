@@ -464,7 +464,7 @@
   },
   "open-sse/services/combo.ts": {
     "@typescript-eslint/no-unused-vars": {
-      "count": 21
+      "count": 1
     }
   },
   "open-sse/services/combo/providerWildcard.ts": {
@@ -580,7 +580,7 @@
   },
   "open-sse/services/rateLimitManager.ts": {
     "@typescript-eslint/no-unused-vars": {
-      "count": 2
+      "count": 1
     }
   },
   "open-sse/services/routing/index.ts": {
@@ -1277,11 +1277,6 @@
   "src/app/api/v1/models/catalog.ts": {
     "@typescript-eslint/no-unused-vars": {
       "count": 10
-    }
-  },
-  "src/app/api/v1/models/catalogCache.ts": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
     }
   },
   "src/app/api/v1/models/catalogOpenrouter.ts": {
@@ -3331,11 +3326,6 @@
   "tests/unit/combo-sessionless-pin-3825.test.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 17
-    }
-  },
-  "tests/unit/combo-strategies.test.ts": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
     }
   },
   "tests/unit/combo-strategy-fallbacks.test.ts": {

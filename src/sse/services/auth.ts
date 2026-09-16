@@ -3157,11 +3157,12 @@ export async function markAccountUnavailable(
 
     let terminalStatus = resolveTerminalConnectionStatus(
       status,
-      result as { permanent?: boolean; creditsExhausted?: boolean },
+      result as { permanent?: boolean; creditsExhausted?: boolean; ambiguousAuth?: boolean },
       providerErrorType,
       provider,
       isPerModelQuotaProvider,
-      errorText
+      errorText,
+      connectionId
     );
     // A still-valid access token after a successful refresh is not "expired".
     // A follow-up 401 (timeout, hop, race) must cooldown, not park the account.

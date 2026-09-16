@@ -992,6 +992,10 @@
   "featureFlagExposeCcDiscoveryAliasesDescription": "/v1/models இல் Claude Code gateway மாதிரி கண்டுபிடிப்பு பட்டியலில் non-Claude மாதிரிகளை காட்ட Claude/&lt;provider&gt;/&lt;model&gt; மின்னூல் அடையாளங்களை விளம்பரம் செய்யவும். எச்சரிக்கை: உலகளாவியமாக செயல்படுத்தப்பட்டால் அனைத்து கிளையன்டுகளுக்கும் பட்டியல் பதிவுகளை இரட்டைப்படுத்துகிறது.",
   "featureFlagNoThinkingAliasEnabledDescription": "__MISSING__:Master switch for the no-think/&lt;provider&gt;/&lt;model&gt; gateway aliases. On (default): /v1/models advertises a no-thinking variant for every eligible thinking-capable Claude model, and a no-think/ id sent on a request resolves back to the real model with reasoning suppressed. Off: no variants are advertised and a no-think/ id is treated like any other unknown model id. The per-model ModelSpec.noThinkingAlias opt-in/opt-out still applies while this is on.",
   "featureFlagChatVirtualLanesEnabledDescription": "வழங்குநர் அனுப்பீட்டிற்கு ஒவ்வொரு குத்தகைதாரருக்கும் (tenant) தகவமைப்பு மெய்நிகர் சேர்க்கைப் பாதைகளை இயக்கு (#9654): ஒரு குத்தகைதாரரின் அதிகரிப்பு இனி மற்றொருவருக்கு 503 ஐ அளிக்காது. OMNIROUTE_CHAT_VIRTUAL_LANES சூழல் மாறி இந்த டாஷ்போர்டு அமைப்பை விட முன்னுரிமை பெறுகிறது; மாற்றங்கள் சேவையகம் மறுதொடக்கத்தில் நடைமுறைக்கு வரும்.",
+  "featureFlagFreeBadgeRequiresProviderFreeTierDescription": "Dashboard provider pages: show the Free badge only on signals the provider honors — drops the display-name heuristic, non-boolean free fields and :free suffixes on registered providers without a documented free tier. Off keeps the historical badge rule.",
+  "featureFlagProxySkipRecentlyFailedDescription": "__MISSING__:Proxy pools and the per-account rotation of opencode stop re-serving a proxy that just failed (refused TCP probe, or a 429 received through it) for a per-process period that doubles on each repeat, up to a cap. No proxy status is written; with every candidate set aside the choice is unchanged. Off by default: selection order is exactly the plain rotation.",
+  "featureFlagProxyPoolEgressObservationDescription": "__MISSING__:Show, under a proxy pool in the dashboard, how many observed egress IPs served its members over the last 24 h, how many connections used them and the most seen behind one IP. Read-only, computed from the proxy log, never used for routing. Off by default: the pool editor is unchanged and the observation route answers null.",
+  "featureFlagProxyHealthBlockedResetsStreakDescription": "__MISSING__:In the proxy health sweep, let a probe the target refused (401/403/429: the proxy relayed, the destination refused this egress IP) reset the consecutive-failure streak of the proxy, like a served probe. Off by default: a refusal stays neutral and keeps the streak. A 5xx stays inconclusive either way, and a refusal never removes, disables or re-activates a proxy.",
   "sidebar": {
     "home": "Home",
     "dashboard": "Dashboard",
@@ -10957,6 +10961,9 @@
     "strategyLatency": "Latency-optimized",
     "poolMembersLabel": "தொகுப்பு உறுப்பினர்கள் ({count})",
     "poolNoMembers": "இந்தத் தொகுப்பில் இன்னும் proxy-கள் எதுவும் இல்லை.",
+    "poolEgressObservation": "__MISSING__:{exits, plural, one {# exit} other {# exits}} used by {connections, plural, one {# connection} other {# connections}} · up to {max} on one exit · last {hours} h",
+    "poolEgressObservationEmpty": "__MISSING__:No traffic observed in the last {hours} h",
+    "poolEgressObservationHint": "__MISSING__:Counted from the proxy log over the window: distinct egress IPs observed for the members of this pool, and the OmniRoute connections that used them. \"On one exit\" means over the window, not at the same time. The per-IP 429 lockout only pauses connections of the same provider family.",
     "poolRemove": "அகற்று",
     "poolRemoveFailed": "தொகுப்பிலிருந்து proxy-ஐ அகற்றுவது தோல்வியடைந்தது",
     "poolAddLabel": "ஒரு proxy-ஐச் சேர்",
@@ -12977,6 +12984,12 @@
       "STREAM_RECOVERY_MIDSTREAM_ENABLED": {
         "description": "பைட்டுகள் ஏற்கனவே கிளையண்டை அடைந்த பிறகும், பதிலை மீண்டும் கோரவும் அதை இணைக்கவும் ஸ்ட்ரீம் மீட்டெடுப்பை அனுமதிக்கவும்."
       },
+      "STREAM_RECOVERY_TOOLCALL_ORDER_FIX": {
+        "description": "__MISSING__:Make mid-stream continuation tool-call safe: never resume a cut stream after a tool call was sent (still in progress or already finished), and stop after one empty continuation instead of using the whole retry budget."
+      },
+      "STREAM_EARLY_EOF_SIBLING_FAILOVER_ENABLED": {
+        "description": "ஸ்ட்ரீம் பயனுள்ள எந்த ஃப்ரேமையும் அனுப்பும் முன் மூடப்பட்டு, அதே இணைப்பில் வரம்பிடப்பட்ட மறுமுயற்சியும் தீர்ந்துவிட்டால், ஒருமுறை சகோதர இணைப்புக்கு ஃபெயில்ஓவர் செய்யவும். பயன்படுத்தக்கூடிய சகோதர இணைப்பு இல்லையெனில் அசல் early-EOF பிழை திருப்பியனுப்பப்படும். முடக்கம்: மறுமுயற்சிக்குப் பிறகு early-EOF இறுதியாகவே இருக்கும்."
+      },
       "MODEL_CATALOG_INCLUDE_NAMES": {
         "description": "/v1/models பதில்களில் காட்சிக்கு ஏற்ற பெயர் புலங்களைச் சேர்க்கவும். மாடல் ஐடிகளை மட்டுமே ஏற்கும் கிளையண்டுகளுக்கு இதை முடக்கவும்."
       },
@@ -13009,6 +13022,14 @@
       },
       "SKILLS_SANDBOX_NETWORK_ENABLED": {
         "description": "skills சாண்ட்பாக்ஸில் நெட்வொர்க் அணுகலை இயக்கவும்."
+      },
+      "RETRY_AFTER_PROVENANCE_ENABLED": {
+        "label": "__MISSING__:Retry-After Provenance",
+        "description": "__MISSING__:On aggregated 429/503 unavailable responses, omit Retry-After when no concrete future retry time is known instead of sending a synthetic 1s, add error.retry_after_provenance, and read prose retry hints on combo drain paths."
+      },
+      "PROTECTED_PRIORITY_INFRA_502_ENABLED": {
+        "label": "__MISSING__:Protected-Priority Infra Stops as 502",
+        "description": "__MISSING__:Answer 502 instead of 503 when a quota-only-fallback priority target stops the combo for a cause that is provably not quota: an open provider circuit breaker or a predictive latency skip."
       }
     }
   },
@@ -13622,6 +13643,7 @@
   },
   "featureFlagCapabilityFilterEnabledDescription": "விருப்பமான மாதிரி தேவையான திறன்களை (காணல், கருவிகள், கட்டமைக்கப்பட்ட வெளியீடு, சூழல் ஜன்னல்) இன்றி இருந்தால், அனுப்புவதற்கு முன் கோரிக்கைகளை நிராகரிக்கவும். கம்போ-லேயர் ஒத்திசைவு வடிகட்டியை தவிர்க்கும் நேரடி ஒற்றை வழங்குநர் கோரிக்கைகளை பாதுகாக்கிறது.",
   "featureFlagDisableContextWindowChecksDescription": "Skip OmniRoute's local context-window and max-input-token check for direct single-model requests. Upstream providers still enforce their actual limits. Prompt compression and output-token caps remain active.",
+  "featureFlagSearchStatsHideDeletedConnectionsDescription": "Search stats and recent searches only count providers that still have a live connection (keyless providers such as duckduckgo-free always count). Off keeps every retained search row with a provider id.",
   "publicSystem": {
     "notFound": {
       "title": "பக்கம் கிடைக்கவில்லை",

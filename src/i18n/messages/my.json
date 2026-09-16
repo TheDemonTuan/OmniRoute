@@ -992,6 +992,10 @@
   "featureFlagExposeCcDiscoveryAliasesDescription": "Claude Code gateway ၏ မော်ဒယ်ရှာဖွေမှုစာရင်းတွင် Claude မဟုတ်သော မော်ဒယ်များ ပါဝင်စေရန် /v1/models တွင် claude/&lt;provider&gt;/&lt;model&gt; mirror ids များကို ဖော်ပြပါ။ သတိပေးချက်- အားလုံးအတွက် ဖွင့်ထားပါက client အားလုံးတွင် catalog entry အရေအတွက် နှစ်ဆဖြစ်စေသည်။",
   "featureFlagNoThinkingAliasEnabledDescription": "no-think/&lt;provider&gt;/&lt;model&gt; gateway aliases များအတွက် အဓိကခလုတ်။ ဖွင့်ထားလျှင် (မူလသတ်မှတ်ချက်)- /v1/models သည် သတ်မှတ်ချက်ပြည့်မီသော စဉ်းစားဆင်ခြင်နိုင်သည့် Claude မော်ဒယ်တိုင်းအတွက် မစဉ်းစားသည့် မူကွဲတစ်ခုကို ဖော်ပြပြီး တောင်းဆိုမှုတစ်ခုတွင် ပေးပို့သော no-think/ id ကို reasoning ပိတ်ထားသည့် တကယ့်မော်ဒယ်သို့ ပြန်လည်ချိတ်ဆက်ပေးသည်။ ပိတ်ထားလျှင်- မည်သည့်မူကွဲကိုမျှ မဖော်ပြဘဲ no-think/ id ကို အခြားမသိသော model id များကဲ့သို့ သတ်မှတ်သည်။ ဤခလုတ်ဖွင့်ထားစဉ် မော်ဒယ်တစ်ခုချင်းစီ၏ ModelSpec.noThinkingAlias opt-in/opt-out သတ်မှတ်ချက်သည် ဆက်လက်သက်ရောက်သည်။",
   "featureFlagChatVirtualLanesEnabledDescription": "provider dispatch (#9654) အတွက် tenant တစ်ခုချင်းစီအလိုက် အလိုက်သင့်ပြောင်းလဲနိုင်သော virtual admission lanes များကို ဖွင့်ပါ။ tenant တစ်ခု၏ ရုတ်တရက်မြင့်တက်လာသော အသုံးပြုမှုကြောင့် အခြား tenant တွင် 503 ဖြစ်ပေါ်တော့မည်မဟုတ်ပါ။ OMNIROUTE_CHAT_VIRTUAL_LANES env var သည် ဤ dashboard override ထက် ဦးစားပေးသက်ရောက်ပြီး ပြောင်းလဲမှုများသည် server ပြန်လည်စတင်ချိန်တွင် အသက်ဝင်မည်ဖြစ်သည်။",
+  "featureFlagFreeBadgeRequiresProviderFreeTierDescription": "Dashboard provider pages: show the Free badge only on signals the provider honors — drops the display-name heuristic, non-boolean free fields and :free suffixes on registered providers without a documented free tier. Off keeps the historical badge rule.",
+  "featureFlagProxySkipRecentlyFailedDescription": "__MISSING__:Proxy pools and the per-account rotation of opencode stop re-serving a proxy that just failed (refused TCP probe, or a 429 received through it) for a per-process period that doubles on each repeat, up to a cap. No proxy status is written; with every candidate set aside the choice is unchanged. Off by default: selection order is exactly the plain rotation.",
+  "featureFlagProxyPoolEgressObservationDescription": "__MISSING__:Show, under a proxy pool in the dashboard, how many observed egress IPs served its members over the last 24 h, how many connections used them and the most seen behind one IP. Read-only, computed from the proxy log, never used for routing. Off by default: the pool editor is unchanged and the observation route answers null.",
+  "featureFlagProxyHealthBlockedResetsStreakDescription": "__MISSING__:In the proxy health sweep, let a probe the target refused (401/403/429: the proxy relayed, the destination refused this egress IP) reset the consecutive-failure streak of the proxy, like a served probe. Off by default: a refusal stays neutral and keeps the streak. A 5xx stays inconclusive either way, and a refusal never removes, disables or re-activates a proxy.",
   "sidebar": {
     "home": "ပင်မစာမျက်နှာ",
     "dashboard": "ဒက်ရှ်ဘုတ်",
@@ -1807,6 +1811,9 @@
     "healthMonitor": "စနစ်အခြေအနေ စောင့်ကြည့်ကိရိယာ",
     "reportIssue": "ပြဿနာ တင်ပြရန်",
     "activeError": "အသုံးပြုနေသည် {active} ခု · အမှား {errors} ခု",
+    "topologyLegendActive": "အသက်ဝင်နေသည်",
+    "topologyLegendRecent": "မကြာသေးမီက",
+    "topologyLegendError": "အမှား",
     "oauthLabel": "OAuth",
     "apiKeyLabel": "API Key",
     "requestsShort": "တောင်းဆိုမှု {count} ခု",
@@ -7741,6 +7748,10 @@
     "legacyJsonImportSuccess": "JSON အဟောင်းကို အောင်မြင်စွာ ထည့်သွင်းလိုက်ပါပြီ။",
     "jsonImportFailed": "JSON ထည့်သွင်းမှု မအောင်မြင်ပါ",
     "jsonImportError": "JSON ထည့်သွင်းစဉ် အမှားဖြစ်ပွားခဲ့သည်",
+    "jsonImportAuthRequired": "ယခင် JSON ဖွဲ့စည်းပုံကို ထည့်သွင်းရန် အထောက်အထားစိစစ်မှု လိုအပ်ပါသည်။ ကျေးဇူးပြု၍ အကောင့်ဝင်ပါ သို့မဟုတ် ဦးစွာ စနစ်ထည့်သွင်းမှုကို အပြီးသတ်ပါ။",
+    "databaseSettingsAuthRequiredTitle": "အထောက်အထားစိစစ်မှု လိုအပ်သည်",
+    "databaseSettingsAuthRequiredBody": "ဒေတာဘေ့စ် ဆက်တင်များနှင့် JSON ထည့်သွင်းမှုကို အထောက်အထားစိစစ်ပြီးသော စီမံခန့်ခွဲသူသာ အသုံးပြုနိုင်ပါသည်။ ၎င်းတို့ကို ကြည့်ရှု၍ တည်းဖြတ်ရန် အကောင့်ဝင်ပါ သို့မဟုတ် စနစ်ထည့်သွင်းမှုကို အပြီးသတ်ပါ။",
+    "databaseSettingsAuthRequiredCta": "အကောင့်ဝင်ရန်",
     "storagePurgeData": "ဒေတာများကို အပြီးဖယ်ရှားပါ",
     "storagePurgeDataDesc": "ထိန်းသိမ်းကာလ စစ်ဆေးမှုများ မပြုလုပ်ဘဲ မှတ်တမ်းအားလုံးကို ချက်ချင်းဖျက်ပါ။ သတိဖြင့် အသုံးပြုပါ။",
     "storageRetentionCleanup": "ထိန်းသိမ်းကာလ သတ်မှတ်ချက်များ",
@@ -8657,6 +8668,8 @@
     "contextEditingNote": "လက်ရှိတွင် Claude (Anthropic) အတွက်သာ ရရှိနိုင်သည်။ ၎င်းသည် လွှဲအပ်ထားသော မုဒ်ဖြစ်သည်။ ဝန်ဆောင်မှုပေးသူက ဆာဗာဘက်တွင် tool-use ဘလောက်အဟောင်းများကို ရှင်းလင်းပေးပြီး ကျွန်ုပ်တို့က မက်ဆေ့ချ်ကို ပြန်လည်ရေးသားခြင်းမပြုပါ။ အခြားဝန်ဆောင်မှုပေးသူများအပေါ် သက်ရောက်မှုမရှိပါ။",
     "namedCombos": "အမည်ပေးထားသော ပေါင်းစပ်မှုများ",
     "namedCombosDescription": "မတူညီသော ပိုက်လိုင်းများကို သိမ်းဆည်းပြီး သတ်မှတ်ထားသော လမ်းကြောင်းရွေးချယ်မှု ပေါင်းစပ်မှုများထံ သတ်မှတ်ပေးပါ။",
+    "activeProfileMasterSwitchOffWarning": "ပင်မ \"Prompt Compression\" ခလုတ်ကို မဖွင့်မချင်း အောက်ပါ အသက်ဝင်ပရိုဖိုင်သည် အလုပ်လုပ်မည်မဟုတ်ပါ။",
+    "activeProfileMasterSwitchOffCta": "ဆက်တင်များတွင် ဖွင့်ပါ",
     "comboNamePlaceholder": "ပေါင်းစပ်မှုအမည်",
     "descriptionPlaceholder": "ဖော်ပြချက်",
     "nameRequired": "မသိမ်းဆည်းမီ ပေါင်းစပ်မှုအမည်တစ်ခု ထည့်ပါ။",
@@ -8699,6 +8712,7 @@
     "run": "လုပ်ဆောင်မည်",
     "laneRejected": "ပယ်ချခဲ့သည်- {reason}",
     "error": "အမှား",
+    "combinedError": "ပေါင်းစပ်လုပ်ငန်းစဉ် အစမ်းကြည့်ရှုမှု မအောင်မြင်ပါ: {reason}",
     "combinedFlow": "ပေါင်းစပ် လုပ်ငန်းစဉ်",
     "eachLayer": "အလွှာတစ်ခုချင်းစီ သီးခြား",
     "diff": "ကွာခြားချက်",
@@ -10954,6 +10968,9 @@
     "strategyLatency": "တုံ့ပြန်ချိန်အကောင်းဆုံး",
     "poolMembersLabel": "ပူးလ်အဖွဲ့ဝင်များ ({count})",
     "poolNoMembers": "ဤပူးလ်တွင် ပရောက်စီများ မရှိသေးပါ။",
+    "poolEgressObservation": "__MISSING__:{exits, plural, one {# exit} other {# exits}} used by {connections, plural, one {# connection} other {# connections}} · up to {max} on one exit · last {hours} h",
+    "poolEgressObservationEmpty": "__MISSING__:No traffic observed in the last {hours} h",
+    "poolEgressObservationHint": "__MISSING__:Counted from the proxy log over the window: distinct egress IPs observed for the members of this pool, and the OmniRoute connections that used them. \"On one exit\" means over the window, not at the same time. The per-IP 429 lockout only pauses connections of the same provider family.",
     "poolRemove": "ဖယ်ရှားရန်",
     "poolRemoveFailed": "ပရောက်စီကို ပူးလ်မှ ဖယ်ရှား၍ မရပါ",
     "poolAddLabel": "ပရောက်စီတစ်ခု ထည့်ရန်",
@@ -12974,6 +12991,12 @@
       "STREAM_RECOVERY_MIDSTREAM_ENABLED": {
         "description": "Byte များ client ထံ ရောက်ရှိပြီးနောက်တွင်ပင် stream recovery က response ကို ထပ်မံတောင်းခံ၍ ဆက်စပ်ပေါင်းစည်းနိုင်ရန် ခွင့်ပြုပါ။"
       },
+      "STREAM_RECOVERY_TOOLCALL_ORDER_FIX": {
+        "description": "__MISSING__:Make mid-stream continuation tool-call safe: never resume a cut stream after a tool call was sent (still in progress or already finished), and stop after one empty continuation instead of using the whole retry budget."
+      },
+      "STREAM_EARLY_EOF_SIBLING_FAILOVER_ENABLED": {
+        "description": "stream သည် အသုံးဝင်သော frame တစ်ခုမျှ မထုတ်မီ ပိတ်သွားပြီး ချိတ်ဆက်မှုတစ်ခုတည်းပေါ်ရှိ ကန့်သတ်ထားသော ပြန်လည်ကြိုးစားမှုလည်း ကုန်သွားပါက ညီအစ်ကိုချိတ်ဆက်မှုသို့ တစ်ကြိမ်သာ failover လုပ်ပါ။ အသုံးပြုနိုင်သော ညီအစ်ကိုချိတ်ဆက်မှု မရှိပါက မူလ early-EOF အမှားကို ပြန်ပေးပါသည်။ ပိတ်ထားလျှင်: ပြန်လည်ကြိုးစားပြီးနောက် early-EOF သည် နောက်ဆုံးအဖြစ် ရှိနေပါသည်။"
+      },
       "MODEL_CATALOG_INCLUDE_NAMES": {
         "description": "/v1/models response များတွင် ဖတ်ရှုရလွယ်ကူသော name field များကို ထည့်သွင်းပါ။ Model ID များကိုသာ လက်ခံသော client များအတွက် ၎င်းကို ပိတ်ပါ။"
       },
@@ -13010,6 +13033,14 @@
       "SERVER_OWNED_TOOL_LOOP_ENABLED": {
         "label": "Server ပိုင် Tool Loop",
         "description": "Model က client အသုံးပြုနိုင်သော response တစ်ခုကို ပြန်ပေးသည်အထိ non-streaming server-owned tool call များကို ဆက်လက်လုပ်ဆောင်ပါ။"
+      },
+      "RETRY_AFTER_PROVENANCE_ENABLED": {
+        "label": "__MISSING__:Retry-After Provenance",
+        "description": "__MISSING__:On aggregated 429/503 unavailable responses, omit Retry-After when no concrete future retry time is known instead of sending a synthetic 1s, add error.retry_after_provenance, and read prose retry hints on combo drain paths."
+      },
+      "PROTECTED_PRIORITY_INFRA_502_ENABLED": {
+        "label": "__MISSING__:Protected-Priority Infra Stops as 502",
+        "description": "__MISSING__:Answer 502 instead of 503 when a quota-only-fallback priority target stops the combo for a cause that is provably not quota: an open provider circuit breaker or a predictive latency skip."
       }
     }
   },
@@ -13623,6 +13654,7 @@
   },
   "featureFlagCapabilityFilterEnabledDescription": "ပစ်မှတ်မော်ဒယ်တွင် လိုအပ်သော စွမ်းဆောင်ရည်များ (အမြင်၊ ကိရိယာများ၊ ဖွဲ့စည်းပုံကျ အထွက်၊ ကွန်တက်စ်ဝင်းဒိုး) မရှိပါက ဖြန့်ပို့ခြင်းမပြုမီ တောင်းဆိုမှုများကို ပယ်ချပါ။ ၎င်းသည် combo-layer လိုက်ဖက်ညီမှု စစ်ထုတ်မှုကို ကျော်လွှားသော တစ်ခုတည်းသောပံ့ပိုးသူထံ တိုက်ရိုက်တောင်းဆိုမှုများကို ကာကွယ်ပေးသည်။",
   "featureFlagDisableContextWindowChecksDescription": "တစ်ခုတည်းသောမော်ဒယ်ထံ တိုက်ရိုက်တောင်းဆိုမှုများအတွက် OmniRoute ၏ စက်တွင်း ကွန်တက်စ်ဝင်းဒိုးနှင့် အများဆုံးထည့်သွင်းတိုကင် စစ်ဆေးမှုကို ကျော်ပါ။ မူလပံ့ပိုးသူများက ၎င်းတို့၏ အမှန်တကယ်ကန့်သတ်ချက်များကို ဆက်လက်အတည်ပြုကျင့်သုံးမည်ဖြစ်သည်။ ပရောမ့်ချုံ့ခြင်းနှင့် အထွက်တိုကင် အများဆုံးကန့်သတ်ချက်များမှာ ဆက်လက်အသက်ဝင်နေမည်ဖြစ်သည်။",
+  "featureFlagSearchStatsHideDeletedConnectionsDescription": "Search stats and recent searches only count providers that still have a live connection (keyless providers such as duckduckgo-free always count). Off keeps every retained search row with a provider id.",
   "publicSystem": {
     "notFound": {
       "title": "စာမျက်နှာကို ရှာမတွေ့ပါ",

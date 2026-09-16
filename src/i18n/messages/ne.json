@@ -992,6 +992,10 @@
   "featureFlagExposeCcDiscoveryAliasesDescription": "Claude Code गेटवे मोडेल खोजले गैर-Claude मोडेलहरू सूचीबद्ध गरोस् भन्नका लागि /v1/models मा claude/&lt;provider&gt;/&lt;model&gt; मिरर id हरू देखाउनुहोस्। चेतावनी: विश्वव्यापी रूपमा सक्षम गर्दा सबै क्लाइन्टका लागि क्याटलग प्रविष्टिहरू दोब्बर हुन्छन्।",
   "featureFlagNoThinkingAliasEnabledDescription": "no-think/&lt;provider&gt;/&lt;model&gt; गेटवे एलियसहरूका लागि मुख्य स्विच। अन (पूर्वनिर्धारित): /v1/models ले हरेक योग्य सोच्न-सक्षम Claude मोडेलका लागि सोचाइ-विहीन भेरियन्ट देखाउँछ, र अनुरोधमा पठाइएको no-think/ id वास्तविक मोडेलमा फर्केर रिजोल्भ हुन्छ र रिजनिङ दबाइन्छ। अफ: कुनै पनि भेरियन्ट देखाइँदैन र no-think/ id लाई अन्य कुनै अज्ञात मोडेल id सरह व्यवहार गरिन्छ। यो अन हुँदा पनि प्रत्येक मोडेलको ModelSpec.noThinkingAlias अप्ट-इन/अप्ट-आउट लागू हुन्छ।",
   "featureFlagChatVirtualLanesEnabledDescription": "प्रदायक डिस्प्याच (#9654) का लागि प्रत्येक टेनेन्टअनुसार अनुकूल हुने भर्चुअल एडमिसन लेनहरू सक्षम गर्नुहोस्: अब एउटा टेनेन्टको अचानक बढेको ट्राफिकले अर्कोलाई 503 गराउँदैन। OMNIROUTE_CHAT_VIRTUAL_LANES env var ले यस ड्यासबोर्ड ओभरराइडभन्दा प्राथमिकता पाउँछ; परिवर्तनहरू सर्भर पुनः सुरु भएपछि लागू हुन्छन्।",
+  "featureFlagFreeBadgeRequiresProviderFreeTierDescription": "Dashboard provider pages: show the Free badge only on signals the provider honors — drops the display-name heuristic, non-boolean free fields and :free suffixes on registered providers without a documented free tier. Off keeps the historical badge rule.",
+  "featureFlagProxySkipRecentlyFailedDescription": "__MISSING__:Proxy pools and the per-account rotation of opencode stop re-serving a proxy that just failed (refused TCP probe, or a 429 received through it) for a per-process period that doubles on each repeat, up to a cap. No proxy status is written; with every candidate set aside the choice is unchanged. Off by default: selection order is exactly the plain rotation.",
+  "featureFlagProxyPoolEgressObservationDescription": "__MISSING__:Show, under a proxy pool in the dashboard, how many observed egress IPs served its members over the last 24 h, how many connections used them and the most seen behind one IP. Read-only, computed from the proxy log, never used for routing. Off by default: the pool editor is unchanged and the observation route answers null.",
+  "featureFlagProxyHealthBlockedResetsStreakDescription": "__MISSING__:In the proxy health sweep, let a probe the target refused (401/403/429: the proxy relayed, the destination refused this egress IP) reset the consecutive-failure streak of the proxy, like a served probe. Off by default: a refusal stays neutral and keeps the streak. A 5xx stays inconclusive either way, and a refusal never removes, disables or re-activates a proxy.",
   "sidebar": {
     "home": "गृहपृष्ठ",
     "dashboard": "ड्यासबोर्ड",
@@ -1807,6 +1811,9 @@
     "healthMonitor": "स्वास्थ्य अनुगमन",
     "reportIssue": "समस्या रिपोर्ट गर्नुहोस्",
     "activeError": "{active} सक्रिय · {errors} त्रुटि",
+    "topologyLegendActive": "सक्रिय",
+    "topologyLegendRecent": "हालैको",
+    "topologyLegendError": "त्रुटि",
     "oauthLabel": "OAuth",
     "apiKeyLabel": "API Key",
     "requestsShort": "{count} अनुरोधहरू",
@@ -7741,6 +7748,10 @@
     "legacyJsonImportSuccess": "पुरानो JSON सफलतापूर्वक आयात गरियो!",
     "jsonImportFailed": "JSON आयात गर्न असफल भयो",
     "jsonImportError": "JSON आयातका क्रममा त्रुटि भयो",
+    "jsonImportAuthRequired": "पुरानो JSON कन्फिगरेसन आयात गर्न प्रमाणीकरण आवश्यक छ। कृपया साइन इन गर्नुहोस् वा पहिले सेटअप पूरा गर्नुहोस्।",
+    "databaseSettingsAuthRequiredTitle": "प्रमाणीकरण आवश्यक छ",
+    "databaseSettingsAuthRequiredBody": "डेटाबेस सेटिङहरू र JSON आयात प्रमाणीकरण गरिएको एडमिनका लागि मात्र उपलब्ध छन्। तिनलाई हेर्न र सम्पादन गर्न साइन इन गर्नुहोस् वा सेटअप पूरा गर्नुहोस्।",
+    "databaseSettingsAuthRequiredCta": "साइन इन गर्नुहोस्",
     "storagePurgeData": "डेटा पूर्ण रूपमा हटाउनुहोस्",
     "storagePurgeDataDesc": "अवधारण जाँचहरू लागू नगरी सबै रेकर्डहरू तुरुन्तै मेटाउनुहोस्। सावधानीपूर्वक प्रयोग गर्नुहोस्।",
     "storageRetentionCleanup": "अवधारण सेटिङहरू",
@@ -8657,6 +8668,8 @@
     "contextEditingNote": "हाल Claude (Anthropic) का लागि मात्र उपलब्ध छ। यो प्रत्यायोजित मोड हो: प्रदायकले सर्भर-साइडमा पुराना उपकरण-प्रयोग ब्लकहरू हटाउँछ — हामी सन्देश पुनर्लेखन गर्दैनौँ। यसले अन्य प्रदायकहरूलाई असर गर्दैन।",
     "namedCombos": "नाम दिइएका कम्बोहरू",
     "namedCombosDescription": "फरक-फरक पाइपलाइनहरू बचत गर्नुहोस् र तिनलाई निश्चित राउटिङ कम्बोहरूमा तोक्नुहोस्।",
+    "activeProfileMasterSwitchOffWarning": "मास्टर \"Prompt Compression\" स्विच अन नगरिएसम्म तलको सक्रिय प्रोफाइल चल्ने छैन।",
+    "activeProfileMasterSwitchOffCta": "यसलाई Settings मा अन गर्नुहोस्",
     "comboNamePlaceholder": "कम्बोको नाम",
     "descriptionPlaceholder": "विवरण",
     "nameRequired": "बचत गर्नुअघि कम्बोको नाम प्रविष्ट गर्नुहोस्।",
@@ -8699,6 +8712,7 @@
     "run": "चलाउनुहोस्",
     "laneRejected": "अस्वीकृत: {reason}",
     "error": "त्रुटि",
+    "combinedError": "संयुक्त पाइपलाइन पूर्वावलोकन असफल भयो: {reason}",
     "combinedFlow": "संयुक्त प्रवाह",
     "eachLayer": "प्रत्येक तह छुट्टाछुट्टै",
     "diff": "भिन्नता",
@@ -10954,6 +10968,9 @@
     "strategyLatency": "लेटेन्सी-अनुकूलित",
     "poolMembersLabel": "पुल सदस्यहरू ({count})",
     "poolNoMembers": "यस पुलमा अहिलेसम्म कुनै प्रोक्सी छैन।",
+    "poolEgressObservation": "__MISSING__:{exits, plural, one {# exit} other {# exits}} used by {connections, plural, one {# connection} other {# connections}} · up to {max} on one exit · last {hours} h",
+    "poolEgressObservationEmpty": "__MISSING__:No traffic observed in the last {hours} h",
+    "poolEgressObservationHint": "__MISSING__:Counted from the proxy log over the window: distinct egress IPs observed for the members of this pool, and the OmniRoute connections that used them. \"On one exit\" means over the window, not at the same time. The per-IP 429 lockout only pauses connections of the same provider family.",
     "poolRemove": "हटाउनुहोस्",
     "poolRemoveFailed": "पुलबाट प्रोक्सी हटाउन असफल भयो",
     "poolAddLabel": "प्रोक्सी थप्नुहोस्",
@@ -12974,6 +12991,12 @@
       "STREAM_RECOVERY_MIDSTREAM_ENABLED": {
         "description": "बाइटहरू क्लाइन्टसम्म पुगिसकेपछि पनि स्ट्रिम पुनर्प्राप्तिलाई प्रतिक्रिया पुनः अनुरोध गरेर जोड्न अनुमति दिनुहोस्।"
       },
+      "STREAM_RECOVERY_TOOLCALL_ORDER_FIX": {
+        "description": "__MISSING__:Make mid-stream continuation tool-call safe: never resume a cut stream after a tool call was sent (still in progress or already finished), and stop after one empty continuation instead of using the whole retry budget."
+      },
+      "STREAM_EARLY_EOF_SIBLING_FAILOVER_ENABLED": {
+        "description": "स्ट्रिमले कुनै उपयोगी फ्रेम पठाउनुअघि नै बन्द भएमा र उही जडानमा सीमित पुनःप्रयास सकिएमा एक पटक सहोदर जडानमा फेलओभर गर्नुहोस्। प्रयोगयोग्य सहोदर जडान नभएमा मूल early-EOF त्रुटि फिर्ता गरिन्छ। बन्द: पुनःप्रयासपछि early-EOF अन्तिम रहन्छ।"
+      },
       "MODEL_CATALOG_INCLUDE_NAMES": {
         "description": "/v1/models प्रतिक्रियाहरूमा प्रदर्शनमैत्री नाम फिल्डहरू समावेश गर्नुहोस्। मोडेल ID मात्र स्वीकार गर्ने क्लाइन्टहरूका लागि यसलाई अक्षम गर्नुहोस्।"
       },
@@ -13010,6 +13033,14 @@
       "SERVER_OWNED_TOOL_LOOP_ENABLED": {
         "label": "सर्भर-स्वामित्वको उपकरण लूप",
         "description": "मोडेलले क्लाइन्टले प्रयोग गर्न मिल्ने प्रतिक्रिया नफर्काएसम्म नन-स्ट्रिमिङ सर्भर-स्वामित्वका उपकरण कलहरू जारी राख्नुहोस्।"
+      },
+      "RETRY_AFTER_PROVENANCE_ENABLED": {
+        "label": "__MISSING__:Retry-After Provenance",
+        "description": "__MISSING__:On aggregated 429/503 unavailable responses, omit Retry-After when no concrete future retry time is known instead of sending a synthetic 1s, add error.retry_after_provenance, and read prose retry hints on combo drain paths."
+      },
+      "PROTECTED_PRIORITY_INFRA_502_ENABLED": {
+        "label": "__MISSING__:Protected-Priority Infra Stops as 502",
+        "description": "__MISSING__:Answer 502 instead of 503 when a quota-only-fallback priority target stops the combo for a cause that is provably not quota: an open provider circuit breaker or a predictive latency skip."
       }
     }
   },
@@ -13623,6 +13654,7 @@
   },
   "featureFlagCapabilityFilterEnabledDescription": "लक्षित मोडेलमा आवश्यक क्षमताहरू (भिजन, उपकरणहरू, संरचित आउटपुट, कन्टेक्स्ट विन्डो) नभएमा डिस्प्याच गर्नुअघि अनुरोधहरू अस्वीकार गर्नुहोस्। यसले कम्बो-लेयरको अनुकूलता फिल्टरलाई बाइपास गर्ने प्रत्यक्ष एकल-प्रदायक अनुरोधहरूलाई सुरक्षित गर्छ।",
   "featureFlagDisableContextWindowChecksDescription": "प्रत्यक्ष एकल-मोडेल अनुरोधहरूका लागि OmniRoute को स्थानीय कन्टेक्स्ट-विन्डो र अधिकतम-इनपुट-टोकन जाँच छोड्नुहोस्। अपस्ट्रिम प्रदायकहरूले अझै पनि आफ्ना वास्तविक सीमाहरू लागू गर्छन्। प्रम्प्ट कम्प्रेसन र आउटपुट-टोकन सीमाहरू सक्रिय रहन्छन्।",
+  "featureFlagSearchStatsHideDeletedConnectionsDescription": "Search stats and recent searches only count providers that still have a live connection (keyless providers such as duckduckgo-free always count). Off keeps every retained search row with a provider id.",
   "publicSystem": {
     "notFound": {
       "title": "पृष्ठ फेला परेन",

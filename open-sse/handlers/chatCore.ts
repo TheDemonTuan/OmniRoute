@@ -229,6 +229,7 @@ import {
 } from "../config/constants.ts";
 import { applyStatusRestatement } from "../config/upstreamStatusRestatement.ts";
 import { createRecoverableStream, makeContinuationBody } from "../services/streamRecovery.ts";
+import { buildContinuationLogHooks } from "./chatCore/recoveryTraceLogging.ts";
 import {
   resolveResilienceSettings,
   isStreamRecoveryExplicitlyConfigured,
@@ -3404,11 +3405,7 @@ export async function handleChatCore({
                           }`
                         ),
                       continueStream,
-                      onContinue: (attempt) =>
-                        log?.warn?.(
-                          "STREAM_RECOVERY",
-                          `mid-stream continuation attempt ${attempt}/${STREAM_RECOVERY.EARLY_RETRY_MAX}`
-                        ),
+                      ...buildContinuationLogHooks(log),
                       throughputWatchdog,
                       onWatchdogAbort: () =>
                         log?.warn?.(

@@ -992,6 +992,10 @@
   "featureFlagExposeCcDiscoveryAliasesDescription": "/v1/models এ claude/&lt;provider&gt;/&lt;model&gt; মিরর আইডি বিজ্ঞাপন দিন যাতে Claude Code গেটওয়ে মডেল আবিষ্কার non-Claude মডেল তালিকাভুক্ত করে। সতর্কতা: এটি গ্লোবালি সক্ষম হলে সমস্ত ক্লায়েন্টের জন্য ক্যাটালগ এন্ট্রি দ্বিগুণ করে।",
   "featureFlagNoThinkingAliasEnabledDescription": "__MISSING__:Master switch for the no-think/&lt;provider&gt;/&lt;model&gt; gateway aliases. On (default): /v1/models advertises a no-thinking variant for every eligible thinking-capable Claude model, and a no-think/ id sent on a request resolves back to the real model with reasoning suppressed. Off: no variants are advertised and a no-think/ id is treated like any other unknown model id. The per-model ModelSpec.noThinkingAlias opt-in/opt-out still applies while this is on.",
   "featureFlagChatVirtualLanesEnabledDescription": "প্রোভাইডার ডিসপ্যাচের জন্য প্রতি-টেন্যান্ট অ্যাডাপ্টিভ ভার্চুয়াল অ্যাডমিশন লেন সক্ষম করুন (#9654): এক টেন্যান্টের বিস্ফোরণ আর অন্য টেন্যান্টে 503 ফেরায় না। OMNIROUTE_CHAT_VIRTUAL_LANES এনভায়রনমেন্ট ভেরিয়েবল এই ড্যাশবোর্ড সেটিংয়ের উপরে প্রাধান্য পায়; পরিবর্তনগুলি সার্ভার পুনরায় চালু হলে কার্যকর হয়।",
+  "featureFlagFreeBadgeRequiresProviderFreeTierDescription": "Dashboard provider pages: show the Free badge only on signals the provider honors — drops the display-name heuristic, non-boolean free fields and :free suffixes on registered providers without a documented free tier. Off keeps the historical badge rule.",
+  "featureFlagProxySkipRecentlyFailedDescription": "__MISSING__:Proxy pools and the per-account rotation of opencode stop re-serving a proxy that just failed (refused TCP probe, or a 429 received through it) for a per-process period that doubles on each repeat, up to a cap. No proxy status is written; with every candidate set aside the choice is unchanged. Off by default: selection order is exactly the plain rotation.",
+  "featureFlagProxyPoolEgressObservationDescription": "__MISSING__:Show, under a proxy pool in the dashboard, how many observed egress IPs served its members over the last 24 h, how many connections used them and the most seen behind one IP. Read-only, computed from the proxy log, never used for routing. Off by default: the pool editor is unchanged and the observation route answers null.",
+  "featureFlagProxyHealthBlockedResetsStreakDescription": "__MISSING__:In the proxy health sweep, let a probe the target refused (401/403/429: the proxy relayed, the destination refused this egress IP) reset the consecutive-failure streak of the proxy, like a served probe. Off by default: a refusal stays neutral and keeps the streak. A 5xx stays inconclusive either way, and a refusal never removes, disables or re-activates a proxy.",
   "sidebar": {
     "home": "Home",
     "dashboard": "Dashboard",
@@ -10957,6 +10961,9 @@
     "strategyLatency": "লেটেন্সি-অপ্টিমাইজড",
     "poolMembersLabel": "পুলের সদস্য ({count})",
     "poolNoMembers": "এই পুলে এখনও কোনো প্রক্সি নেই।",
+    "poolEgressObservation": "__MISSING__:{exits, plural, one {# exit} other {# exits}} used by {connections, plural, one {# connection} other {# connections}} · up to {max} on one exit · last {hours} h",
+    "poolEgressObservationEmpty": "__MISSING__:No traffic observed in the last {hours} h",
+    "poolEgressObservationHint": "__MISSING__:Counted from the proxy log over the window: distinct egress IPs observed for the members of this pool, and the OmniRoute connections that used them. \"On one exit\" means over the window, not at the same time. The per-IP 429 lockout only pauses connections of the same provider family.",
     "poolRemove": "সরান",
     "poolRemoveFailed": "পুল থেকে প্রক্সি সরাতে ব্যর্থ হয়েছে",
     "poolAddLabel": "একটি প্রক্সি যোগ করুন",
@@ -12977,6 +12984,12 @@
       "STREAM_RECOVERY_MIDSTREAM_ENABLED": {
         "description": "ক্লায়েন্টের কাছে ইতিমধ্যে বাইট পৌঁছানোর পরে স্ট্রিম রিকভারিকে প্রতিক্রিয়ার জন্য আবার অনুরোধ করার এবং এটি যুক্ত করার অনুমতি দিন।"
       },
+      "STREAM_RECOVERY_TOOLCALL_ORDER_FIX": {
+        "description": "__MISSING__:Make mid-stream continuation tool-call safe: never resume a cut stream after a tool call was sent (still in progress or already finished), and stop after one empty continuation instead of using the whole retry budget."
+      },
+      "STREAM_EARLY_EOF_SIBLING_FAILOVER_ENABLED": {
+        "description": "স্ট্রিম কোনো উপযোগী ফ্রেম পাঠানোর আগেই বন্ধ হলে এবং একই সংযোগে সীমিত পুনঃচেষ্টা শেষ হয়ে গেলে একবার একটি সহোদর সংযোগে ফেইলওভার করুন। ব্যবহারযোগ্য সহোদর সংযোগ না থাকলে মূল early-EOF ত্রুটি ফেরত দেওয়া হয়। বন্ধ থাকলে: পুনঃচেষ্টার পরে early-EOF চূড়ান্ত থাকে।"
+      },
       "MODEL_CATALOG_INCLUDE_NAMES": {
         "description": "/v1/models প্রতিক্রিয়াগুলিতে প্রদর্শন-বান্ধব নামের ক্ষেত্রগুলি অন্তর্ভুক্ত করুন। শুধুমাত্র মডেল ID গ্রহণ করে এমন ক্লায়েন্টদের জন্য এটি নিষ্ক্রিয় করুন।"
       },
@@ -13009,6 +13022,14 @@
       },
       "SKILLS_SANDBOX_NETWORK_ENABLED": {
         "description": "স্কিল স্যান্ডবক্সে নেটওয়ার্ক অ্যাক্সেস সক্ষম করুন।"
+      },
+      "RETRY_AFTER_PROVENANCE_ENABLED": {
+        "label": "__MISSING__:Retry-After Provenance",
+        "description": "__MISSING__:On aggregated 429/503 unavailable responses, omit Retry-After when no concrete future retry time is known instead of sending a synthetic 1s, add error.retry_after_provenance, and read prose retry hints on combo drain paths."
+      },
+      "PROTECTED_PRIORITY_INFRA_502_ENABLED": {
+        "label": "__MISSING__:Protected-Priority Infra Stops as 502",
+        "description": "__MISSING__:Answer 502 instead of 503 when a quota-only-fallback priority target stops the combo for a cause that is provably not quota: an open provider circuit breaker or a predictive latency skip."
       }
     }
   },
@@ -13622,6 +13643,7 @@
   },
   "featureFlagCapabilityFilterEnabledDescription": "লক্ষ্য মডেলের প্রয়োজনীয় সক্ষমতা (দৃষ্টি, সরঞ্জাম, কাঠামোবদ্ধ আউটপুট, প্রসঙ্গ উইন্ডো) অনুপস্থিত থাকলে প্রেরণের আগে অনুরোধগুলি প্রত্যাখ্যান করুন। এটি কম্বো-লেয়ার সামঞ্জস্য ফিল্টারকে বাইপাস করা সরাসরি একক-প্রদানকারী অনুরোধগুলি রক্ষা করে।",
   "featureFlagDisableContextWindowChecksDescription": "Skip OmniRoute's local context-window and max-input-token check for direct single-model requests. Upstream providers still enforce their actual limits. Prompt compression and output-token caps remain active.",
+  "featureFlagSearchStatsHideDeletedConnectionsDescription": "Search stats and recent searches only count providers that still have a live connection (keyless providers such as duckduckgo-free always count). Off keeps every retained search row with a provider id.",
   "publicSystem": {
     "notFound": {
       "title": "পৃষ্ঠা পাওয়া যায়নি",

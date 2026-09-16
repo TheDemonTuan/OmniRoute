@@ -201,6 +201,7 @@
     "check:agent-skills-sync": "node --import tsx/esm scripts/skills/generate-agent-skills.mjs",
     "check:build-scope": "node scripts/check/check-build-scope.mjs",
     "check:error-helper": "node scripts/check/check-error-helper.mjs",
+    "check:routing-error-guard": "node scripts/check/check-routing-error-guard.mjs",
     "check:migration-numbering": "node scripts/check/check-migration-numbering.mjs",
     "check:public-creds": "node scripts/check/check-public-creds.mjs",
     "check:db-rules": "node scripts/check/check-db-rules.mjs",
@@ -503,7 +504,7 @@
     "concurrently": {
       "shell-quote": "^1.9.0"
     },
-    "adm-zip": "^0.6.0",
+    "adm-zip": "^0.6.1",
     "promptfoo": {
       "js-yaml": "^5.2.2",
       "undici": "^7.29.0"

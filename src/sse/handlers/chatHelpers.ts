@@ -46,8 +46,10 @@ import {
 } from "../../shared/utils/circuitBreaker";
 import { classify429FromError, type FailureKind } from "../../shared/utils/classify429";
 import { resolveUseUpstream429BreakerHints } from "../../shared/utils/providerHints";
+import { isFeatureFlagEnabled } from "../../shared/utils/featureFlags";
 
 import { logProxyEvent } from "../../lib/proxyLogger";
+import { noteProxyOutcome } from "./proxyOutcomeMemory";
 import { logTranslationEvent } from "../../lib/translatorEvents";
 import { getRuntimeProviderProfile } from "@omniroute/open-sse/services/accountFallback.ts";
 
@@ -925,6 +927,20 @@ export function shouldRetryStreamEarlyEof(
   return errorCode === "STREAM_EARLY_EOF" && attempt < STREAM_EARLY_EOF_MAX_RETRIES;
 }
 
+// The sibling hop widens the terminal/failover boundary, so it ships off
+// behind STREAM_EARLY_EOF_SIBLING_FAILOVER_ENABLED until observed live.
+export function isEarlyEofSiblingFailoverOn(): boolean {
+  try {
+    return isFeatureFlagEnabled("STREAM_EARLY_EOF_SIBLING_FAILOVER_ENABLED");
+  } catch (error) {
+    console.error(
+      "[featureFlags] Failed to resolve STREAM_EARLY_EOF_SIBLING_FAILOVER_ENABLED, defaulting to disabled:",
+      error instanceof Error ? error.message : error
+    );
+    return false;
+  }
+}
+
 export function decideProxyResolutionFailure(
   err: unknown,
   env: { PROXY_FAIL_OPEN?: string } = process.env
@@ -991,6 +1007,27 @@ export function applyExecutorProxyToInfo(
   };
 }
 
+/**
+ * Carry the HTTP status the provider actually returned (captured on the applied-proxy
+ * sink around the patched fetch) into proxyInfo. Nothing received -> info unchanged.
+ * Pure + unit-testable.
+ */
+export function withUpstreamStatus<T extends object>(
+  info: T | null | undefined,
+  sink: { upstreamStatus?: number }
+) {
+  if (typeof sink.upstreamStatus !== "number") return info;
+  return { ...(info || {}), upstreamStatus: sink.upstreamStatus };
+}
+
+/** Merge both things the applied-proxy sink captured: the executor proxy, then the status. */
+export function mergeAppliedProxySink(
+  proxyInfo: { proxy?: unknown; level?: string; levelId?: string | null } | null | undefined,
+  sink: { proxy: unknown; upstreamStatus?: number }
+) {
+  return withUpstreamStatus(applyExecutorProxyToInfo(proxyInfo, sink.proxy), sink);
+}
+
 // Async because the egress-IP lookup lazy-imports proxyEgress; callers treat
 // this as fire-and-forget logging (the internal try/catch swallows everything).
 export async function safeLogEvents({
@@ -1006,6 +1043,17 @@ export async function safeLogEvents({
   clientRawRequest,
   tlsFingerprintUsed = false,
 }) {
+  // Feed the provider's real answer back to proxy selection (never result.status: some 429s
+  // are generated locally; proxyInfo carries the status captured around fetch). Must stay
+  // BEFORE the first await: callers fire-and-forget this function, and only the code ahead
+  // of that await runs synchronously at the call site, so a request picking from the same
+  // pool right after already sees a refused member set aside (#13602).
+  try {
+    noteProxyOutcome(provider, proxyInfo);
+  } catch {
+    // proxy selection feedback is best-effort; never break the request path
+  }
+
   try {
     const rawIp =
       clientRawRequest?.headers?.["x-forwarded-for"] ||
@@ -1048,6 +1096,7 @@ export async function safeLogEvents({
       comboId: comboName || null,
       account: credentials.connectionId?.slice(0, 8) || null,
       tlsFingerprint: tlsFingerprintUsed,
+      upstreamStatus: proxyInfo?.upstreamStatus ?? null,
     });
   } catch {}
 

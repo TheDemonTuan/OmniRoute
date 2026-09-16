@@ -476,3 +476,42 @@ test("runSingleModelTest preserves trusted local limiter HTTP statuses", async (
     await rateLimitManager.__resetRateLimitManagerForTests();
   }
 });
+
+// ---------------------------------------------------------------------------
+// #13376 skip path — a non-chat generation model (image/music/video) must be
+// rejected with a real HTTP status and never dispatched as a chat completion.
+//
+// The route hands `result.httpStatus` straight to NextResponse
+// (src/app/api/models/test/route.ts). When the early return omitted it, the
+// status was `undefined`, Next fell back to 200, and a skipped test reached the
+// client as an HTTP success carrying `status: "error"` in the body.
+// ---------------------------------------------------------------------------
+
+test("#13376 a generation-only model is skipped with a 4xx and is never dispatched", async () => {
+  const { addCustomModel } = await import("@/lib/db/models");
+  await addCustomModel("openai", "image-only-13376", "Image only", "manual", "images-generations", [
+    "images",
+  ]);
+
+  const originalFetch = globalThis.fetch;
+  let dispatched = false;
+  globalThis.fetch = async () => {
+    dispatched = true;
+    throw new Error("a generation-only model must not be dispatched as a chat completion");
+  };
+
+  try {
+    const result = await runSingleModelTest({
+      providerId: "openai",
+      modelId: "image-only-13376",
+      timeoutMs: 1_000,
+    });
+
+    assert.equal(dispatched, false, "no billable generation may be triggered");
+    assert.equal(result.status, "error");
+    assert.equal(typeof result.httpStatus, "number", "the route needs a real status code");
+    assert.equal(result.httpStatus, 422);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

@@ -51,8 +51,8 @@ export async function DELETE(request: Request) {
   if (policy.rejection) return policy.rejection;
 
   // A presented API key always scopes the sweep to that key — even when the
-  // request also carries a dashboard session cookie — exactly like the
-  // list/count siblings (`apiKeyId || undefined`), so a leaked or over-shared
+  // request also carries a dashboard session cookie — the same rule the list
+  // siblings apply through `resolveListScope()`, so a leaked or over-shared
   // key can never widen a destructive sweep. Only a dashboard session WITHOUT a
   // key sweeps the whole instance; otherwise an ordinary key would delete every
   // tenant's completed batches and null out their file contents

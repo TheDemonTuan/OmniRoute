@@ -992,6 +992,10 @@
   "featureFlagExposeCcDiscoveryAliasesDescription": "Claude Code ද්වාරයේ මාදිලි සොයාගැනීමේදී Claude නොවන මාදිලි ලැයිස්තුගත කිරීම සඳහා /v1/models හි claude/&lt;provider&gt;/&lt;model&gt; කැඩපත් හැඳුනුම් ප්රචාරය කරන්න. අවවාදයයි: ගෝලීයව සබල කළ විට සියලු සේවාලාභීන් සඳහා නාමාවලි ඇතුළත් කිරීම් දෙගුණ වේ.",
   "featureFlagNoThinkingAliasEnabledDescription": "no-think/&lt;provider&gt;/&lt;model&gt; ද්වාර අන්වර්ථ සඳහා ප්රධාන ස්විචය. සක්රියයි (පෙරනිමිය): /v1/models මඟින් සුදුසුකම් ඇති, සිතා බැලීමේ හැකියාව සහිත සෑම Claude මාදිලියකටම සිතා බැලීමෙන් තොර ප්රභේදයක් ප්රචාරය කරන අතර, ඉල්ලීමක් සමඟ යවන no-think/ හැඳුනුමක් තර්කනය යටපත් කර සැබෑ මාදිලිය වෙත නැවත විසඳයි. අක්රියයි: කිසිදු ප්රභේදයක් ප්රචාරය නොකරන අතර no-think/ හැඳුනුමක් වෙනත් ඕනෑම නොදන්නා මාදිලි හැඳුනුමක් මෙන් සලකයි. මෙය සක්රියව තිබියදීත් එක් එක් මාදිලියට අදාළ ModelSpec.noThinkingAlias තෝරා සක්රිය කිරීම/අක්රිය කිරීම තවදුරටත් අදාළ වේ.",
   "featureFlagChatVirtualLanesEnabledDescription": "සපයන්නා වෙත යැවීම සඳහා එක් එක් ටෙනන්ට්ට අනුව අනුවර්තනය වන අතථ්ය ප්රවේශ මංතීරු සබල කරන්න (#9654): එක් ටෙනන්ට් කෙනෙකුගේ හදිසි ඉල්ලීම් වැඩිවීමක් තවදුරටත් වෙනත් අයෙකුට 503 දෝෂයක් ඇති නොකරයි. OMNIROUTE_CHAT_VIRTUAL_LANES පරිසර විචල්යය මෙම උපකරණ පුවරු අතික්රමණයට වඩා ප්රමුඛ වේ; වෙනස්කම් සේවාදායකය නැවත ආරම්භ කළ විට ක්රියාත්මක වේ.",
+  "featureFlagFreeBadgeRequiresProviderFreeTierDescription": "Dashboard provider pages: show the Free badge only on signals the provider honors — drops the display-name heuristic, non-boolean free fields and :free suffixes on registered providers without a documented free tier. Off keeps the historical badge rule.",
+  "featureFlagProxySkipRecentlyFailedDescription": "__MISSING__:Proxy pools and the per-account rotation of opencode stop re-serving a proxy that just failed (refused TCP probe, or a 429 received through it) for a per-process period that doubles on each repeat, up to a cap. No proxy status is written; with every candidate set aside the choice is unchanged. Off by default: selection order is exactly the plain rotation.",
+  "featureFlagProxyPoolEgressObservationDescription": "__MISSING__:Show, under a proxy pool in the dashboard, how many observed egress IPs served its members over the last 24 h, how many connections used them and the most seen behind one IP. Read-only, computed from the proxy log, never used for routing. Off by default: the pool editor is unchanged and the observation route answers null.",
+  "featureFlagProxyHealthBlockedResetsStreakDescription": "__MISSING__:In the proxy health sweep, let a probe the target refused (401/403/429: the proxy relayed, the destination refused this egress IP) reset the consecutive-failure streak of the proxy, like a served probe. Off by default: a refusal stays neutral and keeps the streak. A 5xx stays inconclusive either way, and a refusal never removes, disables or re-activates a proxy.",
   "sidebar": {
     "home": "මුල් පිටුව",
     "dashboard": "උපකරණ පුවරුව",
@@ -1807,6 +1811,9 @@
     "healthMonitor": "සෞඛ්ය නිරීක්ෂකය",
     "reportIssue": "ගැටලුවක් වාර්තා කරන්න",
     "activeError": "සක්රිය {active} · දෝෂ {errors}",
+    "topologyLegendActive": "සක්රිය",
+    "topologyLegendRecent": "මෑතකාලීන",
+    "topologyLegendError": "දෝෂය",
     "oauthLabel": "OAuth",
     "apiKeyLabel": "API යතුර",
     "requestsShort": "ඉල්ලීම් {count}",
@@ -7741,6 +7748,10 @@
     "legacyJsonImportSuccess": "පැරණි JSON සාර්ථකව ආයාත කරන ලදී!",
     "jsonImportFailed": "JSON ආයාත කිරීමට අසමත් විය",
     "jsonImportError": "JSON ආයාත කිරීමේදී දෝෂයක් ඇති විය",
+    "jsonImportAuthRequired": "පැරණි JSON වින්යාසයක් ආයාත කිරීමට සත්යාපනය අවශ්යයි. කරුණාකර පුරනය වන්න හෝ පළමුව පිහිටුවීම සම්පූර්ණ කරන්න.",
+    "databaseSettingsAuthRequiredTitle": "සත්යාපනය අවශ්යයි",
+    "databaseSettingsAuthRequiredBody": "දත්ත සමුදා සැකසුම් සහ JSON ආයාතය ලබා ගත හැක්කේ සත්යාපිත පරිපාලකයෙකුට පමණි. ඒවා බැලීමට සහ සංස්කරණය කිරීමට පුරනය වන්න හෝ පිහිටුවීම සම්පූර්ණ කරන්න.",
+    "databaseSettingsAuthRequiredCta": "පුරනය වන්න",
     "storagePurgeData": "දත්ත ඉවත් කරන්න",
     "storagePurgeDataDesc": "රඳවා තබාගැනීමේ පරීක්ෂාවන් යෙදීමෙන් තොරව සියලු වාර්තා වහාම මකන්න. ප්රවේශමෙන් භාවිත කරන්න.",
     "storageRetentionCleanup": "රඳවා තබාගැනීමේ සැකසුම්",
@@ -8657,6 +8668,8 @@
     "contextEditingNote": "දැනට ලබා ගත හැක්කේ Claude (Anthropic) සඳහා පමණි. මෙය පැවරූ ප්රකාරයකි: සපයන්නා පැරණි මෙවලම්-භාවිත කොටස් සේවාදායක පැත්තෙන් ඉවත් කරයි — අපි පණිවිඩය නැවත නොලියමු. මෙය අනෙකුත් සපයන්නන්ට බලපාන්නේ නැත.",
     "namedCombos": "නම් කළ සංයෝජන",
     "namedCombosDescription": "විවිධ නළමාර්ග සුරකිමින් ඒවා නිශ්චිත මාර්ගගත කිරීමේ සංයෝජනවලට පවරන්න.",
+    "activeProfileMasterSwitchOffWarning": "ප්රධාන \"ප්රොම්ප්ට් සම්පීඩනය\" ස්විචය සක්රිය කරන තෙක් පහත සක්රිය පැතිකඩ ක්රියාත්මක නොවේ.",
+    "activeProfileMasterSwitchOffCta": "එය සැකසුම් තුළ සක්රිය කරන්න",
     "comboNamePlaceholder": "සංයෝජනයේ නම",
     "descriptionPlaceholder": "විස්තරය",
     "nameRequired": "සුරැකීමට පෙර සංයෝජනයේ නමක් ඇතුළත් කරන්න.",
@@ -8699,6 +8712,7 @@
     "run": "ක්රියාත්මක කරන්න",
     "laneRejected": "ප්රතික්ෂේප විය: {reason}",
     "error": "දෝෂය",
+    "combinedError": "ඒකාබද්ධ නලමාර්ග පෙරදසුන අසාර්ථක විය: {reason}",
     "combinedFlow": "ඒකාබද්ධ ප්රවාහය",
     "eachLayer": "එක් එක් ස්තරය වෙන වෙනම",
     "diff": "වෙනස",
@@ -10954,6 +10968,9 @@
     "strategyLatency": "ප්රමාදයට ප්රශස්ත කළ",
     "poolMembersLabel": "සංචිත සාමාජිකයන් ({count})",
     "poolNoMembers": "මෙම සංචිතයේ තවමත් ප්රොක්සි නොමැත.",
+    "poolEgressObservation": "__MISSING__:{exits, plural, one {# exit} other {# exits}} used by {connections, plural, one {# connection} other {# connections}} · up to {max} on one exit · last {hours} h",
+    "poolEgressObservationEmpty": "__MISSING__:No traffic observed in the last {hours} h",
+    "poolEgressObservationHint": "__MISSING__:Counted from the proxy log over the window: distinct egress IPs observed for the members of this pool, and the OmniRoute connections that used them. \"On one exit\" means over the window, not at the same time. The per-IP 429 lockout only pauses connections of the same provider family.",
     "poolRemove": "ඉවත් කරන්න",
     "poolRemoveFailed": "සංචිතයෙන් ප්රොක්සිය ඉවත් කිරීමට අසමත් විය",
     "poolAddLabel": "ප්රොක්සියක් එක් කරන්න",
@@ -12974,6 +12991,12 @@
       "STREAM_RECOVERY_MIDSTREAM_ENABLED": {
         "description": "බයිට් දැනටමත් සේවාලාභියා වෙත ළඟා වූ පසුවත් ප්රතිචාරය නැවත ඉල්ලා එය සම්බන්ධ කිරීමට ප්රවාහ ප්රතිසාධනයට ඉඩ දෙන්න."
       },
+      "STREAM_RECOVERY_TOOLCALL_ORDER_FIX": {
+        "description": "__MISSING__:Make mid-stream continuation tool-call safe: never resume a cut stream after a tool call was sent (still in progress or already finished), and stop after one empty continuation instead of using the whole retry budget."
+      },
+      "STREAM_EARLY_EOF_SIBLING_FAILOVER_ENABLED": {
+        "description": "ප්‍රවාහය කිසිදු ප්‍රයෝජනවත් රාමුවක් යැවීමට පෙර වැසී, එකම සම්බන්ධතාවයේ සීමිත නැවත උත්සාහය ද අවසන් වූ විට වරක් සහෝදර සම්බන්ධතාවයකට මාරු වන්න. භාවිත කළ හැකි සහෝදර සම්බන්ධතාවයක් නොමැති නම් මුල් early-EOF දෝෂය ආපසු ලබා දේ. අක්‍රිය: නැවත උත්සාහයෙන් පසු early-EOF අවසාන ලෙස පවතී."
+      },
       "MODEL_CATALOG_INCLUDE_NAMES": {
         "description": "/v1/models ප්රතිචාරවල ප්රදර්ශනයට හිතකර නාම ක්ෂේත්ර ඇතුළත් කරන්න. ආකෘති ID පමණක් පිළිගන්නා සේවාලාභීන් සඳහා මෙය අක්රිය කරන්න."
       },
@@ -13010,6 +13033,14 @@
       "SERVER_OWNED_TOOL_LOOP_ENABLED": {
         "label": "සේවාදායකය සතු මෙවලම් ලූපය",
         "description": "ආකෘතිය සේවාලාභියාට භාවිත කළ හැකි ප්රතිචාරයක් ලබා දෙන තෙක් ප්රවාහ නොවන, සේවාදායකය සතු මෙවලම් ඇමතුම් දිගටම කරගෙන යන්න."
+      },
+      "RETRY_AFTER_PROVENANCE_ENABLED": {
+        "label": "__MISSING__:Retry-After Provenance",
+        "description": "__MISSING__:On aggregated 429/503 unavailable responses, omit Retry-After when no concrete future retry time is known instead of sending a synthetic 1s, add error.retry_after_provenance, and read prose retry hints on combo drain paths."
+      },
+      "PROTECTED_PRIORITY_INFRA_502_ENABLED": {
+        "label": "__MISSING__:Protected-Priority Infra Stops as 502",
+        "description": "__MISSING__:Answer 502 instead of 503 when a quota-only-fallback priority target stops the combo for a cause that is provably not quota: an open provider circuit breaker or a predictive latency skip."
       }
     }
   },
@@ -13623,6 +13654,7 @@
   },
   "featureFlagCapabilityFilterEnabledDescription": "ඉලක්ක මාදිලියට අවශ්ය හැකියාවන් (දෘශ්ය, මෙවලම්, ව්යුහගත ප්රතිදානය, සන්දර්භ කවුළුව) නොමැති විට යැවීමට පෙර ඉල්ලීම් ප්රතික්ෂේප කරන්න. මෙය සංයෝජන-ස්තර අනුකූලතා පෙරහන මඟහරින සෘජු තනි-සැපයුම්කරු ඉල්ලීම් ආරක්ෂා කරයි.",
   "featureFlagDisableContextWindowChecksDescription": "සෘජු තනි-මාදිලි ඉල්ලීම් සඳහා OmniRoute හි දේශීය සන්දර්භ-කවුළු සහ උපරිම-ආදාන-ටෝකන පරීක්ෂාව මඟහරින්න. උඩුගං සැපයුම්කරුවන් තවමත් ඔවුන්ගේ සැබෑ සීමාවන් බලාත්මක කරයි. ප්රේරක සම්පීඩනය සහ ප්රතිදාන-ටෝකන සීමා සක්රියව පවතී.",
+  "featureFlagSearchStatsHideDeletedConnectionsDescription": "Search stats and recent searches only count providers that still have a live connection (keyless providers such as duckduckgo-free always count). Off keeps every retained search row with a provider id.",
   "publicSystem": {
     "notFound": {
       "title": "පිටුව හමු නොවීය",
