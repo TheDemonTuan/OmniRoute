@@ -93,12 +93,14 @@ function parseArgs(argv) {
     locales: null,
     dryRun: false,
     translateMarkers: false,
+    retranslateIdentical: false,
     concurrency: null,
     batchSize: 1,
   };
   for (const arg of argv.slice(2)) {
     if (arg === "--dry-run" || arg === "--dryrun") opts.dryRun = true;
     else if (arg === "--translate-markers") opts.translateMarkers = true;
+    else if (arg === "--retranslate-identical") opts.retranslateIdentical = true;
     else if (arg.startsWith("--locale=")) {
       opts.locales = arg
         .slice(9)
@@ -123,6 +125,9 @@ function parseArgs(argv) {
           "Usage: node scripts/i18n/sync-ui-keys.mjs [options]",
           "",
           "  --locale=<csv>          Target locales (default: all except `en`)",
+          "  --retranslate-identical Flag leaves still identical to English (outside",
+          "                          untranslatable-keys.json) as __MISSING__ so they get",
+          "                          retranslated — only meaningful with --translate-markers",
           "  --dry-run               Report what would change, write nothing",
           "  --translate-markers     Call the translation backend to translate every",
           "                          __MISSING__:<en> placeholder",
@@ -154,6 +159,34 @@ async function loadJson(filePath) {
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+/**
+ * PR-4 of the locale expansion: a leaf whose value is byte-identical to the English source is
+ * an untranslated copy unless `untranslatable-keys.json` says otherwise. Swap each one for a
+ * `__MISSING__:<en>` placeholder so `translatePlaceholders` picks it up, and return how many
+ * were flagged. Existing placeholders, real translations, empty strings and shape mismatches
+ * are left untouched. Mutates `merged` in place.
+ */
+export function markIdenticalAsMissing(merged, source, untranslatable, prefix = "") {
+  let count = 0;
+  for (const [key, sourceValue] of Object.entries(source)) {
+    if (FORBIDDEN_KEYS.has(key)) continue;
+    const fullKey = prefix ? `${prefix}.${key}` : key;
+    const targetValue = merged[key];
+    if (isPlainObject(sourceValue) && isPlainObject(targetValue)) {
+      count += markIdenticalAsMissing(targetValue, sourceValue, untranslatable, fullKey);
+    } else if (
+      typeof sourceValue === "string" &&
+      sourceValue !== "" &&
+      targetValue === sourceValue &&
+      !untranslatable.has(fullKey)
+    ) {
+      merged[key] = `${PLACEHOLDER_PREFIX}${sourceValue}`;
+      count += 1;
+    }
+  }
+  return count;
 }
 
 // Defensive: reject any key that could traverse into the object prototype
@@ -357,6 +390,13 @@ async function processLocale(locale, source, config, opts, backend) {
   }
 
   const { merged, addedPaths } = mergeMissing(source, target);
+  if (opts.retranslateIdentical && locale !== SOURCE_LOCALE) {
+    const allow = new Set(
+      (await loadJson(path.join(SCRIPT_DIR, "untranslatable-keys.json"))).keys ?? []
+    );
+    const flagged = markIdenticalAsMissing(merged, source, allow);
+    logInfo(`${locale}: ${flagged} English leaves flagged for retranslation`);
+  }
   const placeholderCountBefore = countPlaceholders(merged);
 
   let translateStats = { translated: 0, failed: 0 };
