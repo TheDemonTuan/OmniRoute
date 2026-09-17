@@ -678,6 +678,9 @@ export function createResponsesApiTransformStream(
                 object: "response",
                 created_at: state.created,
                 status: "in_progress",
+                background: false,
+                error: null,
+                output: [],
               },
             });
           }
