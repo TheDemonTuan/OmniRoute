@@ -225,6 +225,9 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
       object: "response",
       created_at: state.created,
       status: "in_progress",
+      background: false,
+      error: null,
+      output: [],
     };
     if (state.model) inProgressResponse.model = state.model;
     emit("response.in_progress", {
