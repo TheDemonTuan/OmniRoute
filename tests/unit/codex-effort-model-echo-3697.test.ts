@@ -98,6 +98,19 @@ test("OpenAI -> Responses translator emits response.in_progress with output: [],
   assert.deepEqual(resp.output, []);
   assert.equal(resp.background, false);
   assert.equal(resp.error, null);
+
+  const addedItem = events.find((e) => e.event === "response.output_item.added")?.data
+    .item as Record<string, unknown>;
+  assert.ok(addedItem, "output_item.added must exist");
+  assert.equal(addedItem.status, "in_progress");
+
+  const completed = events.find((e) => e.event === "response.completed")?.data.response as Record<
+    string,
+    unknown
+  >;
+  assert.ok(completed, "response.completed must exist");
+  const completedOutput = completed.output as Array<Record<string, unknown>>;
+  assert.equal(completedOutput[0].status, "completed");
 });
 
 test("full shim pipeline: bare upstream model in Responses payloads gets rewritten to the requested effort-suffixed id", () => {

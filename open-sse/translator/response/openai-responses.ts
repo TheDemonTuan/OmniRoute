@@ -355,7 +355,7 @@ function startReasoning(state, emit, idx) {
     emit("response.output_item.added", {
       type: "response.output_item.added",
       output_index: idx,
-      item: { id: state.reasoningId, type: "reasoning", summary: [] },
+      item: { id: state.reasoningId, type: "reasoning", summary: [], status: "in_progress" },
     });
 
     emit("response.reasoning_summary_part.added", {
@@ -405,6 +405,7 @@ function closeReasoning(state, emit) {
       id: state.reasoningId,
       type: "reasoning",
       summary: [{ type: "summary_text", text: state.reasoningBuf }],
+      status: "completed",
     };
 
     emit("response.output_item.done", {
@@ -425,7 +426,7 @@ function emitTextContent(state, emit, idx, content) {
     emit("response.output_item.added", {
       type: "response.output_item.added",
       output_index: idx,
-      item: { id: msgId, type: "message", content: [], role: "assistant" },
+      item: { id: msgId, type: "message", content: [], role: "assistant", status: "in_progress" },
     });
   }
 
@@ -483,6 +484,7 @@ function closeMessage(state, emit, idx) {
       type: "message",
       content: [{ type: "output_text", annotations: [], logprobs: [], text: fullText }],
       role: "assistant",
+      status: "completed",
     };
 
     emit("response.output_item.done", {
