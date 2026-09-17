@@ -996,6 +996,9 @@
   "featureFlagProxySkipRecentlyFailedDescription": "Skupine posredniških strežnikov in vrtenje opencode za posamezen račun za določeno obdobje znotraj procesa prenehajo znova uporabljati posredniški strežnik, ki je pravkar odpovedal (zavrnjeno preverjanje TCP ali prek njega prejeta napaka 429). To obdobje se ob vsaki ponovitvi podvoji do določene zgornje meje. Stanje posredniškega strežnika se ne zapiše; če so vsi kandidati izločeni, izbira ostane nespremenjena. Privzeto izklopljeno: vrstni red izbire je popolnoma enak običajnemu vrtenju.",
   "featureFlagProxyPoolEgressObservationDescription": "Na nadzorni plošči pod skupino posredniških strežnikov prikaži, koliko opaženih izhodnih naslovov IP je v zadnjih 24 h uporabljalo njene člane, koliko povezav jih je uporabilo in največje število povezav prek enega naslova IP. Podatki so samo za branje, izračunani iz dnevnika posredniškega strežnika in se nikoli ne uporabljajo za usmerjanje. Privzeto izklopljeno: urejevalnik skupine ostane nespremenjen, opazovalna pot pa vrne null.",
   "featureFlagProxyHealthBlockedResetsStreakDescription": "Pri preverjanju zdravja posredniških strežnikov naj sonda, ki jo je cilj zavrnil (401/403/429: posredniški strežnik jo je posredoval, cilj pa je zavrnil ta izhodni naslov IP), ponastavi niz zaporednih neuspehov posredniškega strežnika, tako kot uspešno izvedena sonda. Privzeto izklopljeno: zavrnitev ostane nevtralna in ohrani niz. Odziv 5xx v obeh primerih ostane nedoločen, zavrnitev pa posredniškega strežnika nikoli ne odstrani, onemogoči ali znova aktivira.",
+  "featureFlagBatchAndFileAutoCleanupEnabledDescription": "__MISSING__:Let the automatic cleanup sweep delete terminal (completed/failed/cancelled/expired) Batch API jobs older than OMNIROUTE_BATCH_RETENTION_DAYS, along with their per-line checkpoints, and clear the BLOB content of uploaded files past their own expires_at. Off by default: every existing install keeps this data exactly as before until an operator opts in. The operator-triggered DELETE /api/v1/batches/delete-completed route is unaffected either way -- it is a separate, unconditional public API contract.",
+  "featureFlagXaiOauthLiveModelDiscoveryDescription": "__MISSING__:Fetch the live xAI model catalog for xai-oauth connections from https://api.x.ai/v1/models using the OAuth bearer token, instead of the frozen static seed. Off by default: xai-oauth keeps serving the static seed unchanged. On any resolution error, discovery falls back to the seed.",
+  "featureFlagDbHealthcheckStartupDeferredEnabledDescription": "__MISSING__:Run the startup database integrity/health check after the server starts accepting requests instead of blocking startup until it completes. Off by default: startup blocks on the check exactly like before this change, so a corrupt database is still caught before the first request is served.",
   "sidebar": {
     "home": "Domov",
     "dashboard": "Nadzorna plošča",
@@ -6125,6 +6128,7 @@
       "agentrouter": "Pridobite $200 brezplačnega dobroimetja na https://agentrouter.org/register — kreditna kartica ni potrebna.",
       "unorouter": "Ustvarite ključ API na https://unorouter.ai in ga nato prilepite sem kot žeton Bearer.",
       "agnes": "Pridobite ključ API na agnes-ai.com",
+      "agnes-cn": "Connect Agnes AI (China) with an API key issued for api.agnes-ai.cn. Keys from apihub.agnes-ai.com will not work.",
       "aimlapi": "Brezplačna raven je začasno ustavljena (2026) — API za AI/ML je zdaj na voljo samo po modelu plačila glede na porabo (najmanjše dobroimetje $20); brez ponavljajočega se brezplačnega dobroimetja.",
       "ai21": "$10 preizkusnega dobroimetja ob registraciji (velja 3 mesece), kreditna kartica ni potrebna",
       "alibaba": "Povežite Alibaba s ključem API.",
@@ -6478,7 +6482,9 @@
     "savedModelEndpointSettings": "Nastavitve končne točke modela so shranjene",
     "searchByModelAria": "Iskanje po modelu",
     "selectSupportedEndpoint": "Izberite vsaj eno podprto končno točko",
-    "antigravityClientProfileHarness": "Ogrodje / CLI"
+    "antigravityClientProfileHarness": "Ogrodje / CLI",
+    "vertexCredentialHint": "__MISSING__:API keys use the curated project catalog. Service Account JSON enables live Model Garden discovery.",
+    "vertexCredentialLabel": "__MISSING__:API Key or Service Account JSON"
   },
   "settings": {
     "title": "Nastavitve",
@@ -7764,6 +7770,7 @@
     "retentionMcpAudit": "Revizija MCP (dni)",
     "retentionA2aEvents": "Dogodki A2A (dni)",
     "retentionCallLogs": "Dnevniki klicev (dni)",
+    "retentionConversationTurnNodes": "Conversation turn nodes (days)",
     "retentionUsageHistory": "Zgodovina uporabe (dni)",
     "retentionMemoryEntries": "Vnosi v pomnilnik (dni)",
     "retentionXpAuditLog": "Revizijski dnevnik XP (dni)",
@@ -11425,7 +11432,9 @@
       "correlationIdValue": "Korelacijski ID: {id}",
       "detailedPayloadInfo": "Najprej omogočite podrobno beleženje, če želite štiristopenjski pogled vsebine odjemalca/ponudnika za nove zahteve.",
       "copyAll": "Kopiraj vse",
-      "copiedAll": "Vse kopirano"
+      "copiedAll": "Vse kopirano",
+      "rawViewOff": "__MISSING__:Raw view: off",
+      "rawViewOn": "__MISSING__:Raw view: on"
     }
   },
   "proxyLogger": {
@@ -13355,6 +13364,65 @@
       "preserve": "Ohrani",
       "remove": "Odstrani",
       "set": "Nastavi fiksno vrednost"
+    },
+    "editor": {
+      "advanced": "__MISSING__:Advanced: tags, priority & thinking budget",
+      "allScopes": "__MISSING__:All keys & shared rules",
+      "backToKeys": "__MISSING__:Back to API keys",
+      "catalogError": "__MISSING__:The model catalog could not be loaded. Use an exact ID / wildcard instead.",
+      "checkTitle": "__MISSING__:Check saved rules",
+      "configure": "__MISSING__:Configure routing",
+      "customTarget": "__MISSING__:Target model ID / alias",
+      "customTargetHint": "__MISSING__:Selected IDs appear here. You can also enter a custom model ID or existing alias.",
+      "discard": "__MISSING__:Discard the unsaved changes to this rule?",
+      "draftNotice": "__MISSING__:This summarizes the editor, not a runtime simulation. No request is sent.",
+      "draftSummary": "__MISSING__:Rule summary",
+      "editorHint": "__MISSING__:Define the condition and action separately. Existing rules keep their current matching behavior.",
+      "editRule": "__MISSING__:Edit rule",
+      "effort": {
+        "default": "__MISSING__:Use as default",
+        "force": "__MISSING__:Force effort",
+        "inherit": "__MISSING__:Keep request effort"
+      },
+      "effortHint": {
+        "default": "__MISSING__:Use this effort only when the request has no reasoning signal.",
+        "force": "__MISSING__:Request this effort even when the client specifies another value. Check the final upstream request to verify provider behavior.",
+        "inherit": "__MISSING__:Leave the request's reasoning effort unchanged."
+      },
+      "entryHint": "__MISSING__:Manage model and reasoning rules in a full-width editor. Access permissions stay here.",
+      "exactOrPattern": "__MISSING__:Exact request ID or pattern",
+      "keyScopeNotice": "__MISSING__:Only this key's rules are shown. Shared rules may also apply at runtime; the saved-rule check includes them.",
+      "loading": "__MISSING__:Loading routing configuration…",
+      "matched": "__MISSING__:Matched rule: {name}",
+      "matchStageHint": "__MISSING__:Matching happens before a combo is expanded. To affect a combo request, select the combo itself — not a model inside it.",
+      "missingKey": "__MISSING__:This API key no longer exists. Choose another key.",
+      "newRule": "__MISSING__:New rule",
+      "noChoices": "__MISSING__:No matches. Adjust your search or use an exact ID / wildcard.",
+      "notMatched": "__MISSING__:No saved rule matches",
+      "notMatchedHint": "__MISSING__:Check the selected API key, exact request model or combo name, source effort and tags.",
+      "pageDescription": "__MISSING__:Choose a key, define when a rule applies, and decide how to route its requests. Routing does not grant additional model permissions.",
+      "pageTitle": "__MISSING__:API-key routing",
+      "patternHint": "__MISSING__:Use an exact model/alias/combo name, * for any characters, or ? for one character. Existing values are preserved.",
+      "priorityHint": "__MISSING__:Higher values win within the same scope. API-key rules take precedence over combo, model and global rules.",
+      "retry": "__MISSING__:Retry",
+      "ruleCount": "__MISSING__:{count, plural, =0 {No rules in this scope} one {# rule in this scope} other {# rules in this scope}}",
+      "ruleList": "__MISSING__:Routing rules",
+      "saveBeforeCheck": "__MISSING__:Save or discard the draft before checking saved rules.",
+      "savedOnly": "__MISSING__:Check the currently saved rules for a sample request. This does not call an AI provider or verify the final upstream payload.",
+      "scopeHint": "__MISSING__:Keep rules for individual keys separate, or manage rules across all scopes.",
+      "searchChoice": "__MISSING__:Search: {label}",
+      "searchPlaceholder": "__MISSING__:Filter by name or full ID…",
+      "simulationError": "__MISSING__:Could not check the saved rules. Please try again.",
+      "sourceAll": "__MISSING__:All requested models and combos",
+      "sourceCombo": "__MISSING__:A requested combo",
+      "sourceModel": "__MISSING__:A requested model",
+      "sourcePattern": "__MISSING__:An exact ID or wildcard (advanced)",
+      "sourceType": "__MISSING__:Match requests for",
+      "technicalDetails": "__MISSING__:Technical details",
+      "then": "__MISSING__:What should change?",
+      "unsaved": "__MISSING__:Unsaved changes",
+      "when": "__MISSING__:When does this rule apply?",
+      "workspace": "__MISSING__:Choose an API key"
     }
   },
   "chaosConfig": {

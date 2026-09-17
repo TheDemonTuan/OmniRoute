@@ -996,6 +996,9 @@
   "featureFlagProxySkipRecentlyFailedDescription": "Ọdọ proxy na ntụgharị opencode nke akaụntụ ọ bụla na-akwụsị iji proxy dara ugbu a ọzọ (nnyocha TCP a jụrụ, ma ọ bụ nzaghachi 429 e nwetara site na ya) ruo oge nke usoro ọ bụla nke na-amụba okpukpu abụọ mgbe ọdịda ahụ megharịrị, ruo n'ókè kachasị. A naghị ede ọkwa proxy ọ bụla; mgbe e wepụrụ ndị niile a ga-ahọrọ n'akụkụ, nhọrọ ahụ anaghị agbanwe. A gbanyụrụ ya na ndabara: usoro nhọrọ bụ kpọmkwem ntụgharị nkịtị.",
   "featureFlagProxyPoolEgressObservationDescription": "Gosi, n'okpuru ọdọ proxy na dashboard, IP ọpụpụ ole a hụrụ jere ndị otu ya ozi n'ime awa 24 gara aga, njikọ ole jiri ha, na ọnụ ọgụgụ kachasị a hụrụ n'azụ otu IP. Ọ bụ naanị maka ọgụgụ, a na-agbakọ ya site na ndekọ proxy, a naghị eji ya eme routing. A gbanyụrụ ya na ndabara: editọ ọdọ ahụ anaghị agbanwe, route nlele ahụ na-azaghachi null.",
   "featureFlagProxyHealthBlockedResetsStreakDescription": "N'oge nyocha ahụike proxy, kwe ka nyocha ebumnuche jụrụ (401/403/429: proxy ahụ zigara ya, ebe njedebe ahụ jụrụ IP ọpụpụ a) tọgharịa usoro ọdịda na-aga n'ihu nke proxy ahụ, dịka nyocha e jere ozi. A gbanyụrụ ya na ndabara: ọjụjụ na-anọpụ iche ma na-edobe usoro ahụ. 5xx ka na-enweghị nkwubi okwu n'ọnọdụ ọ bụla, ọjụjụ anaghị ewepụ, gbanyụọ, ma ọ bụ mee ka proxy rụọ ọrụ ọzọ.",
+  "featureFlagBatchAndFileAutoCleanupEnabledDescription": "__MISSING__:Let the automatic cleanup sweep delete terminal (completed/failed/cancelled/expired) Batch API jobs older than OMNIROUTE_BATCH_RETENTION_DAYS, along with their per-line checkpoints, and clear the BLOB content of uploaded files past their own expires_at. Off by default: every existing install keeps this data exactly as before until an operator opts in. The operator-triggered DELETE /api/v1/batches/delete-completed route is unaffected either way -- it is a separate, unconditional public API contract.",
+  "featureFlagXaiOauthLiveModelDiscoveryDescription": "__MISSING__:Fetch the live xAI model catalog for xai-oauth connections from https://api.x.ai/v1/models using the OAuth bearer token, instead of the frozen static seed. Off by default: xai-oauth keeps serving the static seed unchanged. On any resolution error, discovery falls back to the seed.",
+  "featureFlagDbHealthcheckStartupDeferredEnabledDescription": "__MISSING__:Run the startup database integrity/health check after the server starts accepting requests instead of blocking startup until it completes. Off by default: startup blocks on the check exactly like before this change, so a corrupt database is still caught before the first request is served.",
   "sidebar": {
     "home": "Ụlọ",
     "dashboard": "Ogwe njikwa",
@@ -6125,6 +6128,7 @@
       "agentrouter": "Nweta kredit efu $200 na https://agentrouter.org/register — achọghị kaadị kredit.",
       "unorouter": "Mepụta API key na https://unorouter.ai, wee mado ya ebe a dị ka token Bearer.",
       "agnes": "Nweta API key na agnes-ai.com",
+      "agnes-cn": "__MISSING__:Connect Agnes AI (China) with an API key issued for api.agnes-ai.cn. Keys from apihub.agnes-ai.com will not work.",
       "aimlapi": "Akwụsịla ọkwa efu nwa oge (2026) — AI/ML API na-akwụzi naanị dịka ojiji siri dị (ntinye ego kacha nta bụ $20); enweghị kredit efu na-emegharị kwa oge.",
       "ai21": "Kredit nnwale $10 mgbe ị debanyere aha (ọ na-adị irè ọnwa 3), achọghị kaadị kredit",
       "alibaba": "Jikọọ Alibaba site na API key.",
@@ -6478,7 +6482,9 @@
     "savedModelEndpointSettings": "Echekwara ntọala ebe njedebe model",
     "searchByModelAria": "Chọọ site na model",
     "selectSupportedEndpoint": "Họrọ opekata mpe otu ebe njedebe akwadoro",
-    "antigravityClientProfileHarness": "Ngwa Nnwale / CLI"
+    "antigravityClientProfileHarness": "Ngwa Nnwale / CLI",
+    "vertexCredentialHint": "__MISSING__:API keys use the curated project catalog. Service Account JSON enables live Model Garden discovery.",
+    "vertexCredentialLabel": "__MISSING__:API Key or Service Account JSON"
   },
   "settings": {
     "title": "Ntọala",
@@ -7764,6 +7770,7 @@
     "retentionMcpAudit": "Nyocha MCP (ụbọchị)",
     "retentionA2aEvents": "Ihe Omume A2A (ụbọchị)",
     "retentionCallLogs": "Ndekọ Oku (ụbọchị)",
+    "retentionConversationTurnNodes": "Conversation turn nodes (days)",
     "retentionUsageHistory": "Akụkọ Ojiji (ụbọchị)",
     "retentionMemoryEntries": "Ndenye Ncheta (ụbọchị)",
     "retentionXpAuditLog": "Ndekọ Nyocha XP (ụbọchị)",
@@ -11425,7 +11432,9 @@
       "correlationIdValue": "NJ Correlation: {id}",
       "detailedPayloadInfo": "Buru ụzọ gbanye ndekọ zuru ezu ma ọ bụrụ na ịchọrọ ịhụ payload client/provider nke nwere usoro anọ maka arịrịọ ọhụrụ.",
       "copyAll": "Detuo ha niile",
-      "copiedAll": "E detuochaala ha niile"
+      "copiedAll": "E detuochaala ha niile",
+      "rawViewOff": "__MISSING__:Raw view: off",
+      "rawViewOn": "__MISSING__:Raw view: on"
     }
   },
   "proxyLogger": {
@@ -13355,6 +13364,65 @@
       "preserve": "Chekwaa ka ọ dị",
       "remove": "Wepụ",
       "set": "Tọọ uru a kapịrị ọnụ"
+    },
+    "editor": {
+      "advanced": "__MISSING__:Advanced: tags, priority & thinking budget",
+      "allScopes": "__MISSING__:All keys & shared rules",
+      "backToKeys": "__MISSING__:Back to API keys",
+      "catalogError": "__MISSING__:The model catalog could not be loaded. Use an exact ID / wildcard instead.",
+      "checkTitle": "__MISSING__:Check saved rules",
+      "configure": "__MISSING__:Configure routing",
+      "customTarget": "__MISSING__:Target model ID / alias",
+      "customTargetHint": "__MISSING__:Selected IDs appear here. You can also enter a custom model ID or existing alias.",
+      "discard": "__MISSING__:Discard the unsaved changes to this rule?",
+      "draftNotice": "__MISSING__:This summarizes the editor, not a runtime simulation. No request is sent.",
+      "draftSummary": "__MISSING__:Rule summary",
+      "editorHint": "__MISSING__:Define the condition and action separately. Existing rules keep their current matching behavior.",
+      "editRule": "__MISSING__:Edit rule",
+      "effort": {
+        "default": "__MISSING__:Use as default",
+        "force": "__MISSING__:Force effort",
+        "inherit": "__MISSING__:Keep request effort"
+      },
+      "effortHint": {
+        "default": "__MISSING__:Use this effort only when the request has no reasoning signal.",
+        "force": "__MISSING__:Request this effort even when the client specifies another value. Check the final upstream request to verify provider behavior.",
+        "inherit": "__MISSING__:Leave the request's reasoning effort unchanged."
+      },
+      "entryHint": "__MISSING__:Manage model and reasoning rules in a full-width editor. Access permissions stay here.",
+      "exactOrPattern": "__MISSING__:Exact request ID or pattern",
+      "keyScopeNotice": "__MISSING__:Only this key's rules are shown. Shared rules may also apply at runtime; the saved-rule check includes them.",
+      "loading": "__MISSING__:Loading routing configuration…",
+      "matched": "__MISSING__:Matched rule: {name}",
+      "matchStageHint": "__MISSING__:Matching happens before a combo is expanded. To affect a combo request, select the combo itself — not a model inside it.",
+      "missingKey": "__MISSING__:This API key no longer exists. Choose another key.",
+      "newRule": "__MISSING__:New rule",
+      "noChoices": "__MISSING__:No matches. Adjust your search or use an exact ID / wildcard.",
+      "notMatched": "__MISSING__:No saved rule matches",
+      "notMatchedHint": "__MISSING__:Check the selected API key, exact request model or combo name, source effort and tags.",
+      "pageDescription": "__MISSING__:Choose a key, define when a rule applies, and decide how to route its requests. Routing does not grant additional model permissions.",
+      "pageTitle": "__MISSING__:API-key routing",
+      "patternHint": "__MISSING__:Use an exact model/alias/combo name, * for any characters, or ? for one character. Existing values are preserved.",
+      "priorityHint": "__MISSING__:Higher values win within the same scope. API-key rules take precedence over combo, model and global rules.",
+      "retry": "__MISSING__:Retry",
+      "ruleCount": "__MISSING__:{count, plural, =0 {No rules in this scope} one {# rule in this scope} other {# rules in this scope}}",
+      "ruleList": "__MISSING__:Routing rules",
+      "saveBeforeCheck": "__MISSING__:Save or discard the draft before checking saved rules.",
+      "savedOnly": "__MISSING__:Check the currently saved rules for a sample request. This does not call an AI provider or verify the final upstream payload.",
+      "scopeHint": "__MISSING__:Keep rules for individual keys separate, or manage rules across all scopes.",
+      "searchChoice": "__MISSING__:Search: {label}",
+      "searchPlaceholder": "__MISSING__:Filter by name or full ID…",
+      "simulationError": "__MISSING__:Could not check the saved rules. Please try again.",
+      "sourceAll": "__MISSING__:All requested models and combos",
+      "sourceCombo": "__MISSING__:A requested combo",
+      "sourceModel": "__MISSING__:A requested model",
+      "sourcePattern": "__MISSING__:An exact ID or wildcard (advanced)",
+      "sourceType": "__MISSING__:Match requests for",
+      "technicalDetails": "__MISSING__:Technical details",
+      "then": "__MISSING__:What should change?",
+      "unsaved": "__MISSING__:Unsaved changes",
+      "when": "__MISSING__:When does this rule apply?",
+      "workspace": "__MISSING__:Choose an API key"
     }
   },
   "chaosConfig": {

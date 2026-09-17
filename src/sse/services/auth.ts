@@ -1389,9 +1389,16 @@ export async function getProviderCredentials(
       let allConnections = (allConnectionsResults.filter(Array.isArray).flat() as unknown[])
         .map(toProviderConnection)
         .filter((conn) => conn.id.length > 0);
+      // #13832: remember how many connections the provider really has BEFORE the
+      // key-policy filter, so an empty pool can say which gate emptied it. Without
+      // this the caller only ever saw "No active credentials for provider: X",
+      // identical to "never configured" — while /test and /sync-models kept working,
+      // because they address a connection by id and never consult the key's scope.
+      const connectionsBeforeKeyPolicy = allConnections.length;
       if (allowedConnections && allowedConnections.length > 0) {
         allConnections = allConnections.filter((conn) => allowedConnections.includes(conn.id));
       }
+      const blockedByKeyPolicyCount = connectionsBeforeKeyPolicy - allConnections.length;
       if (forcedConnectionId) {
         allConnections = allConnections.filter((conn) => conn.id === forcedConnectionId);
       }
@@ -1461,6 +1468,16 @@ export async function getProviderCredentials(
         return geminiEnvCredentials;
       }
       invalidateManagedLease(options, "CONNECTION_INELIGIBLE");
+      if (blockedByKeyPolicyCount > 0) {
+        // #13832: the pool is empty only because the calling key's allowlist /
+        // quota scope removed every connection. Say so instead of returning the
+        // bare null that becomes "No active credentials for provider: X".
+        log.warn(
+          "AUTH",
+          `${provider} | ${blockedByKeyPolicyCount} connection(s) hidden by the API key's allowed_connections/quota scope`
+        );
+        return { blockedByKeyPolicy: true, blockedCount: blockedByKeyPolicyCount };
+      }
       log.debug("AUTH", `No credentials for ${provider}`);
       return null;
     }

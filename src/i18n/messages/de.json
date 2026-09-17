@@ -996,6 +996,9 @@
   "featureFlagProxySkipRecentlyFailedDescription": "Proxy-Pools und die kontobasierte Rotation von opencode verwenden einen Proxy, der gerade fehlgeschlagen ist (abgelehnte TCP-Prüfung oder darüber empfangener 429-Statuscode), für einen prozessbezogenen Zeitraum nicht erneut. Dieser Zeitraum verdoppelt sich bei jeder Wiederholung bis zu einer Obergrenze. Es wird kein Proxy-Status gespeichert; wenn alle Kandidaten zurückgestellt wurden, bleibt die Auswahl unverändert. Standardmäßig deaktiviert: Die Auswahlreihenfolge entspricht exakt der einfachen Rotation.",
   "featureFlagProxyPoolEgressObservationDescription": "Zeigt im Dashboard unter einem Proxy-Pool an, wie viele beobachtete Egress-IPs dessen Mitglieder in den letzten 24 h bedient haben, wie viele Verbindungen sie verwendet haben und wie viele maximal hinter einer einzelnen IP beobachtet wurden. Schreibgeschützt, aus dem Proxy-Protokoll berechnet und niemals für das Routing verwendet. Standardmäßig deaktiviert: Der Pool-Editor bleibt unverändert und die Beobachtungsroute gibt null zurück.",
   "featureFlagProxyHealthBlockedResetsStreakDescription": "Ermöglicht bei der Proxy-Zustandsprüfung, dass eine vom Ziel abgelehnte Prüfung (401/403/429: Der Proxy hat die Anfrage weitergeleitet, das Ziel hat diese Egress-IP abgelehnt) die Serie aufeinanderfolgender Fehler des Proxys zurücksetzt, wie bei einer erfolgreich beantworteten Prüfung. Standardmäßig deaktiviert: Eine Ablehnung bleibt neutral und die Serie wird beibehalten. Ein 5xx-Status bleibt in beiden Fällen nicht aussagekräftig, und eine Ablehnung entfernt, deaktiviert oder reaktiviert niemals einen Proxy.",
+  "featureFlagBatchAndFileAutoCleanupEnabledDescription": "__MISSING__:Let the automatic cleanup sweep delete terminal (completed/failed/cancelled/expired) Batch API jobs older than OMNIROUTE_BATCH_RETENTION_DAYS, along with their per-line checkpoints, and clear the BLOB content of uploaded files past their own expires_at. Off by default: every existing install keeps this data exactly as before until an operator opts in. The operator-triggered DELETE /api/v1/batches/delete-completed route is unaffected either way -- it is a separate, unconditional public API contract.",
+  "featureFlagXaiOauthLiveModelDiscoveryDescription": "__MISSING__:Fetch the live xAI model catalog for xai-oauth connections from https://api.x.ai/v1/models using the OAuth bearer token, instead of the frozen static seed. Off by default: xai-oauth keeps serving the static seed unchanged. On any resolution error, discovery falls back to the seed.",
+  "featureFlagDbHealthcheckStartupDeferredEnabledDescription": "__MISSING__:Run the startup database integrity/health check after the server starts accepting requests instead of blocking startup until it completes. Off by default: startup blocks on the check exactly like before this change, so a corrupt database is still caught before the first request is served.",
   "sidebar": {
     "home": "Zuhause",
     "dashboard": "Dashboard",
@@ -6125,6 +6128,7 @@
       "agentrouter": "Erhalten Sie 200 $ Gratisguthaben unter https://agentrouter.org/register – keine Kreditkarte erforderlich.",
       "unorouter": "Erstellen Sie einen API-Schlüssel unter https://unorouter.ai und fügen Sie ihn dann hier als Bearer-Token ein.",
       "agnes": "API-Schlüssel auf agnes-ai.com abrufen",
+      "agnes-cn": "Connect Agnes AI (China) with an API key issued for api.agnes-ai.cn. Keys from apihub.agnes-ai.com will not work.",
       "aimlapi": "Kostenlose Stufe pausiert (2026) – AI/ML API ist jetzt nur noch Pay-as-you-go (mind. 20 $ Aufladung); keine wiederkehrenden Gratisguthaben.",
       "ai21": "10 $ Testguthaben bei Registrierung (3 Monate gültig), keine Kreditkarte erforderlich",
       "alibaba": "Alibaba mit einem API-Schlüssel verbinden.",
@@ -6478,7 +6482,9 @@
     "savedModelEndpointSettings": "Einstellungen für den gespeicherten Modell-Endpunkt",
     "searchByModelAria": "Nach Modell suchen",
     "selectSupportedEndpoint": "Wählen Sie mindestens einen unterstützten Endpunkt aus",
-    "antigravityClientProfileHarness": "Testsystem / CLI"
+    "antigravityClientProfileHarness": "Testsystem / CLI",
+    "vertexCredentialLabel": "API-Key oder Service-Account-JSON",
+    "vertexCredentialHint": "API-Keys verwenden den kuratierten Projektkatalog. Ein Service-Account-JSON aktiviert die Live-Erkennung im Model Garden."
   },
   "settings": {
     "title": "Einstellungen",
@@ -7764,6 +7770,7 @@
     "retentionMcpAudit": "MCP-Audit (Tage)",
     "retentionA2aEvents": "A2A-Veranstaltungen (Tage)",
     "retentionCallLogs": "Anrufprotokolle (Tage)",
+    "retentionConversationTurnNodes": "Conversation turn nodes (days)",
     "retentionUsageHistory": "Nutzungsverlauf (Tage)",
     "retentionMemoryEntries": "Speichereinträge (Tage)",
     "retentionXpAuditLog": "XP-Audit-Log (Tage)",
@@ -11425,7 +11432,9 @@
       "correlationIdValue": "Korrelations-ID: {id}",
       "detailedPayloadInfo": "Aktivieren Sie zuerst das detaillierte Protokollieren, wenn Sie die vierstufige Client/Provider-Payload-Ansicht für neue Anfragen wünschen.",
       "copyAll": "Alle kopieren",
-      "copiedAll": "Alles kopiert"
+      "copiedAll": "Alles kopiert",
+      "rawViewOff": "__MISSING__:Raw view: off",
+      "rawViewOn": "__MISSING__:Raw view: on"
     }
   },
   "proxyLogger": {
@@ -13281,6 +13290,65 @@
     "viewFullHistory": "Vollständigen Verlauf auf GitHub anzeigen"
   },
   "reasoningRouting": {
+    "editor": {
+      "pageTitle": "API-Key-Routing",
+      "pageDescription": "Wähle einen Key, lege die Bedingungen fest und entscheide, wie seine Anfragen verarbeitet werden. Routing erweitert keine Modellberechtigungen.",
+      "backToKeys": "Zurück zu den API-Keys",
+      "entryHint": "Modell- und Reasoning-Regeln im eigenen Editor verwalten. Zugriffsberechtigungen bleiben hier.",
+      "configure": "Routing konfigurieren",
+      "workspace": "API-Key auswählen",
+      "scopeHint": "Verwalte Regeln für einzelne Keys getrennt oder zeige alle Geltungsbereiche an.",
+      "allScopes": "Alle Keys & übergreifende Regeln",
+      "keyScopeNotice": "Hier siehst du nur die Regeln dieses Keys. Übergreifende Regeln können ebenfalls greifen; die Prüfung gespeicherter Regeln berücksichtigt sie.",
+      "newRule": "Neue Regel",
+      "editRule": "Regel bearbeiten",
+      "ruleList": "Routing-Regeln",
+      "ruleCount": "{count, plural, =0 {Keine Regeln in diesem Bereich} one {# Regel in diesem Bereich} other {# Regeln in diesem Bereich}}",
+      "loading": "Routing-Konfiguration wird geladen…",
+      "missingKey": "Dieser API-Key existiert nicht mehr. Wähle einen anderen Key.",
+      "retry": "Erneut versuchen",
+      "when": "Wann gilt diese Regel?",
+      "then": "Was soll geändert werden?",
+      "editorHint": "Bedingung und Aktion getrennt festlegen. Bestehende Regeln behalten ihr bisheriges Matching-Verhalten.",
+      "sourceType": "Anfragen abgleichen für",
+      "sourceAll": "Alle angefragten Modelle und Combos",
+      "sourceCombo": "Eine angefragte Combo",
+      "sourceModel": "Ein angefragtes Modell",
+      "sourcePattern": "Eine genaue ID oder ein Muster (erweitert)",
+      "exactOrPattern": "Genaue Anfrage-ID oder Muster",
+      "patternHint": "Exakter Modell-/Alias-/Combo-Name, * für beliebige Zeichen oder ? für ein Zeichen. Bestehende Werte bleiben erhalten.",
+      "matchStageHint": "Der Abgleich erfolgt vor der Auflösung einer Combo. Wähle für eine Combo-Anfrage die Combo selbst — nicht ein darin enthaltenes Modell.",
+      "searchChoice": "Suchen: {label}",
+      "searchPlaceholder": "Nach Name oder vollständiger ID filtern…",
+      "noChoices": "Keine Treffer. Passe die Suche an oder verwende eine genaue ID / ein Muster.",
+      "catalogError": "Der Modellkatalog konnte nicht geladen werden. Verwende stattdessen eine genaue ID / ein Muster.",
+      "customTarget": "Zielmodell-ID / Alias",
+      "customTargetHint": "Ausgewählte IDs erscheinen hier. Du kannst auch eine eigene Modell-ID oder einen bestehenden Alias eingeben.",
+      "effort": {
+        "inherit": "Anfrage-Effort übernehmen",
+        "default": "Als Standard verwenden",
+        "force": "Effort erzwingen"
+      },
+      "effortHint": {
+        "inherit": "Den Reasoning-Effort der Anfrage unverändert lassen.",
+        "default": "Diesen Effort nur verwenden, wenn die Anfrage kein Reasoning-Signal enthält.",
+        "force": "Diesen Effort auch bei einer anderen Client-Vorgabe anfordern. Prüfe den endgültigen Upstream-Request, um das Provider-Verhalten zu bestätigen."
+      },
+      "advanced": "Erweitert: Tags, Priorität & Thinking-Budget",
+      "priorityHint": "Höhere Werte gewinnen innerhalb desselben Geltungsbereichs. API-Key-Regeln haben Vorrang vor Combo-, Modell- und globalen Regeln.",
+      "draftSummary": "Zusammenfassung der Regel",
+      "draftNotice": "Dies fasst den Entwurf zusammen und ist keine Laufzeitsimulation. Es wird keine Anfrage versendet.",
+      "unsaved": "Ungespeicherte Änderungen",
+      "discard": "Ungespeicherte Änderungen an dieser Regel verwerfen?",
+      "checkTitle": "Gespeicherte Regeln prüfen",
+      "savedOnly": "Prüft gespeicherte Regeln anhand einer Beispielanfrage. Dabei wird kein KI-Provider aufgerufen und der endgültige Upstream-Request nicht geprüft.",
+      "saveBeforeCheck": "Speichere oder verwirf den Entwurf, bevor du gespeicherte Regeln prüfst.",
+      "matched": "Passende Regel: {name}",
+      "notMatched": "Keine gespeicherte Regel passt",
+      "notMatchedHint": "Prüfe den gewählten API-Key, den genauen Modell- oder Combo-Namen der Anfrage, den Quell-Effort und die Tags.",
+      "technicalDetails": "Technische Details",
+      "simulationError": "Die gespeicherten Regeln konnten nicht geprüft werden. Bitte versuche es erneut."
+    },
     "title": "Reasoning-Routing-Policies",
     "apiKeyTitle": "Reasoning-Routing für diesen API-Key",
     "subtitle": "Leite Modelle und Reasoning Effort um, ohne Client-Unterstützung vorauszusetzen. Ohne passende Regel bleibt die Anfrage unverändert.",

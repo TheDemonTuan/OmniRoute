@@ -317,6 +317,10 @@
       "tests/unit/noauth-autocombo-lockout-7623.test.ts",
       "tests/unit/noauth-model-lockout.test.ts",
       "tests/unit/provider-401-ambiguous-runtime.test.ts",
+      "tests/unit/agnes-cn-provider.test.ts",
+      "tests/unit/mcp-restart-route-13012.test.ts",
+      "tests/unit/antigravityUpstreamError.test.ts",
+      "tests/unit/issue-13089-roundrobin-live-ws-events.test.ts",
       "tests/unit/ollama-404-model-lockout-11071.test.ts",
       "tests/unit/non-streaming-client-translate.test.ts",
       "tests/unit/non-streaming-provider-leg.test.ts",
@@ -464,7 +468,8 @@
       "tests/unit/guardrails/visionBridgeRouter.test.ts",
       "tests/unit/issue-11912-opencode-roundrobin-collapse.test.ts",
       "tests/unit/opencode-400-model-unavailable.test.ts",
-      "tests/unit/strong-credential-token-linear-scan.test.ts"
+      "tests/unit/strong-credential-token-linear-scan.test.ts",
+      "tests/unit/provider-401-ambiguous-runtime.test.ts"
     ],
     "nodeArgs": [
       "--import",

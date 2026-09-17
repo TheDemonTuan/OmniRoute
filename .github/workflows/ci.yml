@@ -542,6 +542,11 @@ jobs:
       # in eight. Fix is `sync-ui-keys --locale=<codes> --translate-markers`.
       - name: i18n key completeness (every locale carries every en.json key)
         run: node scripts/i18n/check-key-completeness.mjs
+      # Same gate for the CLI catalogs (bin/cli/locales). check:cli-i18n only compares
+      # pt-BR / zh-CN / zh-TW; 38 locales shipped with 1–24 of 830 keys for months
+      # (audit 2026-09-16) and the CLI silently fell back to English for them.
+      - name: i18n key completeness (CLI catalogs)
+        run: node scripts/i18n/check-key-completeness.mjs --catalog=cli
 
   # #8038: cheap glossary/protected-terms consistency gate —
   # complements i18n-ui-coverage (key parity) and the ICU `i18n` job below

@@ -35,6 +35,7 @@ import {
 import { getAccessToken } from "../services/tokenRefresh.ts";
 import { sanitizeResponsesInputItems } from "../services/responsesInputSanitizer.ts";
 import { applyReasoningInputPolicy } from "../services/reasoningInputPolicy.ts";
+import { getForcedReasoningEffort } from "../utils/reasoningRuleContext.ts";
 import { normalizeCodexVerbosity } from "../services/codexVerbosity.ts";
 import { getThinkingBudgetConfig, ThinkingMode } from "../services/thinkingBudget.ts";
 import { CORS_HEADERS } from "../utils/cors.ts";
@@ -819,6 +820,22 @@ export class CodexExecutor extends BaseExecutor {
       requestInput.body
     );
     const nextInput = { ...requestInput, credentials };
+    const forcedEffort = getForcedReasoningEffort(credentials);
+    if (forcedEffort) {
+      const nextBody =
+        nextInput.body && typeof nextInput.body === "object"
+          ? (nextInput.body as Record<string, unknown>)
+          : {};
+      nextInput.body = {
+        ...nextBody,
+        reasoning: {
+          ...(nextBody.reasoning && typeof nextBody.reasoning === "object"
+            ? nextBody.reasoning
+            : {}),
+          effort: forcedEffort,
+        },
+      };
+    }
 
     if (isCodexAppServerRequired(nextInput.credentials)) {
       if (!this.appServer) {
@@ -1380,16 +1397,13 @@ export class CodexExecutor extends BaseExecutor {
     // Issue #2331: model suffix aliases (for example gpt-5.5-xhigh) represent an
     // explicit model selection, so they must override client-injected defaults such
     // as OpenCode's automatic reasoning.effort=medium for GPT-5-family requests.
-    // OpenRouter-style `enabled: false` asks for reasoning to be off. It
-    // wins over the connection default but still loses to any per-request
-    // effort selection (model suffix, reasoning.effort, or flat
-    // reasoning_effort).
-    const clientDisabledReasoning = reasoningRecord?.enabled === false;
+    // A server-selected force rule is stronger than either source.
     const rawEffort =
+      getForcedReasoningEffort(credentials) ||
       modelEffort ||
       explicitReasoning ||
       requestReasoningEffort ||
-      (clientDisabledReasoning ? "none" : fallbackReasoningEffort);
+      fallbackReasoningEffort;
 
     if (rawEffort) {
       const clampedEffort = clampEffort(cleanModel, rawEffort);
@@ -1398,24 +1412,6 @@ export class CodexExecutor extends BaseExecutor {
         // Ultra coordinates delegation in Codex clients; the upstream wire effort is Max.
         effort: clampedEffort === "ultra" ? "max" : clampedEffort,
       };
-    }
-
-    // The Codex Responses API accepts only `effort` and `summary` inside
-    // `reasoning`. Client ecosystems send OpenRouter-style keys (`enabled`,
-    // `max_tokens`, `exclude`, ...) that the upstream rejects with HTTP 400
-    // "Unknown parameter: 'reasoning.<key>'", so whitelist the object before
-    // it reaches the wire. This must run even when no effort was resolved,
-    // because the client's original object is forwarded unchanged in that
-    // case.
-    const wireReasoning =
-      body.reasoning && typeof body.reasoning === "object" && !Array.isArray(body.reasoning)
-        ? (body.reasoning as Record<string, unknown>)
-        : null;
-    if (wireReasoning) {
-      for (const key of Object.keys(wireReasoning)) {
-        if (key !== "effort" && key !== "summary") delete wireReasoning[key];
-      }
-      if (Object.keys(wireReasoning).length === 0) delete body.reasoning;
     }
     ensureCodexReasoningSummary(body);
     if (isCompactRequest) {

@@ -996,6 +996,9 @@
   "featureFlagProxySkipRecentlyFailedDescription": "Pinipigilan ng mga proxy pool at ng pag-ikot ng opencode sa bawat account na muling gumamit ng proxy na kabibigo lang (tinanggihan ang TCP probe, o nakatanggap ng 429 sa pamamagitan nito) sa loob ng isang panahon para sa bawat proseso na dumodoble sa bawat pag-ulit, hanggang sa itinakdang limitasyon. Walang isinusulat na status ng proxy; kapag isinantabi ang bawat kandidato, hindi nagbabago ang pagpili. Naka-off bilang default: ang pagkakasunod-sunod ng pagpili ay eksaktong gaya ng karaniwang pag-ikot.",
   "featureFlagProxyPoolEgressObservationDescription": "Ipakita sa ilalim ng isang proxy pool sa dashboard kung ilang naobserbahang egress IP ang ginamit ng mga miyembro nito sa nakalipas na 24 h, kung ilang koneksyon ang gumamit sa mga ito, at ang pinakamataas na bilang na nakita sa likod ng isang IP. Read-only, kinukuwenta mula sa proxy log, at hindi kailanman ginagamit sa pagruruta. Naka-off bilang default: hindi nagbabago ang editor ng pool at null ang isinasagot ng route ng obserbasyon.",
   "featureFlagProxyHealthBlockedResetsStreakDescription": "Sa pagsusuri sa kalagayan ng proxy, hayaan ang isang probe na tinanggihan ng target (401/403/429: ipinasa ito ng proxy, ngunit tinanggihan ng destinasyon ang egress IP na ito) na i-reset ang sunod-sunod na pagkabigo ng proxy, tulad ng isang naihatid na probe. Naka-off bilang default: nananatiling neutral ang pagtanggi at hindi nito binabago ang sunod-sunod na pagkabigo. Nananatiling walang tiyak na resulta ang isang 5xx sa alinmang paraan, at ang pagtanggi ay hindi kailanman nag-aalis, nagdi-disable, o muling nag-a-activate ng proxy.",
+  "featureFlagBatchAndFileAutoCleanupEnabledDescription": "__MISSING__:Let the automatic cleanup sweep delete terminal (completed/failed/cancelled/expired) Batch API jobs older than OMNIROUTE_BATCH_RETENTION_DAYS, along with their per-line checkpoints, and clear the BLOB content of uploaded files past their own expires_at. Off by default: every existing install keeps this data exactly as before until an operator opts in. The operator-triggered DELETE /api/v1/batches/delete-completed route is unaffected either way -- it is a separate, unconditional public API contract.",
+  "featureFlagXaiOauthLiveModelDiscoveryDescription": "__MISSING__:Fetch the live xAI model catalog for xai-oauth connections from https://api.x.ai/v1/models using the OAuth bearer token, instead of the frozen static seed. Off by default: xai-oauth keeps serving the static seed unchanged. On any resolution error, discovery falls back to the seed.",
+  "featureFlagDbHealthcheckStartupDeferredEnabledDescription": "__MISSING__:Run the startup database integrity/health check after the server starts accepting requests instead of blocking startup until it completes. Off by default: startup blocks on the check exactly like before this change, so a corrupt database is still caught before the first request is served.",
   "sidebar": {
     "home": "Bahay",
     "dashboard": "Dashboard",
@@ -6125,6 +6128,7 @@
       "agentrouter": "Kumuha ng $200 na libreng credit sa https://agentrouter.org/register — walang kinakailangang credit card.",
       "unorouter": "Gumawa ng API key sa https://unorouter.ai, pagkatapos ay i-paste ito dito bilang Bearer token.",
       "agnes": "Kumuha ng API key sa agnes-ai.com",
+      "agnes-cn": "Connect Agnes AI (China) with an API key issued for api.agnes-ai.cn. Keys from apihub.agnes-ai.com will not work.",
       "aimlapi": "Naka-pause ang libreng tier (2026) — pay-as-you-go na lang ngayon ang AI/ML API (min $20 na top-up); walang paulit-ulit na libreng credit.",
       "ai21": "$10 na trial credit sa pag-signup (valid nang 3 buwan), walang kinakailangang credit card",
       "alibaba": "Ikonekta ang Alibaba gamit ang isang API key.",
@@ -6478,7 +6482,9 @@
     "savedModelEndpointSettings": "Naka-save na mga setting ng endpoint ng modelo",
     "searchByModelAria": "Maghanap ayon sa modelo",
     "selectSupportedEndpoint": "Pumili ng hindi bababa sa isang sinusuportahang endpoint",
-    "antigravityClientProfileHarness": "Harness / CLI"
+    "antigravityClientProfileHarness": "Harness / CLI",
+    "vertexCredentialLabel": "API Key or Service Account JSON",
+    "vertexCredentialHint": "API keys use the curated project catalog. Service Account JSON enables live Model Garden discovery."
   },
   "settings": {
     "title": "Mga setting",
@@ -7764,6 +7770,7 @@
     "retentionMcpAudit": "MCP Audit (mga araw)",
     "retentionA2aEvents": "A2A Events (araw)",
     "retentionCallLogs": "Mga Log ng Tawag (mga araw)",
+    "retentionConversationTurnNodes": "Conversation turn nodes (days)",
     "retentionUsageHistory": "Kasaysayan ng Paggamit (mga araw)",
     "retentionMemoryEntries": "Mga Entry ng Memorya (mga araw)",
     "retentionXpAuditLog": "XP Audit Log (mga araw)",
@@ -11425,7 +11432,9 @@
       "correlationIdValue": "ID ng Korelasyon: {id}",
       "detailedPayloadInfo": "I-enable ang detalyadong pag-log muna kung nais mo ang apat na yugto ng view ng client/provider payload para sa mga bagong kahilingan.",
       "copyAll": "Kopyahin lahat",
-      "copiedAll": "Nakopya na ang lahat"
+      "copiedAll": "Nakopya na ang lahat",
+      "rawViewOff": "__MISSING__:Raw view: off",
+      "rawViewOn": "__MISSING__:Raw view: on"
     }
   },
   "proxyLogger": {
@@ -13355,6 +13364,65 @@
       "preserve": "Panatilihin",
       "remove": "Alisin",
       "set": "Magtakda ng nakapirming value"
+    },
+    "editor": {
+      "advanced": "__MISSING__:Advanced: tags, priority & thinking budget",
+      "allScopes": "__MISSING__:All keys & shared rules",
+      "backToKeys": "__MISSING__:Back to API keys",
+      "catalogError": "__MISSING__:The model catalog could not be loaded. Use an exact ID / wildcard instead.",
+      "checkTitle": "__MISSING__:Check saved rules",
+      "configure": "__MISSING__:Configure routing",
+      "customTarget": "__MISSING__:Target model ID / alias",
+      "customTargetHint": "__MISSING__:Selected IDs appear here. You can also enter a custom model ID or existing alias.",
+      "discard": "__MISSING__:Discard the unsaved changes to this rule?",
+      "draftNotice": "__MISSING__:This summarizes the editor, not a runtime simulation. No request is sent.",
+      "draftSummary": "__MISSING__:Rule summary",
+      "editorHint": "__MISSING__:Define the condition and action separately. Existing rules keep their current matching behavior.",
+      "editRule": "__MISSING__:Edit rule",
+      "effort": {
+        "default": "__MISSING__:Use as default",
+        "force": "__MISSING__:Force effort",
+        "inherit": "__MISSING__:Keep request effort"
+      },
+      "effortHint": {
+        "default": "__MISSING__:Use this effort only when the request has no reasoning signal.",
+        "force": "__MISSING__:Request this effort even when the client specifies another value. Check the final upstream request to verify provider behavior.",
+        "inherit": "__MISSING__:Leave the request's reasoning effort unchanged."
+      },
+      "entryHint": "__MISSING__:Manage model and reasoning rules in a full-width editor. Access permissions stay here.",
+      "exactOrPattern": "__MISSING__:Exact request ID or pattern",
+      "keyScopeNotice": "__MISSING__:Only this key's rules are shown. Shared rules may also apply at runtime; the saved-rule check includes them.",
+      "loading": "__MISSING__:Loading routing configuration…",
+      "matched": "__MISSING__:Matched rule: {name}",
+      "matchStageHint": "__MISSING__:Matching happens before a combo is expanded. To affect a combo request, select the combo itself — not a model inside it.",
+      "missingKey": "__MISSING__:This API key no longer exists. Choose another key.",
+      "newRule": "__MISSING__:New rule",
+      "noChoices": "__MISSING__:No matches. Adjust your search or use an exact ID / wildcard.",
+      "notMatched": "__MISSING__:No saved rule matches",
+      "notMatchedHint": "__MISSING__:Check the selected API key, exact request model or combo name, source effort and tags.",
+      "pageDescription": "__MISSING__:Choose a key, define when a rule applies, and decide how to route its requests. Routing does not grant additional model permissions.",
+      "pageTitle": "__MISSING__:API-key routing",
+      "patternHint": "__MISSING__:Use an exact model/alias/combo name, * for any characters, or ? for one character. Existing values are preserved.",
+      "priorityHint": "__MISSING__:Higher values win within the same scope. API-key rules take precedence over combo, model and global rules.",
+      "retry": "__MISSING__:Retry",
+      "ruleCount": "__MISSING__:{count, plural, =0 {No rules in this scope} one {# rule in this scope} other {# rules in this scope}}",
+      "ruleList": "__MISSING__:Routing rules",
+      "saveBeforeCheck": "__MISSING__:Save or discard the draft before checking saved rules.",
+      "savedOnly": "__MISSING__:Check the currently saved rules for a sample request. This does not call an AI provider or verify the final upstream payload.",
+      "scopeHint": "__MISSING__:Keep rules for individual keys separate, or manage rules across all scopes.",
+      "searchChoice": "__MISSING__:Search: {label}",
+      "searchPlaceholder": "__MISSING__:Filter by name or full ID…",
+      "simulationError": "__MISSING__:Could not check the saved rules. Please try again.",
+      "sourceAll": "__MISSING__:All requested models and combos",
+      "sourceCombo": "__MISSING__:A requested combo",
+      "sourceModel": "__MISSING__:A requested model",
+      "sourcePattern": "__MISSING__:An exact ID or wildcard (advanced)",
+      "sourceType": "__MISSING__:Match requests for",
+      "technicalDetails": "__MISSING__:Technical details",
+      "then": "__MISSING__:What should change?",
+      "unsaved": "__MISSING__:Unsaved changes",
+      "when": "__MISSING__:When does this rule apply?",
+      "workspace": "__MISSING__:Choose an API key"
     }
   },
   "chaosConfig": {

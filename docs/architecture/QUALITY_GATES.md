@@ -145,7 +145,6 @@ Runs on every PR to `main`. Blocks merge on failure.
 | `check-ui-keys-coverage` (inline) | UI i18n key coverage is ≥ 65%                                                                                                                                                         | Yes          |
 | `check-ui-value-drift` (inline)   | A rewritten English **value** leaves no stale translation behind                                                                                                                      | Yes          |
 | `check-new-key-coverage` (inline) | A **new** English key reaches every locale                                                                                                                                            | Yes          |
-| `check-key-completeness` (inline) | Every locale carries exactly the key set of `en.json` (absent key = defect, whatever its age; `__MISSING__` counts as present)                                                        | Yes          |
 | `check-translation-ratio`         | Real-translation ratio per locale (identical-to-English / placeholder / missing leaves outside the allowlist) must not exceed `config/quality/i18n-translation-baseline.json` + slack | **Advisory** |
 
 Needs `fetch-depth: 0` — the value-drift gate diffs `en.json` against the merge base.
@@ -551,6 +550,8 @@ key itself, so both siblings stayed silent when batch 1 (#13044) landed 43 keys 
 locales and batch 2 (#13660) 10 keys short in eight (2026-09-15). Fix a red with
 `node scripts/i18n/sync-ui-keys.mjs --locale=<codes> --translate-markers`; an `extra` leaf
 means the source dropped it — delete it from the locale. `--warn` reports without failing.
+`--catalog=cli` runs the same comparison over `bin/cli/locales` (`npm run i18n:check-keys:cli`);
+both steps live in job `i18n-ui-coverage`.
 
 #### `check-new-key-coverage` — new-key i18n gate
 

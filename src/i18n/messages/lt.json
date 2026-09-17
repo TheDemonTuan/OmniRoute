@@ -996,6 +996,9 @@
   "featureFlagProxySkipRecentlyFailedDescription": "Tarpinių serverių telkiniai ir kiekvienai paskyrai taikoma opencode rotacija pakartotinai nebenaudoja ką tik nesuveikusio tarpinio serverio (atmestas TCP patikrinimas arba per jį gautas 429 atsakymas) tam procesui nustatytą laikotarpį, kuris po kiekvieno pasikartojimo padvigubėja iki nustatytos ribos. Tarpinio serverio būsena neįrašoma; atidėjus visus kandidatus, pasirinkimas nesikeičia. Pagal numatytąsias nuostatas išjungta: pasirinkimo tvarka yra lygiai tokia pati kaip įprastos rotacijos.",
   "featureFlagProxyPoolEgressObservationDescription": "Ataskaitų srityje po tarpinių serverių telkiniu rodyti, kiek stebėtų išeinančių IP adresų per pastarąsias 24 val. aptarnavo jo narius, kiek ryšių juos naudojo ir didžiausią už vieno IP adreso matytą skaičių. Tik skaitymui, apskaičiuojama pagal tarpinių serverių žurnalą ir niekada nenaudojama maršrutizavimui. Pagal numatytąsias nuostatas išjungta: telkinio redagavimo priemonė nesikeičia, o stebėjimo maršrutas grąžina null.",
   "featureFlagProxyHealthBlockedResetsStreakDescription": "Atliekant tarpinių serverių būklės patikrą leisti paskirties vietos atmestam patikrinimui (401/403/429: tarpinis serveris persiuntė užklausą, o paskirties vieta atmetė šį išeinantį IP adresą) iš naujo nustatyti tarpinio serverio nuoseklių nesėkmių seką, kaip ir aptarnauto patikrinimo atveju. Pagal numatytąsias nuostatas išjungta: atmetimas lieka neutralus ir išsaugo seką. 5xx atsakymas abiem atvejais lieka neapibrėžtas, o atmetimas niekada nepašalina, neišjungia ir iš naujo nesuaktyvina tarpinio serverio.",
+  "featureFlagBatchAndFileAutoCleanupEnabledDescription": "__MISSING__:Let the automatic cleanup sweep delete terminal (completed/failed/cancelled/expired) Batch API jobs older than OMNIROUTE_BATCH_RETENTION_DAYS, along with their per-line checkpoints, and clear the BLOB content of uploaded files past their own expires_at. Off by default: every existing install keeps this data exactly as before until an operator opts in. The operator-triggered DELETE /api/v1/batches/delete-completed route is unaffected either way -- it is a separate, unconditional public API contract.",
+  "featureFlagXaiOauthLiveModelDiscoveryDescription": "__MISSING__:Fetch the live xAI model catalog for xai-oauth connections from https://api.x.ai/v1/models using the OAuth bearer token, instead of the frozen static seed. Off by default: xai-oauth keeps serving the static seed unchanged. On any resolution error, discovery falls back to the seed.",
+  "featureFlagDbHealthcheckStartupDeferredEnabledDescription": "__MISSING__:Run the startup database integrity/health check after the server starts accepting requests instead of blocking startup until it completes. Off by default: startup blocks on the check exactly like before this change, so a corrupt database is still caught before the first request is served.",
   "sidebar": {
     "home": "Pradžia",
     "dashboard": "Suvestinė",
@@ -6125,6 +6128,7 @@
       "agentrouter": "Gaukite $200 nemokamų kreditų adresu https://agentrouter.org/register — kredito kortelės nereikia.",
       "unorouter": "Sukurkite API raktą adresu https://unorouter.ai, tada įklijuokite jį čia kaip Bearer prieigos raktą.",
       "agnes": "Gaukite API raktą adresu agnes-ai.com",
+      "agnes-cn": "Connect Agnes AI (China) with an API key issued for api.agnes-ai.cn. Keys from apihub.agnes-ai.com will not work.",
       "aimlapi": "Nemokamas planas sustabdytas (2026 m.) — AI/ML API dabar apmokestinama tik pagal naudojimą (mažiausias papildymas – $20); periodinių nemokamų kreditų nėra.",
       "ai21": "Užsiregistravus suteikiama $10 bandomųjų kreditų (galioja 3 mėnesius), kredito kortelės nereikia",
       "alibaba": "Prijunkite Alibaba naudodami API raktą.",
@@ -6478,7 +6482,9 @@
     "savedModelEndpointSettings": "Modelio galinio taško nustatymai išsaugoti",
     "searchByModelAria": "Ieškoti pagal modelį",
     "selectSupportedEndpoint": "Pasirinkite bent vieną palaikomą galinį tašką",
-    "antigravityClientProfileHarness": "Testavimo aplinka / CLI"
+    "antigravityClientProfileHarness": "Testavimo aplinka / CLI",
+    "vertexCredentialHint": "__MISSING__:API keys use the curated project catalog. Service Account JSON enables live Model Garden discovery.",
+    "vertexCredentialLabel": "__MISSING__:API Key or Service Account JSON"
   },
   "settings": {
     "title": "Nustatymai",
@@ -7764,6 +7770,7 @@
     "retentionMcpAudit": "MCP auditas (dienomis)",
     "retentionA2aEvents": "A2A įvykiai (dienomis)",
     "retentionCallLogs": "Skambučių žurnalai (dienomis)",
+    "retentionConversationTurnNodes": "Conversation turn nodes (days)",
     "retentionUsageHistory": "Naudojimo istorija (dienomis)",
     "retentionMemoryEntries": "Atminties įrašai (dienomis)",
     "retentionXpAuditLog": "XP audito žurnalas (dienomis)",
@@ -11425,7 +11432,9 @@
       "correlationIdValue": "Koreliacijos ID: {id}",
       "detailedPayloadInfo": "Jei norite naujoms užklausoms matyti keturių etapų kliento ir teikėjo turinio rodinį, pirmiausia įjunkite išsamų registravimą.",
       "copyAll": "Kopijuoti viską",
-      "copiedAll": "Viskas nukopijuota"
+      "copiedAll": "Viskas nukopijuota",
+      "rawViewOff": "__MISSING__:Raw view: off",
+      "rawViewOn": "__MISSING__:Raw view: on"
     }
   },
   "proxyLogger": {
@@ -13355,6 +13364,65 @@
       "preserve": "Išsaugoti",
       "remove": "Pašalinti",
       "set": "Nustatyti fiksuotą reikšmę"
+    },
+    "editor": {
+      "advanced": "__MISSING__:Advanced: tags, priority & thinking budget",
+      "allScopes": "__MISSING__:All keys & shared rules",
+      "backToKeys": "__MISSING__:Back to API keys",
+      "catalogError": "__MISSING__:The model catalog could not be loaded. Use an exact ID / wildcard instead.",
+      "checkTitle": "__MISSING__:Check saved rules",
+      "configure": "__MISSING__:Configure routing",
+      "customTarget": "__MISSING__:Target model ID / alias",
+      "customTargetHint": "__MISSING__:Selected IDs appear here. You can also enter a custom model ID or existing alias.",
+      "discard": "__MISSING__:Discard the unsaved changes to this rule?",
+      "draftNotice": "__MISSING__:This summarizes the editor, not a runtime simulation. No request is sent.",
+      "draftSummary": "__MISSING__:Rule summary",
+      "editorHint": "__MISSING__:Define the condition and action separately. Existing rules keep their current matching behavior.",
+      "editRule": "__MISSING__:Edit rule",
+      "effort": {
+        "default": "__MISSING__:Use as default",
+        "force": "__MISSING__:Force effort",
+        "inherit": "__MISSING__:Keep request effort"
+      },
+      "effortHint": {
+        "default": "__MISSING__:Use this effort only when the request has no reasoning signal.",
+        "force": "__MISSING__:Request this effort even when the client specifies another value. Check the final upstream request to verify provider behavior.",
+        "inherit": "__MISSING__:Leave the request's reasoning effort unchanged."
+      },
+      "entryHint": "__MISSING__:Manage model and reasoning rules in a full-width editor. Access permissions stay here.",
+      "exactOrPattern": "__MISSING__:Exact request ID or pattern",
+      "keyScopeNotice": "__MISSING__:Only this key's rules are shown. Shared rules may also apply at runtime; the saved-rule check includes them.",
+      "loading": "__MISSING__:Loading routing configuration…",
+      "matched": "__MISSING__:Matched rule: {name}",
+      "matchStageHint": "__MISSING__:Matching happens before a combo is expanded. To affect a combo request, select the combo itself — not a model inside it.",
+      "missingKey": "__MISSING__:This API key no longer exists. Choose another key.",
+      "newRule": "__MISSING__:New rule",
+      "noChoices": "__MISSING__:No matches. Adjust your search or use an exact ID / wildcard.",
+      "notMatched": "__MISSING__:No saved rule matches",
+      "notMatchedHint": "__MISSING__:Check the selected API key, exact request model or combo name, source effort and tags.",
+      "pageDescription": "__MISSING__:Choose a key, define when a rule applies, and decide how to route its requests. Routing does not grant additional model permissions.",
+      "pageTitle": "__MISSING__:API-key routing",
+      "patternHint": "__MISSING__:Use an exact model/alias/combo name, * for any characters, or ? for one character. Existing values are preserved.",
+      "priorityHint": "__MISSING__:Higher values win within the same scope. API-key rules take precedence over combo, model and global rules.",
+      "retry": "__MISSING__:Retry",
+      "ruleCount": "__MISSING__:{count, plural, =0 {No rules in this scope} one {# rule in this scope} other {# rules in this scope}}",
+      "ruleList": "__MISSING__:Routing rules",
+      "saveBeforeCheck": "__MISSING__:Save or discard the draft before checking saved rules.",
+      "savedOnly": "__MISSING__:Check the currently saved rules for a sample request. This does not call an AI provider or verify the final upstream payload.",
+      "scopeHint": "__MISSING__:Keep rules for individual keys separate, or manage rules across all scopes.",
+      "searchChoice": "__MISSING__:Search: {label}",
+      "searchPlaceholder": "__MISSING__:Filter by name or full ID…",
+      "simulationError": "__MISSING__:Could not check the saved rules. Please try again.",
+      "sourceAll": "__MISSING__:All requested models and combos",
+      "sourceCombo": "__MISSING__:A requested combo",
+      "sourceModel": "__MISSING__:A requested model",
+      "sourcePattern": "__MISSING__:An exact ID or wildcard (advanced)",
+      "sourceType": "__MISSING__:Match requests for",
+      "technicalDetails": "__MISSING__:Technical details",
+      "then": "__MISSING__:What should change?",
+      "unsaved": "__MISSING__:Unsaved changes",
+      "when": "__MISSING__:When does this rule apply?",
+      "workspace": "__MISSING__:Choose an API key"
     }
   },
   "chaosConfig": {

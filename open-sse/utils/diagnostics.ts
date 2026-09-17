@@ -319,23 +319,7 @@ export function detectMalformedNonStream(resp: unknown): MalformedReason | null 
     return false;
   });
 
-  if (!anyHasOutput) {
-    // Same terminal stops isEmptyContentResponse already accepts as
-    // successful truncation, not a silent fake-success. Gemini 3.8
-    // health probes that spend max_tokens on thinking come back as
-    // content:"" + finish_reason:"length". Treating that as empty_choices
-    // rewrites a valid 200 into 502 and fails dashboard Test all.
-    const truncatedAtLimit = choices.some((choice) => {
-      const c = choice as Record<string, unknown>;
-      return (
-        c?.finish_reason === "length" ||
-        c?.finish_reason === "tool_calls" ||
-        c?.finish_reason === "content_filter"
-      );
-    });
-    if (truncatedAtLimit) return null;
-    return "empty_choices";
-  }
+  if (!anyHasOutput) return "empty_choices";
   return null;
 }
 
