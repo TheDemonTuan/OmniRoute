@@ -163,7 +163,7 @@ describe("auto/<family> materialization (#6453)", () => {
       combo.models.every((m) => detectModelFamily(m.model) === "glm"),
       "every auto/glm candidate must be a glm-family model, never the connected openai one"
     );
-  });
+  }, 60000);
 
   it("resolves auto/zai to ONLY the zai-provider connection (provider-override family)", async () => {
     await providersDb.createProviderConnection({

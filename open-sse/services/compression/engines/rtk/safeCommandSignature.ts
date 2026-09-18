@@ -4,6 +4,8 @@ const SAFE_SUBCOMMANDS: Record<string, Record<string, true>> = {
   mvnw: { compile: true, test: true, package: true, verify: true, install: true, clean: true },
   mvnd: { compile: true, test: true, package: true, verify: true, install: true, clean: true },
   npm: { test: true, run: true, install: true, audit: true, build: true },
+  gradle: { build: true, test: true, check: true, assemble: true, clean: true },
+  gradlew: { build: true, test: true, check: true, assemble: true, clean: true },
   git: { diff: true, status: true, log: true, show: true, branch: true },
   ctest: {},
   tsc: {},

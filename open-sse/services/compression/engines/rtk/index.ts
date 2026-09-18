@@ -76,6 +76,7 @@ export interface RtkProcessResult {
   compressed: boolean;
   originalTokens: number;
   compressedTokens: number;
+  tokensSaved?: number;
   techniquesUsed: string[];
   rulesApplied: string[];
   rawOutputPointers?: RtkRawOutputPointer[];
@@ -237,6 +238,7 @@ export function processRtkText(
       compressed: false,
       originalTokens: 0,
       compressedTokens: 0,
+      tokensSaved: 0,
       techniquesUsed: [],
       rulesApplied: [],
       rawOutputPointers: [],
@@ -285,6 +287,7 @@ export function processRtkText(
             compressed: false,
             originalTokens,
             compressedTokens: originalTokens,
+            tokensSaved: 0,
             techniquesUsed: [],
             rulesApplied: [`rtk:policy:passthrough:${policy.reason ?? "flag"}`],
             rawOutputPointers: [],
@@ -322,6 +325,7 @@ export function processRtkText(
               compressed: false,
               originalTokens,
               compressedTokens: originalTokens,
+              tokensSaved: 0,
               techniquesUsed: [],
               rulesApplied: [`rtk:processor:${procResult.processor}:${procResult.status}`],
               rawOutputPointers: [],
@@ -346,8 +350,7 @@ export function processRtkText(
     }
   }
 
-  // Stateful processors own semantic rendering. Never run generic transformations over their output.
-  if (!statefulProcessorRendered && config.enableRenderers) {
+  if (config.enableRenderers) {
     try {
       const rendered = applyRenderer(result, detection, config);
       if (rendered.changed) {
@@ -382,11 +385,16 @@ export function processRtkText(
   }
 
   if (!statefulProcessorRendered) {
-    const deduped = deduplicateRepeatedLines(result, { threshold: config.deduplicateThreshold });
+    // #13388: skip dedup for non-shell tool results (file reads, grep, glob, etc.)
+    // where repeated structural lines are semantically meaningful.
+    const shouldSkipDedup = Boolean(options.skipFilters);
+    const deduped = shouldSkipDedup
+      ? { text: result, collapsed: 0 }
+      : deduplicateRepeatedLines(result, { threshold: config.deduplicateThreshold });
     if (deduped.collapsed > 0) {
       result = deduped.text;
-      techniquesUsed.push("rtk-deduplicate");
-      rulesApplied.push("rtk:deduplicate");
+      techniquesUsed.push("rtk-dedup");
+      rulesApplied.push("rtk:dedup");
     }
 
     if (config.enableGrouping) {
@@ -406,6 +414,12 @@ export function processRtkText(
       return [];
     }
   });
+  // #4559: skip the generic line/char hard-cap for document/file reads (see
+  // isDocumentLikeRead above) so the middle of a code/prose read is not dropped.
+  // Non-shell results that are NOT document-like (grep/glob/search output) still
+  // get the generic cap — #13388 only exempted dedup, which is what corrupts
+  // structured JSON; unlimited truncation-skip would reopen the problem #4559 fixed
+  // for a different class of tools.
   const truncated =
     isDocumentLikeRead || ownsTruncation
       ? { text: result, truncated: false, droppedLines: 0 }
@@ -449,6 +463,7 @@ export function processRtkText(
     compressed: compressedTokens < originalTokens,
     originalTokens,
     compressedTokens,
+    tokensSaved: Math.max(0, originalTokens - compressedTokens),
     techniquesUsed: [...new Set(techniquesUsed)],
     rulesApplied: [...new Set(rulesApplied)],
     ...(rawOutputPointers.length > 0 ? { rawOutputPointers } : {}),
