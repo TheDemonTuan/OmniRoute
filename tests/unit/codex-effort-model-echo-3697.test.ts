@@ -113,6 +113,36 @@ test("OpenAI -> Responses translator emits response.in_progress with output: [],
   assert.equal(completedOutput[0].status, "completed");
 });
 
+test("OpenAI -> Responses translator always populates input_tokens_details and output_tokens_details", () => {
+  const events = collectResponsesEvents([
+    {
+      id: "chatcmpl-1",
+      model: "gemini-3.8-flash",
+      choices: [{ index: 0, delta: { content: "hi" }, finish_reason: null }],
+      usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+    },
+    {
+      id: "chatcmpl-1",
+      choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+    },
+    null,
+  ]);
+
+  const completed = events.find((e) => e.event === "response.completed")?.data?.response as Record<
+    string,
+    unknown
+  >;
+  assert.ok(completed.usage, "usage must be present");
+  const usage = completed.usage as Record<string, unknown>;
+  assert.equal(usage.input_tokens, 10);
+  assert.equal(usage.output_tokens, 5);
+  assert.equal(usage.total_tokens, 15);
+  assert.ok(usage.input_tokens_details, "input_tokens_details must be present");
+  assert.ok(usage.output_tokens_details, "output_tokens_details must be present");
+  assert.deepEqual(usage.input_tokens_details, { cached_tokens: 0 });
+  assert.deepEqual(usage.output_tokens_details, { reasoning_tokens: 0 });
+});
+
 test("full shim pipeline: bare upstream model in Responses payloads gets rewritten to the requested effort-suffixed id", () => {
   const events = collectResponsesEvents([
     {
