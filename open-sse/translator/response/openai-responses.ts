@@ -128,20 +128,24 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
     const u = chunk.usage;
     const input_tokens = u.input_tokens ?? u.prompt_tokens ?? 0;
     const output_tokens = u.output_tokens ?? u.completion_tokens ?? 0;
+    const cacheDetails = resolveResponsesCacheUsageDetails(u);
+    const rawReasoning =
+      u.output_tokens_details?.reasoning_tokens ?? u.completion_tokens_details?.reasoning_tokens;
+    const reasoningTokens =
+      typeof rawReasoning === "number" && Number.isFinite(rawReasoning) ? rawReasoning : 0;
+
     state.usage = {
       input_tokens,
+      input_tokens_details: {
+        cached_tokens: 0,
+        ...(cacheDetails || {}),
+      },
       output_tokens,
+      output_tokens_details: {
+        reasoning_tokens: reasoningTokens,
+      },
       total_tokens: u.total_tokens ?? input_tokens + output_tokens,
     };
-    const cacheDetails = resolveResponsesCacheUsageDetails(u);
-    if (cacheDetails) {
-      state.usage.input_tokens_details = cacheDetails;
-    }
-    const reasoningTokens =
-      u.output_tokens_details?.reasoning_tokens ?? u.completion_tokens_details?.reasoning_tokens;
-    if (reasoningTokens) {
-      state.usage.output_tokens_details = { reasoning_tokens: reasoningTokens };
-    }
   }
 
   if (!chunk.choices?.length) {
