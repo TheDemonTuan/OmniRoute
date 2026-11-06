@@ -101,11 +101,11 @@ jobs:
     permissions:
       contents: read
       packages: read
-    uses: TheDemonTuan/vps-deploy/.github/workflows/security-trivy.yml@5d9b930cfade521cf74d099e42f3ad3e4925f2ff
+    uses: TheDemonTuan/vps-deploy/.github/workflows/security-trivy.yml@8145a6593be0329228a740bfeaa486b82d7a1393
     with:
       app: omniroute
       source-sha: ${{ github.sha }}
-      platform-ref: 5d9b930cfade521cf74d099e42f3ad3e4925f2ff
+      platform-ref: 8145a6593be0329228a740bfeaa486b82d7a1393
       config: .deploy/app.yml
       scan-mode: source
 
@@ -119,11 +119,11 @@ jobs:
     permissions:
       contents: read
       packages: write
-    uses: TheDemonTuan/vps-deploy/.github/workflows/build-docker.yml@5d9b930cfade521cf74d099e42f3ad3e4925f2ff
+    uses: TheDemonTuan/vps-deploy/.github/workflows/build-docker.yml@8145a6593be0329228a740bfeaa486b82d7a1393
     with:
       app: omniroute
       source-sha: ${{ github.sha }}
-      platform-ref: 5d9b930cfade521cf74d099e42f3ad3e4925f2ff
+      platform-ref: 8145a6593be0329228a740bfeaa486b82d7a1393
       config: .deploy/app.yml
 
   security-image:
@@ -132,11 +132,11 @@ jobs:
     permissions:
       contents: read
       packages: read
-    uses: TheDemonTuan/vps-deploy/.github/workflows/security-trivy.yml@5d9b930cfade521cf74d099e42f3ad3e4925f2ff
+    uses: TheDemonTuan/vps-deploy/.github/workflows/security-trivy.yml@8145a6593be0329228a740bfeaa486b82d7a1393
     with:
       app: omniroute
       source-sha: ${{ github.sha }}
-      platform-ref: 5d9b930cfade521cf74d099e42f3ad3e4925f2ff
+      platform-ref: 8145a6593be0329228a740bfeaa486b82d7a1393
       config: .deploy/app.yml
       scan-mode: image
       image-ref: ${{ needs.build.outputs.image-ref }}
@@ -155,14 +155,14 @@ jobs:
     environment: production
     timeout-minutes: 17
     steps:
-      - uses: TheDemonTuan/vps-deploy/.github/actions/deploy@5d9b930cfade521cf74d099e42f3ad3e4925f2ff
+      - uses: TheDemonTuan/vps-deploy/.github/actions/deploy@8145a6593be0329228a740bfeaa486b82d7a1393
         with:
           app: omniroute
           host: oracle-main
           operation: deploy
           component: app
           source-sha: ${{ github.sha }}
-          platform-ref: 5d9b930cfade521cf74d099e42f3ad3e4925f2ff
+          platform-ref: 8145a6593be0329228a740bfeaa486b82d7a1393
           config: .deploy/app.yml
           image-ref: ${{ needs.build.outputs.image-ref }}
         env:

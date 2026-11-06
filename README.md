@@ -1854,6 +1854,8 @@ The API is `https://omniroute-api.tuannguyenviet.site/v1`; the dashboard is
 fresh `INITIAL_PASSWORD`, `JWT_SECRET`, `API_KEY_SECRET`, and `PUBLIC_URL` values.
 GitHub environment `production` holds only the dedicated `DEPLOY_SSH_KEY`; app
 credentials and databases stay on the VPS. Restrict that environment to `production`.
+The platform keeps internal `BASE_URL` on loopback and uses the dashboard's public
+HTTPS `PUBLIC_URL` for `NEXT_PUBLIC_BASE_URL` and OAuth callbacks.
 
 For image-only validation, dispatch `deploy.yml` on `production` with `skip_deploy=true`.
 Use `deploy-ops.yml` for `status`, `rollback`, and `reconcile`; rollback targets the
