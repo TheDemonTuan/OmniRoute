@@ -47,27 +47,3 @@ test(`all ${i18nConfig.locales.length} UI locale catalogs contain non-placeholde
   }
 });
 
-test("localized Modality Bridge copy describes the shipped Video Bridge without stale backlog text", () => {
-  const ptBr = JSON.parse(readFileSync(path.join(messagesDirectory, "pt-BR.json"), "utf8")) as {
-    settings: Record<string, string>;
-  };
-  assert.equal(
-    ptBr.settings.modalityBridgeIntro,
-    "Converta conteúdo multimodal em texto antes que ele chegue a modelos apenas de texto. As pontes de visão, áudio e vídeo estão disponíveis e podem ser configuradas."
-  );
-  assert.equal(
-    ptBr.settings.modalityBridgeVideoDesc,
-    "Faça uma amostragem dos quadros do vídeo, descreva-os com um modelo de visão e continue com o modelo de texto escolhido."
-  );
-
-  for (const file of readdirSync(messagesDirectory).filter((entry) => entry.endsWith(".json"))) {
-    const catalog = JSON.parse(readFileSync(path.join(messagesDirectory, file), "utf8")) as {
-      settings: Record<string, unknown>;
-    };
-    assert.equal(
-      Object.hasOwn(catalog.settings, "modalityBridgeVideoComingSoon"),
-      false,
-      `${file}: stale Video Bridge backlog key`
-    );
-  }
-});

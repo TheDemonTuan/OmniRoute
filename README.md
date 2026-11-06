@@ -1873,6 +1873,9 @@ origin deny the versioned `management`, `registered-keys`, `agents`, `accounts`,
 `providers`, `issues` and `quotas` control-plane prefixes under `/v1/` and `/api/v1/`.
 Review this explicit boundary whenever syncing new upstream endpoints.
 
+Native CI test files have a five-minute deadline. Every unit shard and the UI suite
+remain mandatory: failures, cancellations and timeouts block image build and deploy.
+
 For image-only validation, dispatch `deploy.yml` on `production` with `skip_deploy=true`.
 Use `deploy-ops.yml` for `status`, `rollback`, and `reconcile`; rollback targets the
 retained prior slot, not an arbitrary tag. Initial network/route/container bootstrap
