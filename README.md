@@ -1847,6 +1847,11 @@ does not include browser/embedded CLI providers or a Docker socket. `DEPLOY_SLOT
 enables health identity and real HTTP/WebSocket drain accounting; without it the
 upstream public liveness response remains unchanged.
 
+The runtime OS is digest-pinned Wolfi (glibc); the upstream builder, Node binary,
+npm and native application assets are retained. Image smoke executes a SQLite
+query and loads native wreq/ONNX bindings. Debian OS findings are not exempted;
+the HIGH/CRITICAL image gate remains blocking.
+
 Production setup is owned by `TheDemonTuan/vps-deploy`, registration `omniroute` on
 `oracle-main`. It uses a dedicated `omniroute-data` volume, never `9router-data`.
 The API is `https://omniroute-api.tuannguyenviet.site/v1`; the dashboard is

@@ -22,6 +22,14 @@ done
 docker exec "$cid" node --input-type=module -e '
 import assert from "node:assert/strict";
 import { hostname } from "node:os";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
+const Database = require("better-sqlite3");
+const db = new Database(":memory:");
+assert.equal(db.prepare("SELECT 123 AS value").get().value, 123);
+db.close();
+assert.equal(typeof require("wreq-js").createTransport, "function");
+assert.equal(typeof require("onnxruntime-node").InferenceSession.create, "function");
 const base = "http://127.0.0.1:20128";
 const response = await fetch(base + "/api/health");
 assert.equal(response.status, 200);

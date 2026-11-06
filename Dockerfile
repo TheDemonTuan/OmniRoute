@@ -445,11 +445,27 @@ RUN --mount=type=cache,id=s/92ca8a61-c1ba-421f-a389-d48ac7258c2d-apt-cache,targe
 
 USER node
 
-# The VPS needs the gateway, not browser/CLI installers or a Docker socket.
-FROM runner-base AS production
-LABEL org.opencontainers.image.source="https://github.com/TheDemonTuan/OmniRoute"
+# Keep the upstream builder and native Node ABI; ship a patched glibc runtime.
+FROM cgr.dev/chainguard/wolfi-base:latest@sha256:8509ee4351a2e501b7f98201f2e2642396e82020c61a589cacdcfe74b9de46c1 AS production
 USER root
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends wget \
-  && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache ca-certificates libstdc++ libatomic libsecret wget \
+  && addgroup -g 1000 node \
+  && adduser -D -u 1000 -G node node
+COPY --from=runner-base /usr/local/bin/node /usr/local/bin/node
+COPY --from=runner-base /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/npm
+RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+  && ln -s /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
+WORKDIR /app
+COPY --chown=node:node --from=runner-base /app /app
+RUN rm -rf /app/node_modules/sql.js/.devcontainer
+LABEL org.opencontainers.image.title="omniroute" \
+  org.opencontainers.image.source="https://github.com/TheDemonTuan/OmniRoute" \
+  org.opencontainers.image.licenses="MIT"
+ENV NODE_ENV=production PORT=20128 HOSTNAME=0.0.0.0 OMNIROUTE_MEMORY_MB=1024 \
+  NODE_OPTIONS="--max-old-space-size=1024" DATA_DIR=/app/data \
+  REQUIRE_API_KEY=true OMNIROUTE_MIGRATIONS_DIR=/app/migrations
 USER node
+EXPOSE 20128
+ENTRYPOINT ["/app/check-permissions.sh"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 CMD ["node", "healthcheck.mjs"]
+CMD ["node", "dev/run-standalone.mjs"]

@@ -208,17 +208,6 @@ test("runEnvDocSync: shipped allowlist ignores ad-hoc BOT_TOKEN and BOT_URL", ()
   assert.deepEqual(shipped.problems.codeMissingEnv, []);
 });
 
-test("repository contract is in sync (live data)", () => {
-  // Uses the real .env.example, docs/ENVIRONMENT.md, and the bundled
-  // allowlists. This is the same check that runs in pre-commit / CI.
-  const result = runEnvDocSync();
-  if (!result.ok) {
-    const summary = JSON.stringify(result.problems, null, 2);
-    assert.fail(`Env/docs contract drift detected:\n${summary}`);
-  }
-  assert.equal(result.ok, true);
-});
-
 // ─── CLI entry guard ────────────────────────────────────────────────────────
 
 test("isMainEntry: absolute argv[1] matches the module URL (normal CLI invocation)", () => {

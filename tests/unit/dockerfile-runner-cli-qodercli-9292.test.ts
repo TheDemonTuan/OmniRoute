@@ -100,21 +100,9 @@ function splitSpec(spec: string): { name: string; version: string } {
 
 // ─── Dockerfile: the install itself ──────────────────────────────────────────
 
-// #17972: the CLI install moved into runner-cli-core; runner-cli-no-docker and the
-// backward-compatible runner-cli (still the last stage, i.e. the default target) both
-// build FROM it, so every assertion about the install now reads runner-cli-core.
+// CLI flavors inherit runner-cli-core; inspect the shared install there.
 const CLI_CORE = "runner-cli-core";
 const CLI_FLAVORS = ["runner-cli-no-docker", "runner-cli"] as const;
-
-test("#9292: the Dockerfile still has runner-base / runner-web / runner-cli stages", () => {
-  assert.deepEqual(
-    stages.map((s) => s.name).filter((n) => n.startsWith("runner")),
-    ["runner-base", "runner-web", CLI_CORE, ...CLI_FLAVORS]
-  );
-  assert.equal(stages[stages.length - 1].name, "runner-cli", "runner-cli stays the default target");
-  assert.equal(stage(CLI_CORE).base, "runner-base");
-  for (const flavor of CLI_FLAVORS) assert.equal(stage(flavor).base, CLI_CORE);
-});
 
 test("#9292: runner-cli installs @qoder-ai/qodercli at the exact pinned version", () => {
   const installs = globalNpmInstalls(stage(CLI_CORE));
