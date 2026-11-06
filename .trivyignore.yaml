@@ -1,0 +1,27 @@
+# Inherited npm risk acceptance; unchanged from upstream .trivyignore (#18765).
+vulnerabilities:
+  - id: CVE-2026-118764
+    expired_at: 2026-12-02
+    statement: Bundled npm minimatch; fixed CLI subcommands do not accept request globs. Revisit when npm fixes its declared major.
+  - id: CVE-2026-118773
+    expired_at: 2026-12-02
+    statement: Bundled npm glob; fixed CLI subcommands do not accept request globs. Revisit when npm fixes its declared major.
+
+# These exact upstream examples are not deployed by the registered Docker VPS path.
+# Production Dockerfile, application dependencies and secret scanning stay blocking.
+misconfigurations:
+  - id: AVD-KSV-0014
+    paths:
+      - deploy/kubernetes/base/deployment.yaml
+      - deploy/kubernetes/overlays/k3s/resources.yaml
+      - deploy/kubernetes/overlays/k8s/liveness-http.yaml
+    statement: Upstream Kubernetes examples are outside this Docker-only production enrollment. Review before adopting Kubernetes.
+  - id: AVD-KSV-0118
+    paths:
+      - deploy/kubernetes/overlays/k3s/resources.yaml
+      - deploy/kubernetes/overlays/k8s/liveness-http.yaml
+    statement: Kustomize partial overlays are scanned without their base security context; not deployed on this VPS.
+  - id: AVD-DS-0002
+    paths:
+      - docker/vnc-browser/chromium/Dockerfile
+    statement: Optional upstream VNC browser image is not built, mounted or run by this production gateway.

@@ -1862,3 +1862,9 @@ share the same database. Keep upstream publishing/deployment workflows disabled 
 this fork; only `deploy.yml` and `deploy-ops.yml` own its production path.
 
 Local deployment verification: `bash .deploy/verify.sh`.
+
+The production security gate uses `.trivyignore.yaml`: it retains upstream's two
+temporary npm CVE acceptances and scopes misconfiguration exceptions to the exact
+unused Kubernetes examples and optional VNC Dockerfile. The production Dockerfile,
+application dependency and secret gates remain blocking. These exceptions do not
+certify Kubernetes or VNC deployments.
