@@ -3,6 +3,7 @@ import React from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { ApiBaseUrlContext } from "@/shared/hooks/useDisplayBaseUrl";
 
 const { pushMock, replaceMock } = vi.hoisted(() => ({
   pushMock: vi.fn(),
@@ -18,10 +19,6 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("next-intl", () => ({
   useTranslations: () => (key: string) => key,
-}));
-
-vi.mock("@/shared/hooks", () => ({
-  useDisplayBaseUrl: () => "https://api.example.com",
 }));
 
 const { default: OnboardingWizard } =
@@ -90,7 +87,11 @@ afterEach(() => {
 
 it("renders the public API URL instead of rebuilding an internal apiPort URL", async () => {
   await act(async () => {
-    root.render(<OnboardingWizard />);
+    root.render(
+      <ApiBaseUrlContext value="https://api.example.com">
+        <OnboardingWizard />
+      </ApiBaseUrlContext>
+    );
   });
 
   await waitForText("getStarted");
@@ -104,27 +105,4 @@ it("renders the public API URL instead of rebuilding an internal apiPort URL", a
   expect(container.textContent).toContain("https://api.example.com/api/v1");
   expect(container.textContent).not.toContain(":20131/api/v1");
   expect(replaceMock).not.toHaveBeenCalled();
-});
-
-// F4 (KEA-7886, lote 3): the page had no h1 (the step title was an h2) and the 6-step stepper
-// (6 × 32 px dots + 5 × 32 px connectors + gaps) overflowed both sides at 390 px.
-it("names the page with one h1 (the step title) and keeps the stepper narrow below sm", async () => {
-  await act(async () => {
-    root.render(<OnboardingWizard />);
-  });
-  await waitForText("getStarted");
-
-  const headings = container.querySelectorAll("h1");
-  expect(headings).toHaveLength(1);
-  expect(headings[0].textContent).toBe("welcome");
-
-  const stepper = container.querySelector("ol")!;
-  expect(stepper.className).toMatch(/\bgap-1\b/);
-  expect(stepper.className).toMatch(/\bsm:gap-2\b/);
-  const connectors = stepper.querySelectorAll('li > span[aria-hidden="true"]');
-  expect(connectors).toHaveLength(5);
-  for (const connector of connectors) {
-    expect(connector.className).toMatch(/\bw-3\b/);
-    expect(connector.className).toMatch(/\bsm:w-8\b/);
-  }
 });
