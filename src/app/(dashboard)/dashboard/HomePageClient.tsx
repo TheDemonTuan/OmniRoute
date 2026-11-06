@@ -2,7 +2,7 @@
 
 import { useTranslations } from "next-intl";
 
-import { useState, useEffect, useMemo, useCallback, useRef, useSyncExternalStore } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { SectionHeader } from "@omniroute/ui-kit/page-header";
@@ -22,6 +22,7 @@ import { extractApiErrorMessage } from "@/shared/http/apiErrorMessage";
 import { copyToClipboard } from "@/shared/utils/clipboard";
 import { getProviderDisplayLabel } from "@/shared/utils/providerDisplayLabel";
 import { useIsElectron, useOpenExternal } from "@/shared/hooks/useElectron";
+import { useApiBaseUrl } from "@/shared/hooks";
 import { HomeProviderTopologySection } from "./HomeProviderTopologySection";
 import { shouldShowProviderTopologyOnHome } from "./homeAppearance";
 import ManualUpdateCommand from "./ManualUpdateCommand";
@@ -116,12 +117,6 @@ const stripStepNumber = (title: string) => title.replace(/^\s*\d+[.)]\s*/, "");
 const DOCS_LINK =
   "hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-border text-text-muted hover:text-text-main hover:bg-bg-subtle transition-colors";
 
-// Stable no-op subscription for useSyncExternalStore reads of never-changing
-// browser globals (location.origin does not change without a full navigation).
-function emptySubscribe() {
-  return () => {};
-}
-
 export default function HomePageClient({ machineId }: HomePageClientProps) {
   const router = useRouter();
   const isElectron = useIsElectron();
@@ -131,13 +126,7 @@ export default function HomePageClient({ machineId }: HomePageClientProps) {
   const [providerConnections, setProviderConnections] = useState([]);
   const [models, setModels] = useState([]);
   const [loading, setLoading] = useState(true);
-  // useSyncExternalStore keeps SSR/hydration consistent ("/v1" on the server,
-  // the real origin after hydration) without a setState-in-effect round-trip.
-  const baseUrl = useSyncExternalStore(
-    emptySubscribe,
-    () => `${globalThis.location.origin}/v1`,
-    () => "/v1"
-  );
+  const baseUrl = `${useApiBaseUrl()}/v1`;
   const [selectedProvider, setSelectedProvider] = useState(null);
   const [providerMetrics, setProviderMetrics] = useState<Record<string, ProviderMetricSummary>>({});
   const [providerTopology, setProviderTopology] = useState({ lastProvider: "", errorProvider: "" });

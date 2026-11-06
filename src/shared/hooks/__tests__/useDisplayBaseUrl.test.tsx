@@ -4,6 +4,9 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_DISPLAY_BASE_URL,
+  ApiBaseUrlContext,
+  useApiBaseUrl,
+  useDisplayBaseUrl,
   isPublicDisplayBaseUrl,
   normalizeBasePath,
   resolveDisplayBaseUrl,
@@ -34,6 +37,36 @@ describe("useDisplayBaseUrl", () => {
     document.body.innerHTML = "";
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
+  });
+
+  it("keeps inference on its runtime API host without moving management links", async () => {
+    vi.stubEnv("NEXT_PUBLIC_BASE_URL", "https://admin.example.com");
+    const container = makeContainer();
+    const root = createRoot(container);
+    cleanupCallbacks.push(() => act(() => root.unmount()));
+    function Endpoints() {
+      return (
+        <span>
+          {useApiBaseUrl()}|{useDisplayBaseUrl()}
+        </span>
+      );
+    }
+    await act(async () => {
+      root.render(
+        <ApiBaseUrlContext value=" https://api.example.com/ ">
+          <Endpoints />
+        </ApiBaseUrlContext>
+      );
+    });
+    expect(container.textContent).toBe("https://api.example.com|https://admin.example.com");
+    await act(async () => {
+      root.render(
+        <ApiBaseUrlContext value={undefined}>
+          <Endpoints />
+        </ApiBaseUrlContext>
+      );
+    });
+    expect(container.textContent).toBe("https://admin.example.com|https://admin.example.com");
   });
 
   it("returns env value on first render and after mount when NEXT_PUBLIC_BASE_URL is set", async () => {

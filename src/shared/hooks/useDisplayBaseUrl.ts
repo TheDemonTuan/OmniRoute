@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 
 export const DEFAULT_DISPLAY_BASE_URL = "http://localhost:20128";
+export const ApiBaseUrlContext = createContext<string | undefined>(undefined);
 
 function normalizeUrl(value?: string): string | null {
   const trimmed = value?.trim();
@@ -231,7 +232,8 @@ export function resolveDisplayBaseUrl(
  * host-header attack surface. For server-side resolution, use
  * `src/shared/utils/resolveOmniRouteBaseUrl.ts` instead.
  */
-export function useDisplayBaseUrl(): string {
+function useBaseUrl(override?: string): string {
+  const preferredUrl = normalizeUrl(override);
   const envValue = normalizeUrl(process.env.NEXT_PUBLIC_BASE_URL);
   const envBasePath = normalizeBasePath(
     process.env.NEXT_PUBLIC_OMNIROUTE_BASE_PATH || process.env.OMNIROUTE_BASE_PATH
@@ -241,24 +243,28 @@ export function useDisplayBaseUrl(): string {
   // read values both bundles share: NEXT_PUBLIC_* is inlined into the client, PORT is not
   // (server-only), and a PORT-based fallback made the SSR text differ — React #418 on
   // /dashboard/relay (F4). The effect below swaps in the live browser origin after mount.
-  const [url, setUrl] = useState<string>(() =>
-    resolveDisplayBaseUrl(
-      envValue ?? undefined,
-      undefined,
-      undefined,
-      envBasePath || undefined,
-      // `|| ""`, not undefined: undefined would re-enable the PORT default parameter.
-      process.env.NEXT_PUBLIC_PORT || ""
-    )
+  const [url, setUrl] = useState<string>(
+    () =>
+      preferredUrl ??
+      resolveDisplayBaseUrl(
+        envValue ?? undefined,
+        undefined,
+        undefined,
+        envBasePath || undefined,
+        // `|| ""`, not undefined: undefined would re-enable the PORT default parameter.
+        process.env.NEXT_PUBLIC_PORT || ""
+      )
   );
 
   useEffect(() => {
-    const resolvedUrl = resolveDisplayBaseUrl(
-      envValue ?? undefined,
-      window.location.origin,
-      window.location.pathname,
-      envBasePath || undefined
-    );
+    const resolvedUrl =
+      preferredUrl ??
+      resolveDisplayBaseUrl(
+        envValue ?? undefined,
+        window.location.origin,
+        window.location.pathname,
+        envBasePath || undefined
+      );
     // Schedule via queueMicrotask so setState is called inside a callback,
     // not synchronously in the effect body (react-hooks/set-state-in-effect).
     // The unmounted guard prevents a stale setState on a torn-down root
@@ -271,7 +277,16 @@ export function useDisplayBaseUrl(): string {
     return () => {
       unmounted = true;
     };
-  }, [envValue, envBasePath]);
+  }, [preferredUrl, envValue, envBasePath]);
 
   return url;
+}
+
+export function useDisplayBaseUrl(): string {
+  return useBaseUrl();
+}
+
+// Inference links may use a different host; management and OAuth keep their origin.
+export function useApiBaseUrl(): string {
+  return useBaseUrl(useContext(ApiBaseUrlContext));
 }

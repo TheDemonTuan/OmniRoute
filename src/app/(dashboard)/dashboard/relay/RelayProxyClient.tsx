@@ -10,7 +10,7 @@ import EmptyState from "@/shared/components/EmptyState";
 import Input from "@/shared/components/Input";
 import { useNotificationStore } from "@/store/notificationStore";
 import { useConfirmDialog } from "@/shared/hooks/useConfirmDialog";
-import { useDisplayBaseUrl } from "@/shared/hooks";
+import { useApiBaseUrl } from "@/shared/hooks";
 
 interface RelayToken {
   id: string;
@@ -28,7 +28,7 @@ interface RelayToken {
 
 export default function RelayProxyClient() {
   const t = useTranslations("relay");
-  const displayBaseUrl = useDisplayBaseUrl();
+  const displayBaseUrl = useApiBaseUrl();
   const [tokens, setTokens] = useState<RelayToken[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);

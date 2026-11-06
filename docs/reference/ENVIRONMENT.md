@@ -397,6 +397,8 @@ OmniRoute provides a two-layer defense: request-side injection scanning and resp
 >
 > Keep `BASE_URL` as an internal loopback/container URL for server-to-server jobs. Do not use a browser `Origin` or public hostname for credential-bearing internal self-fetches.
 >
+> For split API/admin domains, set `OMNIROUTE_PUBLIC_BASE_URL` to the public API origin (no `/v1`) and keep `NEXT_PUBLIC_BASE_URL` on the admin origin. The server passes only that non-secret API URL into the client context at runtime: Quick Start, inference endpoints, VS Code aliases and inference curl examples use it without rebuilding the image. Management catalog examples keep the admin host. OAuth callbacks and internal `BASE_URL` are not moved.
+>
 > Authenticated dashboard writes do not require a static public base URL: the dashboard sends same-origin unsafe requests with a session-bound CSRF token. OmniRoute still centralizes public-origin validation for non-dashboard browser integrations: explicit public URL env vars are trusted first; raw `Forwarded` / `X-Forwarded-*` headers are ignored unless `OMNIROUTE_TRUST_PROXY` is enabled and the immediate proxy peer is token-stamped as trusted. Do not use CORS settings to fix same-origin dashboard requests; CORS is only for cross-origin browser clients.
 
 ---

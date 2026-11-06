@@ -2,6 +2,8 @@
 export { useTheme } from "./useTheme";
 export {
   useDisplayBaseUrl,
+  useApiBaseUrl,
+  ApiBaseUrlContext,
   DEFAULT_DISPLAY_BASE_URL,
   isPublicDisplayBaseUrl,
   resolveDisplayBaseUrl,

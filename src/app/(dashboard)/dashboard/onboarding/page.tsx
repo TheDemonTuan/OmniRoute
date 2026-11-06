@@ -14,7 +14,7 @@ import Icon from "@/shared/components/Icon";
 import Input from "@/shared/components/Input";
 import { Spinner } from "@/shared/components/Loading";
 import { cn } from "@/shared/utils/cn";
-import { useDisplayBaseUrl } from "@/shared/hooks";
+import { useApiBaseUrl } from "@/shared/hooks";
 import { FreeProviderOnboardingCard } from "./steps/FreeProviderOnboardingCard";
 import { TierTour } from "./steps/TierTour";
 
@@ -34,7 +34,7 @@ export default function OnboardingWizard() {
   const router = useRouter();
   const t = useTranslations("onboarding");
   const tc = useTranslations("common");
-  const baseUrl = useDisplayBaseUrl();
+  const baseUrl = useApiBaseUrl();
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(true);
   const apiEndpoint = `${baseUrl}/api/v1`;

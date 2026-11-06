@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { useEffect, useMemo, useState } from "react";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
-import { useDisplayBaseUrl } from "@/shared/hooks";
+import { useApiBaseUrl } from "@/shared/hooks";
 import Button from "@/shared/components/Button";
 import Card from "@/shared/components/Card";
 
@@ -26,7 +26,7 @@ export default function VscodeTokenAliasCard({
   const [keysLoading, setKeysLoading] = useState(true);
   const [keysError, setKeysError] = useState(false);
   const { copied, copy } = useCopyToClipboard();
-  const displayBaseUrl = useDisplayBaseUrl();
+  const displayBaseUrl = useApiBaseUrl();
 
   useEffect(() => {
     let cancelled = false;

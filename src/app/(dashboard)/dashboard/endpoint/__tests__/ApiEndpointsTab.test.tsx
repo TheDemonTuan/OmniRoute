@@ -3,7 +3,7 @@ import React, { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ApiEndpointsTab from "../ApiEndpointsTab";
-import { DEFAULT_DISPLAY_BASE_URL } from "@/shared/hooks/useDisplayBaseUrl";
+import { ApiBaseUrlContext, DEFAULT_DISPLAY_BASE_URL } from "@/shared/hooks/useDisplayBaseUrl";
 
 vi.mock("next/link", () => ({
   default: ({ href, children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
@@ -88,14 +88,18 @@ async function waitForText(text: string) {
   }
 }
 
-function renderApiEndpointsTab() {
+function renderApiEndpointsTab(apiBaseUrl?: string) {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
   let mounted = true;
 
   act(() => {
-    root.render(<ApiEndpointsTab />);
+    root.render(
+      <ApiBaseUrlContext value={apiBaseUrl}>
+        <ApiEndpointsTab />
+      </ApiBaseUrlContext>
+    );
   });
 
   const unmount = () => {
@@ -186,6 +190,50 @@ describe("ApiEndpointsTab", () => {
     expect(document.body.textContent).toContain("1 endpoints across 1 categories");
     expect(document.body.textContent).toContain("/api/v1/vscode/sk-live-123/models");
     expect(document.body.textContent).toContain("/api/v1/chat/completions");
+  });
+
+  it("uses the API host for inference and health but keeps v1 management behind admin", async () => {
+    vi.stubEnv("NEXT_PUBLIC_BASE_URL", "https://admin.example.com");
+    const endpoints = [
+      { method: "POST", path: "/api/v1/chat/completions", host: "https://api.example.com" },
+      { method: "GET", path: "/api/v1/management/proxies", host: "https://admin.example.com" },
+      { method: "GET", path: "/api/health", host: "https://api.example.com" },
+    ];
+    fetchMock.mockImplementation(async (input) =>
+      input === "/api/cli-tools/keys"
+        ? jsonResponse({ keys: [] })
+        : jsonResponse({
+            info: { title: "Split-domain API" },
+            servers: [],
+            tags: [{ name: "Contract" }],
+            schemas: [],
+            endpoints: endpoints.map(({ method, path }) => ({
+              method,
+              path,
+              tags: ["Contract"],
+              summary: path,
+              description: path,
+              security: true,
+              parameters: [],
+              requestBody: false,
+              responses: ["200"],
+            })),
+          })
+    );
+    renderApiEndpointsTab("https://api.example.com");
+    await waitForText("Split-domain API");
+    for (const endpoint of endpoints) {
+      const row = Array.from(document.body.querySelectorAll("code")).find(
+        (node) => node.textContent === endpoint.path
+      );
+      act(() => {
+        row!.parentElement!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      });
+      await waitForText(`curl -X ${endpoint.method} ${endpoint.host}${endpoint.path}`);
+      expect(document.body.textContent).toContain(
+        `curl -X ${endpoint.method} ${endpoint.host}${endpoint.path}`
+      );
+    }
   });
 
   it("renders curl example using window.location.origin when NEXT_PUBLIC_BASE_URL is unset", async () => {

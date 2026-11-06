@@ -14,7 +14,7 @@ import Input from "@/shared/components/Input";
 import Select from "@/shared/components/Select";
 import Textarea from "@/shared/components/Textarea";
 import { cn } from "@/shared/utils/cn";
-import { useDisplayBaseUrl } from "@/shared/hooks";
+import { useApiBaseUrl, useDisplayBaseUrl } from "@/shared/hooks";
 import VscodeTokenAliasCard from "./VscodeTokenAliasCard";
 import { matchesSearch } from "@/shared/utils/turkishText";
 
@@ -65,6 +65,7 @@ export default function ApiEndpointsTab() {
   const t = useTranslations("endpoint");
   const tc = useTranslations("common");
   const baseUrl = useDisplayBaseUrl();
+  const apiBaseUrl = useApiBaseUrl();
 
   function EndpointBadges({ ep }: { ep: Endpoint }) {
     return (
@@ -493,6 +494,11 @@ export default function ApiEndpointsTab() {
                   const key = `${ep.method}:${ep.path}`;
                   const isExpanded = expandedEndpoint === key;
                   const isTrying = tryingEndpoint === key;
+                  const endpointBaseUrl =
+                    ep.path === "/api/health" ||
+                    /^\/(?:api\/)?v1(?:beta)?\/(?!management)/.test(ep.path)
+                      ? apiBaseUrl
+                      : baseUrl;
 
                   return (
                     <div key={key}>
@@ -582,7 +588,7 @@ export default function ApiEndpointsTab() {
                             language="cURL"
                             copyLabel={tc("copy")}
                             copiedLabel={tc("copied")}
-                            code={`curl -X ${ep.method} ${baseUrl}${ep.path}${
+                            code={`curl -X ${ep.method} ${endpointBaseUrl}${ep.path}${
                               ep.security ? ' -H "Authorization: Bearer YOUR_KEY"' : ""
                             }${
                               ep.requestBody

@@ -16,7 +16,7 @@ import SegmentedControl from "@/shared/components/SegmentedControl";
 import { cn } from "@/shared/utils/cn";
 import Toggle from "@/shared/components/Toggle";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
-import { isPublicDisplayBaseUrl, useDisplayBaseUrl } from "@/shared/hooks";
+import { isPublicDisplayBaseUrl, useApiBaseUrl } from "@/shared/hooks";
 import { extractApiErrorMessage } from "@/shared/http/apiErrorMessage";
 import { useTranslations } from "next-intl";
 import A2ADashboardPage from "./components/A2ADashboard";
@@ -1093,7 +1093,7 @@ export default function APIPageClient({ machineId }: Readonly<APIPageClientProps
     }
   }, [fetchTailscaleStatus, handleTailscaleEnable, tailscalePassword, translateOrFallback]);
 
-  const displayBaseUrl = useDisplayBaseUrl();
+  const displayBaseUrl = useApiBaseUrl();
   const displayApiUrl = `${displayBaseUrl}/v1`;
   const publicDisplayApiUrl = isPublicDisplayBaseUrl(displayBaseUrl) ? displayApiUrl : null;
   const normalizedCloudBaseUrl = cloudBaseUrl

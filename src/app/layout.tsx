@@ -15,6 +15,7 @@ import { BasePathNetworkProvider } from "@/shared/components/BasePathNetworkProv
 import { PWA_THEME_COLORS } from "@/shared/constants/pwaThemeColors";
 import { EDITIONS_APPEARANCE_VALUE } from "@/shared/constants/appearancePalette";
 import { THEME_BOOT_SCRIPT } from "@/shared/utils/themeBootScript";
+import { ApiBaseUrlContext } from "@/shared/hooks/useDisplayBaseUrl";
 
 export const viewport: Viewport = {
   // Page background of the default (Editions) palette per colour scheme (pwaThemeColors.ts).
@@ -156,7 +157,9 @@ export default async function RootLayout({ children }) {
           <BasePathNetworkProvider>
             <PwaRegister />
             <LocaleAutoDetect />
-            <ThemeProvider>{children}</ThemeProvider>
+            <ApiBaseUrlContext value={process.env.OMNIROUTE_PUBLIC_BASE_URL}>
+              <ThemeProvider>{children}</ThemeProvider>
+            </ApiBaseUrlContext>
           </BasePathNetworkProvider>
         </NextIntlClientProvider>
       </body>

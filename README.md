@@ -1858,11 +1858,17 @@ Production setup is owned by `TheDemonTuan/vps-deploy`, registration `omniroute`
 `oracle-main`. It uses a dedicated `omniroute-data` volume, never `9router-data`.
 The API is `https://omniroute-api.tuannguyenviet.site/v1`; the dashboard is
 `https://omniroute.tuannguyenviet.site`. Root-owned runtime configuration requires
-fresh `INITIAL_PASSWORD`, `JWT_SECRET`, `API_KEY_SECRET`, and `PUBLIC_URL` values.
+fresh `INITIAL_PASSWORD`, `JWT_SECRET`, `API_KEY_SECRET`, `PUBLIC_URL`, and `PUBLIC_API_URL` values.
 GitHub environment `production` holds only the dedicated `DEPLOY_SSH_KEY`; app
 credentials and databases stay on the VPS. Restrict that environment to `production`.
 The platform keeps internal `BASE_URL` on loopback and uses the dashboard's public
 HTTPS `PUBLIC_URL` for `NEXT_PUBLIC_BASE_URL` and OAuth callbacks.
+`PUBLIC_API_URL=https://omniroute-api.tuannguyenviet.site` maps to the existing
+`OMNIROUTE_PUBLIC_BASE_URL`: client endpoint displays and generated media use the
+API origin at runtime; management links and OAuth keep the admin origin.
+The entire admin hostname is behind owner-email Cloudflare Access plus native
+password authentication. The API has no Access redirect; Cloudflare and the origin
+deny management paths, including `/v1/management*` and `/api/v1/management*`.
 
 For image-only validation, dispatch `deploy.yml` on `production` with `skip_deploy=true`.
 Use `deploy-ops.yml` for `status`, `rollback`, and `reconcile`; rollback targets the

@@ -8,6 +8,8 @@ cid=$(docker run -d \
   -e JWT_SECRET="$(openssl rand -hex 48)" \
   -e API_KEY_SECRET="$(openssl rand -hex 32)" \
   -e REQUIRE_API_KEY=true \
+  -e NEXT_PUBLIC_BASE_URL=https://admin.smoke.invalid \
+  -e OMNIROUTE_PUBLIC_BASE_URL=https://api.smoke.invalid \
   "$1")
 trap 'docker rm -f "$cid" >/dev/null 2>&1 || true' EXIT
 healthy=false
@@ -43,6 +45,9 @@ assert.equal(health.active_requests_known, true);
 assert.equal(health.active_requests, 0);
 const ready = await fetch(base + "/api/health/ping");
 assert.equal(ready.status, 200, "database readiness must succeed on fresh storage");
+const login = await fetch(base + "/login");
+assert.equal(login.status, 200, "native login must render with separate runtime API/admin origins");
+assert.match(login.headers.get("content-type"), /text\/html/);
 const unauthorized = await fetch(base + "/v1/chat/completions", {
   method: "POST",
   headers: { "content-type": "application/json" },
@@ -53,4 +58,4 @@ const settings = await fetch(base + "/api/settings", { redirect: "manual" });
 assert.ok([401, 403].includes(settings.status), "management settings must require authentication");
 '
 [[ "$(docker exec "$cid" id -u)" == 1000 ]] || { echo 'Image must run non-root' >&2; exit 1; }
-echo 'Immutable image smoke passed: slot identity, idle drain, SQLite readiness, auth and non-root runtime.'
+echo 'Immutable image smoke passed: slot identity, idle drain, native UI, SQLite readiness, auth and non-root runtime.'
