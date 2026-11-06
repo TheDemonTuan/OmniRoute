@@ -34,6 +34,21 @@ const proxiesByPort = new Map();
 /** Every server created through the patched factory (Next's main listener included). */
 const createdServers = new Set();
 
+// Count HTTP streams and upgraded sockets until close, not just handler return.
+const deploymentRequests = process.env.DEPLOY_SLOT ? { active: 0 } : null;
+if (deploymentRequests) globalThis.__omnirouteDeploymentRequests = deploymentRequests;
+function trackDeploymentRequest(target, finishedEvent) {
+  deploymentRequests.active++;
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    deploymentRequests.active--;
+  };
+  target.once(finishedEvent, release);
+  if (finishedEvent !== "close") target.once("close", release);
+}
+
 // Shutdown ownership (same model as scripts/dev/run-next.mjs, #12074). Next's start-server
 // registers SIGINT/SIGTERM handlers that server.close() and then process.exit(143) as soon as no
 // connection is left. That raced OmniRoute's async cleanup (src/lib/gracefulShutdown.ts: spend
@@ -255,6 +270,16 @@ http.createServer = function createServerWithResponsesWs(...args) {
   const server = createServerListener(args, tlsOptions, { createHttp: originalCreateServer });
   createdServers.add(server);
   server.once("close", () => createdServers.delete(server));
+  if (deploymentRequests) {
+    server.prependListener("request", (req, res) => {
+      if ((req.url || "").split("?")[0] !== "/api/health") {
+        trackDeploymentRequest(res, "finish");
+      }
+    });
+    server.prependListener("upgrade", (_req, socket) => {
+      trackDeploymentRequest(socket, "close");
+    });
+  }
   // Node's http.Server default keepAliveTimeout (5_000ms) races pooled
   // keep-alive HTTP clients that idle longer than that between requests (e.g.
   // the JVM java.net.http.HttpClient used by JetBrains AI Assistant), which

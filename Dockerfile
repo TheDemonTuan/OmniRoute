@@ -432,9 +432,7 @@ RUN --network=none codex --version \
 # clients differ.
 FROM runner-cli-core AS runner-cli-no-docker
 
-# Backward-compatible generic CLI flavor. Existing builds targeting runner-cli
-# retain Docker and Compose clients for operators that connect to a daemon. It
-# stays the LAST stage so a build without --target still produces it.
+# Explicit runner-cli builds retain Docker clients for operators with a daemon.
 FROM runner-cli-core AS runner-cli
 
 USER root
@@ -445,4 +443,13 @@ RUN --mount=type=cache,id=s/92ca8a61-c1ba-421f-a389-d48ac7258c2d-apt-cache,targe
   && apt-get install -y --no-install-recommends docker.io docker-compose \
   && rm -rf /var/lib/apt/lists/*
 
+USER node
+
+# The VPS needs the gateway, not browser/CLI installers or a Docker socket.
+FROM runner-base AS production
+LABEL org.opencontainers.image.source="https://github.com/TheDemonTuan/OmniRoute"
+USER root
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends wget \
+  && rm -rf /var/lib/apt/lists/*
 USER node

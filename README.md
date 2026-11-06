@@ -1830,3 +1830,35 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 </div>
 <!-- GitHub Discussions enabled for community Q&A -->
+
+## TheDemonTuan production fork
+
+This fork uses `production` for deployment; inherited upstream branches remain separate.
+Push application changes to `production` only after review. `.github/workflows/deploy.yml`
+runs deployment-lifecycle verification, the shared Trivy source gate, native ARM64
+Docker build and exact-image smoke, the Trivy image gate, then the registered
+`vps-deploy` SSH transport. Source and platform revisions and the image digest are
+immutable throughout the deployment. Failed gates do not switch production traffic.
+
+The final `production` Docker stage is the lean gateway, running as UID 1000. It
+does not include browser/embedded CLI providers or a Docker socket. `DEPLOY_SLOT`
+enables health identity and real HTTP/WebSocket drain accounting; without it the
+upstream public liveness response remains unchanged.
+
+Production setup is owned by `TheDemonTuan/vps-deploy`, registration `omniroute` on
+`oracle-main`. It uses a dedicated `omniroute-data` volume, never `9router-data`.
+The API is `https://omniroute-api.tuannguyenviet.site/v1`; the dashboard is
+`https://omniroute.tuannguyenviet.site`. Root-owned runtime configuration requires
+fresh `INITIAL_PASSWORD`, `JWT_SECRET`, `API_KEY_SECRET`, and `PUBLIC_URL` values.
+GitHub environment `production` holds only the dedicated `DEPLOY_SSH_KEY`; app
+credentials and databases stay on the VPS. Restrict that environment to `production`.
+
+For image-only validation, dispatch `deploy.yml` on `production` with `skip_deploy=true`.
+Use `deploy-ops.yml` for `status`, `rollback`, and `reconcile`; rollback targets the
+retained prior slot, not an arbitrary tag. Initial network/route/container bootstrap
+and enrollment must precede the first deploy. Take consistent SQLite backups before
+schema-changing updates: image rollback is not database rollback, and both slots
+share the same database. Keep upstream publishing/deployment workflows disabled in
+this fork; only `deploy.yml` and `deploy-ops.yml` own its production path.
+
+Local deployment verification: `bash .deploy/verify.sh`.

@@ -1,0 +1,123 @@
+name: Build and Deploy
+
+on:
+  push:
+    branches: [production]
+  pull_request:
+    branches: [production]
+  workflow_dispatch:
+    inputs:
+      skip_deploy:
+        description: "Build image only without deploying to VPS"
+        type: boolean
+        default: false
+
+concurrency:
+  group: omniroute-deploy
+  queue: max
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  activation-fence:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Require default-branch build and deployment
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == pull_request ]]; then exit 0; fi
+          [[ "$GITHUB_REF" == "refs/heads/$DEFAULT_BRANCH" ]] || { echo 'Build and Deploy requires the default branch (including skip_deploy=true)' >&2; exit 1; }
+
+  verify:
+    name: Deployment lifecycle regression gate
+    needs: activation-fence
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+      - name: Exercise stream, abort and WebSocket drain lifecycle
+        run: bash .deploy/verify.sh
+
+  security-source:
+    name: Trivy source security gate
+    if: github.event_name != 'pull_request'
+    needs: activation-fence
+    permissions:
+      contents: read
+      packages: read
+    uses: TheDemonTuan/vps-deploy/.github/workflows/security-trivy.yml@4d1dfff7670c95a0bd8c501e982be746a1a3ea9f
+    with:
+      app: omniroute
+      source-sha: ${{ github.sha }}
+      platform-ref: 4d1dfff7670c95a0bd8c501e982be746a1a3ea9f
+      config: .deploy/app.yml
+      scan-mode: source
+
+  build:
+    name: Build and smoke immutable image
+    if: github.event_name != 'pull_request'
+    needs:
+      - verify
+      - security-source
+    permissions:
+      contents: read
+      packages: write
+    uses: TheDemonTuan/vps-deploy/.github/workflows/build-docker.yml@4d1dfff7670c95a0bd8c501e982be746a1a3ea9f
+    with:
+      app: omniroute
+      source-sha: ${{ github.sha }}
+      platform-ref: 4d1dfff7670c95a0bd8c501e982be746a1a3ea9f
+      config: .deploy/app.yml
+
+  security-image:
+    name: Trivy immutable image gate
+    needs: build
+    permissions:
+      contents: read
+      packages: read
+    uses: TheDemonTuan/vps-deploy/.github/workflows/security-trivy.yml@4d1dfff7670c95a0bd8c501e982be746a1a3ea9f
+    with:
+      app: omniroute
+      source-sha: ${{ github.sha }}
+      platform-ref: 4d1dfff7670c95a0bd8c501e982be746a1a3ea9f
+      config: .deploy/app.yml
+      scan-mode: image
+      image-ref: ${{ needs.build.outputs.image-ref }}
+      platform: linux/arm64
+  deploy:
+    concurrency:
+      group: omniroute-oracle-main-production
+      queue: max
+      cancel-in-progress: false
+    name: Deploy immutable digest
+    needs:
+      - build
+      - security-image
+    if: github.event_name == 'push' || !inputs.skip_deploy
+    runs-on: ubuntu-24.04
+    environment: production
+    timeout-minutes: 17
+    steps:
+      - uses: TheDemonTuan/vps-deploy/.github/actions/deploy@4d1dfff7670c95a0bd8c501e982be746a1a3ea9f
+        with:
+          app: omniroute
+          host: oracle-main
+          operation: deploy
+          component: app
+          source-sha: ${{ github.sha }}
+          platform-ref: 4d1dfff7670c95a0bd8c501e982be746a1a3ea9f
+          config: .deploy/app.yml
+          image-ref: ${{ needs.build.outputs.image-ref }}
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
