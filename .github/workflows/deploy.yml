@@ -49,6 +49,51 @@ jobs:
       - name: Exercise stream, abort and WebSocket drain lifecycle
         run: bash .deploy/verify.sh
 
+  app-tests:
+    name: Application regressions (${{ matrix.suite }} ${{ matrix.shard }})
+    needs: activation-fence
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {suite: unit, shard: '1/8'}
+          - {suite: unit, shard: '2/8'}
+          - {suite: unit, shard: '3/8'}
+          - {suite: unit, shard: '4/8'}
+          - {suite: unit, shard: '5/8'}
+          - {suite: unit, shard: '6/8'}
+          - {suite: unit, shard: '7/8'}
+          - {suite: unit, shard: '8/8'}
+          - {suite: vitest, shard: all}
+    env:
+      OMNIROUTE_SKIP_SYSTEM_TRUST: '1'
+      JWT_SECRET: ci-test-secret-with-sufficient-length-for-validation
+      API_KEY_SECRET: ci-test-api-key-secret-long
+      DISABLE_SQLITE_AUTO_BACKUP: 'true'
+      TEST_SHARD: ${{ matrix.shard }}
+      SUITE: ${{ matrix.suite }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+      - uses: ./.github/actions/npm-ci-retry
+        with:
+          cache: 'false'
+      - name: Run existing application regression suites
+        run: |
+          set -euo pipefail
+          if [[ "$SUITE" == unit ]]; then
+            npm run test:unit:ci:shard
+          else
+            npm run test:vitest
+            npm run test:vitest:ui
+          fi
+
   security-source:
     name: Trivy source security gate
     if: github.event_name != 'pull_request'
@@ -69,6 +114,7 @@ jobs:
     if: github.event_name != 'pull_request'
     needs:
       - verify
+      - app-tests
       - security-source
     permissions:
       contents: read

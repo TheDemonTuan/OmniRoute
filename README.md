@@ -1835,7 +1835,7 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 This fork uses `production` for deployment; inherited upstream branches remain separate.
 Push application changes to `production` only after review. `.github/workflows/deploy.yml`
-runs deployment-lifecycle verification, the shared Trivy source gate, native ARM64
+runs existing unit/Vitest suites and deployment-lifecycle verification, the Trivy source gate, native ARM64
 Docker build and exact-image smoke, the Trivy image gate, then the registered
 `vps-deploy` SSH transport. Source and platform revisions and the image digest are
 immutable throughout the deployment. Failed gates do not switch production traffic.
