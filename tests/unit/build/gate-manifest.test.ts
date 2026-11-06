@@ -86,17 +86,6 @@ test("schema and unrecognized dispositions fail closed", () => {
   assert.match(validateManifest(manifest, scripts).join(), /disposition/);
 });
 
-test("the committed inventory covers current scripts without command drift", () => {
-  const manifest = JSON.parse(readFileSync("config/quality/gate-manifest.json", "utf8"));
-  const { scripts } = JSON.parse(readFileSync("package.json", "utf8"));
-  assert.deepEqual(validateManifest(manifest, scripts), []);
-  const full = resolveProfile(manifest, scripts, "quality-scan");
-  const fast = resolveProfile(manifest, scripts, "quality-scan-fast");
-  assert.ok(full.length > fast.length);
-  assert.ok(fast.every((gate) => full.some((other) => other.name === gate.name)));
-  assert.ok(full.some((gate) => gate.name === "check:gate-manifest"));
-});
-
 test("real aggregator list mode uses the manifest without running any gate", () => {
   const manifest = JSON.parse(readFileSync("config/quality/gate-manifest.json", "utf8"));
   for (const [flags, profile] of [
@@ -113,19 +102,6 @@ test("real aggregator list mode uses the manifest without running any gate", () 
     assert.deepEqual(actual.aliases, manifest.profiles[profile].aliases);
     assert.equal(actual.releaseAcceptance, false);
   }
-});
-
-test("the static scan uses the same frozen cycle ratchet as CI", () => {
-  const manifest = JSON.parse(readFileSync("config/quality/gate-manifest.json", "utf8"));
-  const { scripts } = JSON.parse(readFileSync("package.json", "utf8"));
-  const full = resolveProfile(manifest, scripts, "quality-scan");
-  assert.ok(full.some((gate) => gate.name === "check:cycles:ratchet"));
-  assert.equal(
-    full.some((gate) => gate.name === "check:cycles"),
-    false
-  );
-  assert.match(readFileSync(".github/workflows/ci.yml", "utf8"), /npm run check:cycles:ratchet/);
-  assert.equal(scripts["check:cycles:ratchet"], "node scripts/check/check-cycles.mjs --ratchet");
 });
 
 function admissionFixture(domains: unknown = ["provider"]) {

@@ -23,6 +23,7 @@ import { createSSEDataLineNormalizer } from "../../utils/streamHelpers.ts";
 import {
   createTransportReplayObserver,
   inspectTransportReplayPayload,
+  isStreamingUpstreamError,
 } from "./preContentTransportFailure.ts";
 
 /** Floor for the gate window, so a dispatch that ate the whole budget cannot abandon a live target. */
@@ -76,6 +77,7 @@ function carriesOutput(payload: string): boolean {
 export class SseOutputScanner {
   private pendingLine = "";
   private dataLines: string[] = [];
+  private eventType = "";
   private bufferedChars = 0;
   private previousChunkEndedWithCr = false;
   private replayNormalizer = createSSEDataLineNormalizer();
@@ -87,7 +89,7 @@ export class SseOutputScanner {
 
   constructor(private readonly observeReplay?: () => void) {}
 
-  /** Feed decoded text; true once an event has shown output. */
+  /** Feed decoded text; true once output or an upstream failure is ready for quality validation. */
   push(text: string): boolean {
     const previousCr = this.previousChunkEndedWithCr;
     if (text.length > 0) this.previousChunkEndedWithCr = text.endsWith("\r");
@@ -138,12 +140,7 @@ export class SseOutputScanner {
   /** Evaluate whatever is left after the body closed without a trailing blank line. */
   flush(): boolean {
     this.resetReplayFrame();
-    if (this.dataLines.length === 0) return false;
-    const payload = this.dataLines.join("\n");
-    this.dataLines = [];
-    const ready = payload.length > 0 && carriesOutput(payload);
-    if (ready) this.observeReplay?.();
-    return ready;
+    return this.finishEvent();
   }
 
   private consumeLine(line: string, splitCrLf = false): boolean {
@@ -156,18 +153,38 @@ export class SseOutputScanner {
         this.replayInspectionDisabled = true;
       }
     }
-    if (line === "") {
-      const payload = this.dataLines.join("\n");
-      this.dataLines = [];
-      const ready = payload.length > 0 && carriesOutput(payload);
-      if (ready) this.observeReplay?.();
-      return ready;
+    if (line === "") return this.finishEvent();
+    if (line.startsWith("event:")) {
+      this.eventType = line.slice(6).trim();
+      return false;
     }
     if (!line.startsWith("data:")) return false;
     const value = line.slice(5);
     const data = value.startsWith(" ") ? value.slice(1) : value;
     this.dataLines.push(data);
     return false;
+  }
+
+  private finishEvent(): boolean {
+    const payload = this.dataLines.join("\n");
+    const eventType = this.eventType;
+    this.dataLines = [];
+    this.eventType = "";
+    if (!payload) return false;
+    if (carriesOutput(payload)) {
+      this.observeReplay?.();
+      return true;
+    }
+    // A terminal error must reach quality failover without waiting for EOF or the token budget.
+    try {
+      const parsed = JSON.parse(payload);
+      return isStreamingUpstreamError(
+        parsed,
+        typeof parsed?.type === "string" ? parsed.type : eventType
+      );
+    } catch {
+      return false;
+    }
   }
 
   private resetReplayFrame(): void {

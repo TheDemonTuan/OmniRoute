@@ -1876,6 +1876,10 @@ Review this explicit boundary whenever syncing new upstream endpoints.
 Native CI tests have five-minute deadlines; the 25-minute job deadline also bounds
 module initialization. Every unit shard and the UI suite remain mandatory: any
 failure, cancellation or timeout blocks image build and deploy.
+Keep validation commands synchronized with `config/quality/gate-manifest.json`;
+the gate CLI rejects command drift. The streaming first-output guard passes terminal
+SSE errors to quality failover immediately, without waiting for the upstream socket
+to close or counting an error as generated output.
 
 For image-only validation, dispatch `deploy.yml` on `production` with `skip_deploy=true`.
 Use `deploy-ops.yml` for `status`, `rollback`, and `reconcile`; rollback targets the
