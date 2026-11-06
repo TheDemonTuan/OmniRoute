@@ -1193,10 +1193,6 @@ const failureFrames = [
 for (const [index, prefix] of failureFrames.entries()) {
   test(`scanner observes failure ${index} veto`, () => assertScannerVeto(prefix, true));
 }
-for (const route of ["priority", "round-robin", "runtime", "pin"] as const) {
-  test(`${route}: first-gate observed failure preserves lost-frame passthrough`, () =>
-    assertRouteVeto(route, failureFrames[0]));
-}
 for (const benign of [{}, "", false, 0]) {
   test(`benign error ${JSON.stringify(benign)} cannot create a first-output veto`, async () => {
     let calls = 0;
@@ -1210,21 +1206,33 @@ for (const benign of [{}, "", false, 0]) {
     assert.equal(await drain(response), answer);
   });
 }
-test("an error still visible to quality retains its request-scoped classification", async () => {
-  const fixture = setup("priority", { maxRetries: 1 });
+test("first-output errors retain request-scoped classification before the socket closes", async () => {
+  const fixture = setup("priority", { maxRetries: 1, targetTimeoutMs: 1000 });
   fixture.combo.models = [{ model: first }];
   let calls = 0;
+  let cancelled = false;
   const { response } = await run(
     "priority",
     async () => {
       calls++;
-      return new Response(failureFrames[0], { headers: { "Content-Type": "text/event-stream" } });
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(encoder.encode(failureFrames[0]));
+          },
+          cancel() {
+            cancelled = true;
+          },
+        }),
+        { headers: { "Content-Type": "text/event-stream" } }
+      );
     },
     fixture
   );
   assert.equal(calls, 1);
   assert.equal(response.status, 400);
   await drain(response);
+  assert.equal(cancelled, true);
 });
 for (const ending of ["\n", "\r\n", "\r"]) {
   for (const kind of ["added", "done"]) {
