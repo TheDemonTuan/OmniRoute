@@ -20,14 +20,14 @@ jobs:
     environment: production
     timeout-minutes: 17
     steps:
-      - uses: TheDemonTuan/vps-deploy/.github/actions/deploy@604e8980eee51be302a673fc340ac2c16a7c9dee
+      - uses: TheDemonTuan/vps-deploy/.github/actions/deploy@608c67253ad9a65024f278b385b860c585de8e67
         with:
           app: omniroute
           host: oracle-main
           operation: ${{ inputs.operation }}
           component: app
           source-sha: ${{ github.sha }}
-          platform-ref: 604e8980eee51be302a673fc340ac2c16a7c9dee
+          platform-ref: 608c67253ad9a65024f278b385b860c585de8e67
           config: .deploy/app.yml
         env:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}

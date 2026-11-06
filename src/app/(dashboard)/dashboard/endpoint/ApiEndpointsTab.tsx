@@ -496,7 +496,9 @@ export default function ApiEndpointsTab() {
                   const isTrying = tryingEndpoint === key;
                   const endpointBaseUrl =
                     ep.path === "/api/health" ||
-                    /^\/(?:api\/)?v1(?:beta)?\/(?!management)/.test(ep.path)
+                    /^\/(?:api\/)?v1(?:beta)?\/(?!management|registered-keys|agents|accounts|providers|issues|quotas)/.test(
+                      ep.path
+                    )
                       ? apiBaseUrl
                       : baseUrl;
 

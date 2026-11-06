@@ -197,6 +197,17 @@ describe("ApiEndpointsTab", () => {
     const endpoints = [
       { method: "POST", path: "/api/v1/chat/completions", host: "https://api.example.com" },
       { method: "GET", path: "/api/v1/management/proxies", host: "https://admin.example.com" },
+      { method: "GET", path: "/v1/registered-keys", host: "https://admin.example.com" },
+      { method: "GET", path: "/api/v1/agents/health", host: "https://admin.example.com" },
+      { method: "GET", path: "/api/v1/accounts/demo/limits", host: "https://admin.example.com" },
+      {
+        method: "GET",
+        path: "/api/v1/providers/suggested-models",
+        host: "https://admin.example.com",
+      },
+      { method: "POST", path: "/api/v1/issues/report", host: "https://admin.example.com" },
+      { method: "GET", path: "/api/v1/quotas/check", host: "https://admin.example.com" },
+      { method: "GET", path: "/v1beta/models", host: "https://api.example.com" },
       { method: "GET", path: "/api/health", host: "https://api.example.com" },
     ];
     fetchMock.mockImplementation(async (input) =>

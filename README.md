@@ -1867,8 +1867,11 @@ HTTPS `PUBLIC_URL` for `NEXT_PUBLIC_BASE_URL` and OAuth callbacks.
 `OMNIROUTE_PUBLIC_BASE_URL`: client endpoint displays and generated media use the
 API origin at runtime; management links and OAuth keep the admin origin.
 The entire admin hostname is behind owner-email Cloudflare Access plus native
-password authentication. The API has no Access redirect; Cloudflare and the origin
-deny management paths, including `/v1/management*` and `/api/v1/management*`.
+password authentication. The API has no Access redirect and strips dashboard
+cookies at the origin: clients authenticate with API keys. Cloudflare and the
+origin deny the versioned `management`, `registered-keys`, `agents`, `accounts`,
+`providers`, `issues` and `quotas` control-plane prefixes under `/v1/` and `/api/v1/`.
+Review this explicit boundary whenever syncing new upstream endpoints.
 
 For image-only validation, dispatch `deploy.yml` on `production` with `skip_deploy=true`.
 Use `deploy-ops.yml` for `status`, `rollback`, and `reconcile`; rollback targets the
