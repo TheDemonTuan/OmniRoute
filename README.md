@@ -1851,6 +1851,8 @@ The runtime OS is digest-pinned Wolfi (glibc); the upstream builder, Node binary
 npm and native application assets are retained. Image smoke executes a SQLite
 query and loads native wreq/ONNX bindings. Debian OS findings are not exempted;
 the HIGH/CRITICAL image gate remains blocking.
+Only `ENV REQUIRE_API_KEY=true` has a line-scoped DS-0031 false-positive annotation:
+it is a boolean, not a credential. Separate credential ENV instructions still fail.
 
 Production setup is owned by `TheDemonTuan/vps-deploy`, registration `omniroute` on
 `oracle-main`. It uses a dedicated `omniroute-data` volume, never `9router-data`.

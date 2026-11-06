@@ -463,7 +463,10 @@ LABEL org.opencontainers.image.title="omniroute" \
   org.opencontainers.image.licenses="MIT"
 ENV NODE_ENV=production PORT=20128 HOSTNAME=0.0.0.0 OMNIROUTE_MEMORY_MB=1024 \
   NODE_OPTIONS="--max-old-space-size=1024" DATA_DIR=/app/data \
-  REQUIRE_API_KEY=true OMNIROUTE_MIGRATIONS_DIR=/app/migrations
+  OMNIROUTE_MIGRATIONS_DIR=/app/migrations
+# This is a boolean auth switch, not a credential; secrets are runtime-only.
+#trivy:ignore:AVD-DS-0031
+ENV REQUIRE_API_KEY=true
 USER node
 EXPOSE 20128
 ENTRYPOINT ["/app/check-permissions.sh"]
