@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-[[ $# == 1 && "$1" =~ ^ghcr\.io/thedemontuan/omniroute@sha256:[0-9a-f]{64}$ ]] || { echo 'Expected immutable OmniRoute image digest' >&2; exit 2; }
+[[ $# == 1 && "$1" =~ ^ghcr\.io/thedemontuan/omniroute-vps@sha256:[0-9a-f]{64}$ ]] || { echo 'Expected immutable OmniRoute image digest' >&2; exit 2; }
 docker pull "$1"
 cid=$(docker run -d \
   -e DEPLOY_SLOT=blue \

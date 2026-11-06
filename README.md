@@ -1839,6 +1839,8 @@ runs deployment-lifecycle verification, the shared Trivy source gate, native ARM
 Docker build and exact-image smoke, the Trivy image gate, then the registered
 `vps-deploy` SSH transport. Source and platform revisions and the image digest are
 immutable throughout the deployment. Failed gates do not switch production traffic.
+The production image is `ghcr.io/thedemontuan/omniroute-vps`, separate from the
+pre-existing private `omniroute` package; its old versions remain private.
 
 The final `production` Docker stage is the lean gateway, running as UID 1000. It
 does not include browser/embedded CLI providers or a Docker socket. `DEPLOY_SLOT`
