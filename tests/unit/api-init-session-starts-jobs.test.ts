@@ -53,6 +53,9 @@ const timeoutHook = createHook({
   init(id, type) {
     if (!trackTimeouts || type !== "Timeout") return;
     const stack = new Error().stack ?? "";
+    // --test-timeout arms the runner's own per-test deadline (setTimeout called
+    // directly from node:internal/test_runner); it is not the init's.
+    if (/at setTimeout \(node:timers:\d+:\d+\)\n\s+at \S+ \(node:internal\/test_runner\//.test(stack)) return;
     liveTimeouts.set(id, stack);
     if (stack.includes("/src/")) srcTimers.push(stack);
   },
