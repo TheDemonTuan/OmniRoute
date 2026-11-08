@@ -486,7 +486,7 @@
     "fast-check": "^4.10.0",
     "fontverter": "2.0.0",
     "fumadocs-mdx": "^15.4.0",
-    "glob": "^13.0.6",
+    "glob": "^14.0.2",
     "harfbuzzjs": "1.6.4",
     "httpyac": "^6.16.7",
     "husky": "^9.1.7",
