@@ -319,6 +319,10 @@ export const FORWARDABLE_CLIENT_BETAS = Object.freeze([
   "server-side-fallback-2026-06-01",
   "server-side-fallback-2026-07-01",
   "fast-mode-2026-02-01",
+  // Anthropic on-demand compaction: the top-level `compaction` {type:"summarize"} body field passes
+  // through; without this beta upstream 400s "compaction: this parameter requires anthropic-beta:
+  // compact-2026-09-04".
+  "compact-2026-09-04",
 ]);
 
 /**
