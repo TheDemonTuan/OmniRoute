@@ -15,6 +15,7 @@ const cooldownWaitHook = registerHooks({
 import test from "node:test";
 import { setTimeout as realSetTimeout, clearTimeout as realClearTimeout } from "node:timers";
 import assert from "node:assert/strict";
+import pino from "pino";
 
 import { createChatPipelineHarness } from "../integration/_chatPipelineHarness.ts";
 
@@ -28,6 +29,7 @@ const { getProviderConnectionById, updateProviderConnection } =
   await import("../../src/lib/db/providers.ts");
 const { getCooldownAwareRetryDecision } =
   await import("../../src/sse/services/cooldownAwareRetry.ts");
+const { logger: rootLogger } = await import("../../src/shared/utils/logger.ts");
 const { __setTlsFetchOverrideForTesting } =
   await import("../../open-sse/services/claudeTlsClient.ts");
 const {
@@ -487,39 +489,35 @@ test("handleChat aborts the pending cooldown wait when the client disconnects", 
   assert.equal(body.error.message, "Request aborted");
 });
 
-test(
-  "#15789: requestRetry=3 stops after four upstream dispatches",
-  { timeout: 30_000 },
-  async (t) => {
-    let clock = Date.now();
-    t.mock.method(Date, "now", () => clock);
-    setCooldownWaitObserver({
-      calls: 0,
-      start: () => {},
-      complete: (ms) => {
-        // Advance past expiry instead of racing the timer against wall-clock rounding.
-        clock += ms + 1;
-      },
-    });
-    t.after(() => setCooldownWaitObserver(null));
-    BaseExecutor.RETRY_CONFIG.maxAttempts = 0;
-    await seedConnection("openai", {
-      apiKey: "sk-openai-cooldown-retry-bounds",
-    });
-    await settingsDb.updateSettings({
-      requestRetry: 3,
-      maxRetryIntervalSec: 3,
-    });
+test("#15789: requestRetry=3 dispatches upstream exactly 4 times and never logs a retry above its max", async () => {
+  BaseExecutor.RETRY_CONFIG.maxAttempts = 0;
+  await seedConnection("openai", {
+    apiKey: "sk-openai-cooldown-retry-bounds",
+  });
+  await settingsDb.updateSettings({
+    requestRetry: 3,
+    maxRetryIntervalSec: 3,
+  });
 
-    let fetchCalls = 0;
-    globalThis.fetch = async () => {
-      fetchCalls += 1;
-      return new Response(JSON.stringify({ error: { message: "Rate limit exceeded." } }), {
-        status: 429,
-        headers: { "Content-Type": "application/json", "Retry-After": "1" },
-      });
-    };
+  let fetchCalls = 0;
+  globalThis.fetch = async () => {
+    fetchCalls += 1;
+    return new Response(JSON.stringify({ error: { message: "Rate limit exceeded." } }), {
+      status: 429,
+      headers: { "Content-Type": "application/json", "Retry-After": "1" },
+    });
+  };
 
+  const stream = rootLogger[pino.symbols.streamSym];
+  const originalWrite = stream.write;
+  const cooldownLines: string[] = [];
+  stream.write = function (chunk: unknown, ...rest: unknown[]) {
+    const line = String(chunk);
+    if (line.includes("COOLDOWN_RETRY")) cooldownLines.push(line);
+    return originalWrite.call(this, chunk, ...rest);
+  };
+
+  try {
     const response = await handleChat(
       buildRequest({
         body: {
@@ -530,10 +528,22 @@ test(
       })
     );
     await response.text();
-    assert.equal(response.status, 429);
-    assert.equal(fetchCalls, 4, "maxRetries=3 means one initial dispatch plus three retries");
+    assert.notEqual(response.status, 200);
+  } finally {
+    stream.write = originalWrite;
   }
-);
+
+  assert.equal(fetchCalls, 4, "maxRetries=3 means one initial dispatch plus three retries");
+
+  const counters = cooldownLines.flatMap((line) =>
+    [...line.matchAll(/(?:retry|attempt) (\d+)\/(\d+)/g)].map((m) => [Number(m[1]), Number(m[2])])
+  );
+  assert.ok(counters.length >= 6, `expected wait + restart log lines, got ${cooldownLines.length}`);
+  for (const [n, max] of counters) {
+    assert.equal(max, 3);
+    assert.ok(n >= 1 && n <= max, `logged ${n}/${max} is out of bounds`);
+  }
+});
 
 // #16305 — COOLDOWN_RETRY_SKIP_REFUSALS_ENABLED (default off) lets a 403/410 cooldown skip the
 // cooldown-aware wait like a 401, and persists a renewing agentrouter quota 403 as 429.

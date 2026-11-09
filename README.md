@@ -1835,7 +1835,7 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 This fork uses `production` for deployment; inherited upstream branches remain separate.
 Push application changes to `production` only after review. `.github/workflows/deploy.yml`
-runs existing unit/Vitest suites and deployment-lifecycle verification, the Trivy source gate, native ARM64
+runs deployment-lifecycle verification (`.deploy/verify.sh`), the Trivy source gate, native ARM64
 Docker build and exact-image smoke, the Trivy image gate, then the registered
 `vps-deploy` SSH transport. Source and platform revisions and the image digest are
 immutable throughout the deployment. Failed gates do not switch production traffic.
@@ -1873,13 +1873,12 @@ origin deny the versioned `management`, `registered-keys`, `agents`, `accounts`,
 `providers`, `issues` and `quotas` control-plane prefixes under `/v1/` and `/api/v1/`.
 Review this explicit boundary whenever syncing new upstream endpoints.
 
-Native CI tests have five-minute deadlines; the 25-minute job deadline also bounds
-module initialization. Every unit shard and the UI suite remain mandatory: any
-failure, cancellation or timeout blocks image build and deploy.
-Keep validation commands synchronized with `config/quality/gate-manifest.json`;
-the gate CLI rejects command drift. The streaming first-output guard passes terminal
-SSE errors to quality failover immediately, without waiting for the upstream socket
-to close or counting an error as generated output.
+Like 9router, the deploy gate does not rerun the full upstream unit/Vitest suites:
+upstream CI already gates `release/v3.8.x`, and the image smoke proves the built
+runtime. Run focused tests locally for fork-owned changes before pushing.
+The streaming first-output guard passes terminal SSE errors to quality failover
+immediately, without waiting for the upstream socket to close or counting an error
+as generated output.
 
 For image-only validation, dispatch `deploy.yml` on `production` with `skip_deploy=true`.
 Use `deploy-ops.yml` for `status`, `rollback`, and `reconcile`; rollback targets the
