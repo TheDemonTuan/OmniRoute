@@ -37,9 +37,13 @@ function capture(respond: (call: number) => Response | Promise<Response>) {
   return calls;
 }
 
-test("the gemini image provider registers the public -preview model ids", () => {
+test("the gemini image provider registers the public model ids", () => {
   const ids = getImageProvider("gemini")?.models.map((m) => m.id);
-  assert.deepEqual(ids, ["gemini-3-pro-image-preview", "gemini-3.1-flash-image-preview"]);
+  assert.deepEqual(ids, [
+    "gemini-3-pro-image-preview",
+    "gemini-3.1-flash-image-preview",
+    "gemini-nano-banana-2.1",
+  ]);
   assert.deepEqual(parseImageModel("gemini/gemini-3.1-flash-image-preview"), {
     provider: "gemini",
     model: "gemini-3.1-flash-image-preview",

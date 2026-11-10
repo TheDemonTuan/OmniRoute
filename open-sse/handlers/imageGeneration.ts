@@ -68,7 +68,7 @@ import { handleMaxaiImageGeneration } from "./imageGeneration/providers/maxaiIma
 import { handleAdobeFireflyImageGeneration } from "./imageGeneration/providers/adobeFirefly.ts";
 import { handleSyntxImageGeneration } from "./imageGeneration/providers/syntx.ts";
 import {
-  geminiInlineImagePart,
+  geminiInlineImageParts,
   geminiReferenceImageError,
 } from "./imageGeneration/providers/geminiInline.ts";
 import { handleAlibabaImageGeneration } from "./imageGeneration/providers/alibabaImage.ts";
@@ -1236,7 +1236,7 @@ async function handleGeminiImageGeneration({ model, providerConfig, body, creden
     });
   }
 
-  const inlineImage = geminiInlineImagePart(body);
+  const inlineImages = geminiInlineImageParts(body);
   const antigravityBody = {
     project: projectId,
     requestId: `image_gen/${Date.now()}/${randomUUID()}/0`,
@@ -1244,7 +1244,7 @@ async function handleGeminiImageGeneration({ model, providerConfig, body, creden
       contents: [
         {
           role: "user",
-          parts: [...(inlineImage ? [inlineImage] : []), { text: promptText }],
+          parts: [...inlineImages, { text: promptText }],
         },
       ],
       generationConfig: {

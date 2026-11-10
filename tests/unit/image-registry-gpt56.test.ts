@@ -49,12 +49,23 @@ test("Codex image catalog exposes the hosted-tool ids and the GPT Image models",
     },
     { id: "gpt-image-2.5-flare", name: "GPT Image 2.5 Flare (Codex)" },
     { id: "gpt-image-2.5-sunburst", name: "GPT Image 2.5 Sunburst (Codex)" },
+    { id: "gpt-image-2.6-flare", name: "GPT Image 2.6 Flare (Codex)" },
+    { id: "gpt-image-2.6-sunburst", name: "GPT Image 2.6 Sunburst (Codex)" },
     { id: "gpt-image-2", name: "GPT Image 2 (Codex)" },
   ]);
 
   for (const model of ["gpt-6.1-sol", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]) {
     assert.deepEqual(parseImageModel(`cx/${model}`), { provider: "codex", model });
     assert.deepEqual(parseImageModel(`cx/${model}-image`), { provider: "codex", model });
+  }
+
+  // #19478: the edit route admits Codex models only through getImageModelEntry.
+  for (const alias of ["cx", "codex"]) {
+    for (const model of ["gpt-image-2.6-flare", "gpt-image-2.6-sunburst"]) {
+      const entry = getImageModelEntry(`${alias}/${model}`);
+      assert.equal(entry?.provider, "codex");
+      assert.equal(entry?.model, model);
+    }
   }
 });
 
@@ -79,6 +90,8 @@ test("Codex hosted image listings do not shadow the chat catalog ids", () => {
       "codex/gpt-5.6-luna-image",
       "codex/gpt-image-2.5-flare",
       "codex/gpt-image-2.5-sunburst",
+      "codex/gpt-image-2.6-flare",
+      "codex/gpt-image-2.6-sunburst",
       "codex/gpt-image-2",
     ]
   );

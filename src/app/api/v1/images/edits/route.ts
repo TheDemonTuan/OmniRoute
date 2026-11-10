@@ -88,6 +88,8 @@ export async function OPTIONS() {
 }
 
 const MAX_NON_CODEX_IMAGE_EDIT_REFERENCES = 1;
+// Gemini image models (Antigravity Cloud Code) take up to 14 inline reference images per request.
+const GEMINI_IMAGE_EDIT_MAX_REFERENCES = 14;
 
 /** Keep the legacy hosted-tool bound while matching the documented GPT Image edit cap. */
 function validateCodexReferencesForModel(
@@ -685,21 +687,25 @@ async function postHandler(request: Request, _context?: unknown) {
   const providerConfig = parsed.provider ? getImageProvider(parsed.provider) : null;
   const prepareFalInput = getFalCompatibilityPreparer();
   const falNative = prepareFalInput !== null;
-  // Firefly nano/gpt-image accept multiple reference blobs; other non-Codex stay at 1.
+  // Firefly nano/gpt-image and Gemini accept multiple reference blobs; other non-Codex stay at 1.
   const maxRefsForProvider =
     providerConfig?.format === "adobe-firefly-image"
       ? 4
       : providerConfig?.format === "codex-responses"
         ? Number.POSITIVE_INFINITY
-        : providerConfig?.format === "fal-ai" && isFalImageEditModel(parsed.model, falNative)
-          ? falImageEditMaxReferences(parsed.model)
-          : MAX_NON_CODEX_IMAGE_EDIT_REFERENCES;
+        : providerConfig?.format === "gemini-image"
+          ? GEMINI_IMAGE_EDIT_MAX_REFERENCES
+          : providerConfig?.format === "fal-ai" && isFalImageEditModel(parsed.model, falNative)
+            ? falImageEditMaxReferences(parsed.model)
+            : MAX_NON_CODEX_IMAGE_EDIT_REFERENCES;
   if (providerConfig?.format !== "codex-responses" && imageInputCount > maxRefsForProvider) {
     return errorResponse(
       HTTP_STATUS.BAD_REQUEST,
       providerConfig?.format === "adobe-firefly-image"
         ? "Adobe Firefly image edit supports at most 4 reference images"
-        : "This image edit provider currently supports only one reference image"
+        : maxRefsForProvider > 1
+          ? `This image edit provider supports at most ${maxRefsForProvider} reference images`
+          : "This image edit provider currently supports only one reference image"
     );
   }
   // Built-in Codex uses its native Responses hosted tool for stateless reference-image edits.
@@ -1030,6 +1036,8 @@ async function postHandler(request: Request, _context?: unknown) {
             n: 1,
             imageBytes,
             imageMime,
+            // Gemini-format handlers inline every reference; other edit handlers read imageBytes.
+            referenceImages: images,
           },
           credentials: creds,
           log,

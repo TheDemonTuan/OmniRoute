@@ -207,3 +207,59 @@ test("handleImageGeneration forwards inlineData parts for Antigravity Gemini ima
     globalThis.fetch = originalFetch;
   }
 });
+
+test("handleImageGeneration inlines every reference image, in order, for Antigravity multi-reference edits", async () => {
+  const originalFetch = globalThis.fetch;
+  let captured: CapturedGeminiImageRequest | undefined;
+  globalThis.fetch = async (url, options = {}) => {
+    captured = {
+      url: String(url),
+      headers: options.headers,
+      body: JSON.parse(String(options.body || "{}")),
+    };
+    return new Response(
+      JSON.stringify({
+        response: {
+          candidates: [
+            { content: { parts: [{ inlineData: { mimeType: "image/png", data: "b3V0" } }] } },
+          ],
+        },
+      }),
+      { status: 200, headers: { "content-type": "application/json" } }
+    );
+  };
+
+  try {
+    const first = Buffer.from("identity-anchor");
+    const second = Buffer.from("style-anchor");
+    const result = await handleImageGeneration({
+      body: {
+        model: "antigravity/gemini-3.1-flash-image",
+        prompt: "same creature, mutated",
+        imageBytes: first,
+        imageMime: "image/png",
+        referenceImages: [
+          { bytes: first, mime: "image/png" },
+          { bytes: second, mime: "image/webp" },
+        ],
+      },
+      credentials: { accessToken: "ag-token", projectId: "project-123" },
+      log: null,
+    });
+
+    assert.equal(result.success, true);
+    const parts = captured.body.request.contents[0].parts;
+    assert.equal(parts.length, 3);
+    assert.deepEqual(parts[0].inlineData, {
+      mimeType: "image/png",
+      data: first.toString("base64"),
+    });
+    assert.deepEqual(parts[1].inlineData, {
+      mimeType: "image/webp",
+      data: second.toString("base64"),
+    });
+    assert.equal(parts[2].text, "same creature, mutated");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

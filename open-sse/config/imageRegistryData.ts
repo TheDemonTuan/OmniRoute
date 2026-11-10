@@ -403,6 +403,7 @@ export const IMAGE_PROVIDERS: Record<string, ImageProviderConfig> = {
     models: [
       { id: "gemini-3-pro-image-preview", name: "Gemini 3 Pro Image" },
       { id: "gemini-3.1-flash-image-preview", name: "Gemini 3.1 Flash Image" },
+      { id: "gemini-nano-banana-2.1", name: "Gemini Nano Banana 2.1" },
     ],
     supportedSizes: ["1024x1024"],
   },

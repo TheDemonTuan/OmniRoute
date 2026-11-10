@@ -65,6 +65,32 @@ export function geminiInlineImagePart(
 }
 
 /**
+ * Every inline reference part for Gemini-format image generation, in order. `referenceImages`
+ * (raw bytes from /v1/images/edits) carries the multi-reference case; otherwise this is the single
+ * part from geminiInlineImagePart.
+ */
+export function geminiInlineImageParts(
+  body: unknown
+): Array<{ inlineData: { mimeType: string; data: string } }> {
+  const refs =
+    body && typeof body === "object"
+      ? (body as Record<string, unknown>).referenceImages
+      : undefined;
+  if (Array.isArray(refs) && refs.length > 0) {
+    return refs
+      .filter((ref) => ref && Buffer.isBuffer(ref.bytes) && ref.bytes.length > 0)
+      .map((ref) => ({
+        inlineData: {
+          mimeType: typeof ref.mime === "string" && ref.mime ? ref.mime : "image/png",
+          data: ref.bytes.toString("base64"),
+        },
+      }));
+  }
+  const single = geminiInlineImagePart(body);
+  return single ? [single] : [];
+}
+
+/**
  * Error message when the request carries a reference image that cannot be inlined (9router #5190).
  * Gemini image models only take inline bytes, and remote URLs are deliberately not fetched
  * (SSRF surface), so an http(s) URL would otherwise be dropped and the model would answer a
