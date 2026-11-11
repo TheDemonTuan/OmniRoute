@@ -13,6 +13,7 @@ import {
   handleFalAIImageEdit,
   isFalImageEditModel,
 } from "@omniroute/open-sse/handlers/imageGeneration/providers/fal.ts";
+import { GEMINI_IMAGE_MAX_REFERENCES } from "@omniroute/open-sse/handlers/imageGeneration/providers/geminiInline.ts";
 import { createInjectionGuard } from "@/middleware/promptInjectionGuard";
 import {
   buildAdobeFireflyEditDataUrls,
@@ -88,8 +89,6 @@ export async function OPTIONS() {
 }
 
 const MAX_NON_CODEX_IMAGE_EDIT_REFERENCES = 1;
-// Gemini image models (Antigravity Cloud Code) take up to 14 inline reference images per request.
-const GEMINI_IMAGE_EDIT_MAX_REFERENCES = 14;
 
 /** Keep the legacy hosted-tool bound while matching the documented GPT Image edit cap. */
 function validateCodexReferencesForModel(
@@ -687,24 +686,27 @@ async function postHandler(request: Request, _context?: unknown) {
   const providerConfig = parsed.provider ? getImageProvider(parsed.provider) : null;
   const prepareFalInput = getFalCompatibilityPreparer();
   const falNative = prepareFalInput !== null;
-  // Firefly nano/gpt-image and Gemini accept multiple reference blobs; other non-Codex stay at 1.
+  // Firefly nano/gpt-image, fal edit models and Antigravity Gemini image accept multiple
+  // reference images; other non-Codex stay at 1.
+  const isGeminiImageEdit =
+    providerConfig?.format === "gemini-image" || parsed.provider === "antigravity";
   const maxRefsForProvider =
     providerConfig?.format === "adobe-firefly-image"
       ? 4
       : providerConfig?.format === "codex-responses"
         ? Number.POSITIVE_INFINITY
-        : providerConfig?.format === "gemini-image"
-          ? GEMINI_IMAGE_EDIT_MAX_REFERENCES
-          : providerConfig?.format === "fal-ai" && isFalImageEditModel(parsed.model, falNative)
-            ? falImageEditMaxReferences(parsed.model)
+        : providerConfig?.format === "fal-ai" && isFalImageEditModel(parsed.model, falNative)
+          ? falImageEditMaxReferences(parsed.model)
+          : isGeminiImageEdit
+            ? GEMINI_IMAGE_MAX_REFERENCES
             : MAX_NON_CODEX_IMAGE_EDIT_REFERENCES;
   if (providerConfig?.format !== "codex-responses" && imageInputCount > maxRefsForProvider) {
     return errorResponse(
       HTTP_STATUS.BAD_REQUEST,
       providerConfig?.format === "adobe-firefly-image"
         ? "Adobe Firefly image edit supports at most 4 reference images"
-        : maxRefsForProvider > 1
-          ? `This image edit provider supports at most ${maxRefsForProvider} reference images`
+        : isGeminiImageEdit
+          ? `Antigravity image edit supports at most ${GEMINI_IMAGE_MAX_REFERENCES} reference images`
           : "This image edit provider currently supports only one reference image"
     );
   }
@@ -984,11 +986,7 @@ async function postHandler(request: Request, _context?: unknown) {
 
   // Antigravity Gemini Image-to-Image editing support; Muse Image (muse-code) edits ride
   // the same handleImageGeneration path, which posts imageBytes to Meta's /images/edits.
-  if (
-    providerConfig?.format === "gemini-image" ||
-    providerConfig?.format === "muse-image" ||
-    parsed.provider === "antigravity"
-  ) {
+  if (isGeminiImageEdit || providerConfig?.format === "muse-image") {
     const credentials = await getProviderCredentialsWithQuotaPreflight(
       parsed.provider,
       null,
@@ -1036,7 +1034,7 @@ async function postHandler(request: Request, _context?: unknown) {
             n: 1,
             imageBytes,
             imageMime,
-            // Gemini-format handlers inline every reference; other edit handlers read imageBytes.
+
             referenceImages: images,
           },
           credentials: creds,
