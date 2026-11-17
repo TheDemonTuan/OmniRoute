@@ -115,8 +115,9 @@ describe("resource pressure policy", () => {
     assert.equal(tracker.observe(sample(201)).severity, "normal", "first sample is provisional");
     assert.equal(tracker.observe(sample(201)).severity, "critical", "second sample is sustained");
     assert.equal(tracker.getState().reason, "v8_heap_absolute");
-    assert.equal(tracker.observe(sample(180)).severity, "critical", "below fuse is not recovered");
-    assert.equal(tracker.observe(sample(140)).severity, "critical", "first clean recovery sample");
+    // Below the fuse is not recovered, but no longer hard-sheds: it throttles as high.
+    assert.equal(tracker.observe(sample(180)).severity, "high", "below fuse is not recovered");
+    assert.equal(tracker.observe(sample(140)).severity, "high", "first clean recovery sample");
     assert.equal(tracker.observe(sample(140)).severity, "normal", "second clean recovery sample");
   });
 
@@ -198,7 +199,7 @@ describe("resource pressure policy", () => {
     assert.equal(event.severity, "critical", "a new OOM event is immediately critical");
     assert.equal(event.reason, "oom_event");
 
-    assert.equal(tracker.observe(oomCounters(8, 3, 4)).severity, "critical");
+    assert.equal(tracker.observe(oomCounters(8, 3, 4)).severity, "high", "no new event: no shed");
     assert.equal(
       tracker.observe(oomCounters(8, 3, 5)).severity,
       "normal",
@@ -274,9 +275,41 @@ describe("resource pressure policy", () => {
     assert.equal(state.severity, "critical");
     // Cache grows while anon stays low: current stays high but workingset drops.
     state = tracker.observe(cgroup(4_662_461_440, 3_232_225_280));
-    assert.equal(state.severity, "critical", "recovery needs sustained samples");
+    assert.equal(state.severity, "high", "recovery needs sustained samples");
     state = tracker.observe(cgroup(4_662_461_440, 3_232_225_280));
     assert.equal(state.severity, "normal", "workingset below recovery ratio releases the latch");
+  });
+
+  it("does not latch critical in the recovery band after a spike drains (image-gen deadlock)", () => {
+    // Incident 2026-11-17: 2 GiB container, concurrent gpt-image responses spiked the cgroup to
+    // 1972 MiB (critical), then usage parked at ~1.6 GiB (78%: below high, above recovery). The
+    // critical latch 503'd every request, so nothing allocated, GC never ran, usage never drained.
+    const tracker = createResourcePressureTracker({
+      ...fastThresholds,
+      highRatio: 0.85,
+      criticalRatio: 0.92,
+      recoveryRatio: 0.75,
+    });
+    const cgroup = (currentMb: number): ResourceSignals => ({
+      ...baseSignals(),
+      cgroup: {
+        currentBytes: currentMb * MiB,
+        maxBytes: 2_048 * MiB,
+        highBytes: null,
+        fileBytes: 32 * MiB,
+        events: { low: 0, high: 0, max: 0, oom: 0, oom_kill: 0 },
+      },
+    });
+    tracker.observe(cgroup(1_972));
+    assert.equal(tracker.observe(cgroup(1_972)).severity, "critical");
+    for (let i = 0; i < 50; i++) {
+      assert.equal(tracker.observe(cgroup(1_634)).severity, "high", "band throttles, never sheds");
+    }
+    // Re-entering critical still needs the sustained streak.
+    assert.equal(tracker.observe(cgroup(1_972)).severity, "high");
+    assert.equal(tracker.observe(cgroup(1_972)).severity, "critical");
+    tracker.observe(cgroup(1_400));
+    assert.equal(tracker.observe(cgroup(1_400)).severity, "normal");
   });
 
   it("handles workingset boundary conditions", () => {

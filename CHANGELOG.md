@@ -90,6 +90,10 @@
 - **feat(cli):** run `omniroute serve --tray` as a detached desktop process after server and tray readiness, with graphical login auto-start support.
 - **feat(routing):** add client-, provider-, and model-neutral exclusive managed session connection leases with API-key-bound generation fencing, durable SQLite ownership, explicit allowlist policy, and bounded 429 capacity retry semantics.
 
+### 🐛 Bug Fixes
+
+- **fix(resource-pressure):** the critical guard no longer latches in the recovery band. After a spike (e.g. concurrent `gpt-image` responses) the cgroup working set could park between `recoveryRatio` and `criticalRatio`; every request got 503 `resource_pressure`, so nothing allocated, GC never ran, and the process shed all traffic until a manual restart. Critical now only hard-sheds while the current sample is critical (or a new `memory.max` event arrives); otherwise it demotes to `high`, which throttles admission until the usual recovery hysteresis clears.
+
 ## [3.8.55] — TBD
 
 ---

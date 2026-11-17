@@ -591,6 +591,19 @@ export function createResourcePressureTracker(
         recoveryStreak = 0;
       }
 
+      // Hard-shed (critical) only while the sample itself is still critical or the kernel just hit
+      // memory.max. Holding critical through the recovery band deadlocks: every request gets a 503,
+      // nothing allocates, GC never runs, and usage parked between recoveryRatio and criticalRatio
+      // never drains (cgroup at 1.6/2 GiB shed every request until a manual restart). High
+      // throttles admission instead; returning to critical still needs the sustained critical streak.
+      const newMaxEvent =
+        recoveryPreviousEvents?.max != null &&
+        currentEvents?.max != null &&
+        currentEvents.max > recoveryPreviousEvents.max;
+      if (severity === "critical" && raw.severity !== "critical" && !newMaxEvent) {
+        severity = "high";
+      }
+
       const transitioned = severity !== state.severity || reason !== state.reason;
       state = {
         severity,
