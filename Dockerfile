@@ -465,9 +465,12 @@ RUN rm -rf /app/node_modules/sql.js/.devcontainer
 LABEL org.opencontainers.image.title="omniroute" \
   org.opencontainers.image.source="https://github.com/TheDemonTuan/OmniRoute" \
   org.opencontainers.image.licenses="MIT"
-ENV NODE_ENV=production PORT=20128 HOSTNAME=0.0.0.0 OMNIROUTE_MEMORY_MB=1024 \
-  NODE_OPTIONS="--max-old-space-size=1024" DATA_DIR=/app/data \
-  OMNIROUTE_MIGRATIONS_DIR=/app/migrations
+# Sized for the VPS 3 GiB container (vps-deploy mem_limit): ~half for V8, the rest for
+# native/external buffers (image payloads). Self-restart exits after 2 min of sustained
+# critical pressure so Docker restarts a clean process instead of serving 503s forever.
+ENV NODE_ENV=production PORT=20128 HOSTNAME=0.0.0.0 OMNIROUTE_MEMORY_MB=1536 \
+  NODE_OPTIONS="--max-old-space-size=1536" DATA_DIR=/app/data \
+  OMNIROUTE_MIGRATIONS_DIR=/app/migrations OMNIROUTE_PRESSURE_SELF_RESTART=true
 # This is a boolean auth switch, not a credential; secrets are runtime-only.
 #trivy:ignore:AVD-DS-0031
 ENV REQUIRE_API_KEY=true
