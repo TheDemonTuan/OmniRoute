@@ -96,6 +96,9 @@
 - **fix(usage):** streaming responses no longer stall the event loop on long conversations. The SSE usage path re-estimated the whole request body (JSON stringify + token regex) on every chunk; a ~290k-token Claude request made each chunk cost ~1 s of CPU, froze the server for 6–95 s at a time and failed health checks. `estimateInputTokens` now computes once per body object.
 - **fix(streaming):** early SSE keepalive wrappers respect client backpressure, inspect at most four trailing bytes per chunk for error framing, and skip wire-usage calculation for unrelated events.
 - **fix(codex-images):** serialize the upstream request once per batch and cap concurrent batches and upstream reads so large image payloads do not all peak at once.
+- **fix(codex):** forward HTTP SSE on downstream demand without re-encoding each line, while still closing the upstream at the terminal event.
+- **fix(antigravity):** cancel stalled or abandoned SSE collection and retry waits promptly; transport errors no longer return a partial completion as success.
+- **perf(claude):** avoid reconstructing an unused client-side text and reasoning summary for native Messages streams.
 
 ## [3.8.55] — TBD
 

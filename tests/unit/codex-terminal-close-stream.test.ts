@@ -103,6 +103,50 @@ describe("encodeResponseSseEvent terminal detection", () => {
 });
 
 describe("terminateCodexHttpStreamOnTerminal", () => {
+  it("does not drain ahead of the client and cancels the upstream reader", async () => {
+    let pulls = 0;
+    const original = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulls++;
+        controller.enqueue(Uint8Array.of(10));
+        if (pulls === 16) controller.close();
+      },
+      cancel(reason) {
+        assert.equal(reason, "client left");
+        cancelled = true;
+      },
+    });
+    let cancelled = false;
+    const response = terminateCodexHttpStreamOnTerminal(
+      new Response(original, { headers: { "content-type": "text/event-stream" } })
+    );
+    const reader = response.body!.getReader();
+    await new Promise<void>(setImmediate);
+    assert.equal(pulls, 1, "only upstream's own prefetch may run before the client reads");
+    assert.deepEqual(await reader.read(), { done: false, value: Uint8Array.of(10) });
+    await reader.cancel("client left");
+    assert.equal(cancelled, true);
+    assert.equal(original.locked, false);
+  });
+
+  it("preserves fragmented UTF-8 and cuts trailing data after a split terminal line", async () => {
+    const encoder = new TextEncoder();
+    const prefix = 'data: {"type":"response.output_text.delta","delta":"é"}\r\n\r\n';
+    const terminal = 'data: {"type":"response.completed","response":{"id":"resp_test"}}\n\n';
+    const bytes = encoder.encode(prefix + terminal + ": trailing ping\n\n");
+    let offset = 0;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (offset < bytes.length) controller.enqueue(bytes.subarray(offset, ++offset));
+        else controller.close();
+      },
+    });
+    const response = terminateCodexHttpStreamOnTerminal(
+      new Response(body, { headers: { "content-type": "text/event-stream" } })
+    );
+    assert.equal(await response.text(), prefix + terminal);
+  });
+
   it("terminates stream immediately upon forwarding response.completed, cutting off subsequent pings", async () => {
     let canceled = false;
     const encoder = new TextEncoder();

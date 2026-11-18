@@ -51,6 +51,8 @@ import {
 import { buildGeminiTools } from "../translator/helpers/geminiToolsSanitizer.ts";
 import { sanitizeGeminiPartFunctionResponse } from "../translator/request/openai-to-gemini/helpers.ts";
 import { logger } from "../utils/logger.ts";
+import { errorResponse } from "../utils/error.ts";
+import { sleep } from "../utils/sleep.ts";
 import {
   type AntigravityCollectedStream,
   processAntigravitySSEText,
@@ -1216,9 +1218,7 @@ export class AntigravityExecutor extends BaseExecutor {
    * Parses Gemini-format SSE chunks and assembles text content + usage into one
    * OpenAI-format chat.completion payload.
    *
-   * @deprecated Use the non-streaming SSE path in chatCore instead, which calls
-   * parseSSEToGeminiResponse() from sseParser/geminiResponse.ts.  This method is
-   * retained only for backward compatibility and may be removed in a future release.
+   * Used by stream:false callers; streaming callers keep the live SSE body.
    */
   collectStreamToResponse(
     response: Response,
@@ -1252,21 +1252,29 @@ export class AntigravityExecutor extends BaseExecutor {
         remainingCredits: null,
       };
       const partialLine = { value: "" };
-      let timedOut = false;
-      const timeout = AbortSignal.timeout(SSE_COLLECT_TIMEOUT_MS);
+      let stopped: 499 | 504 | undefined;
+      const stop = (status: 499 | 504) => {
+        if (stopped) return;
+        stopped = status;
+        void reader.cancel().catch(() => {});
+      };
+      const onAbort = () => stop(499);
+      const timer = setTimeout(() => stop(504), SSE_COLLECT_TIMEOUT_MS);
+      timer.unref?.();
+      signal?.addEventListener("abort", onAbort, { once: true });
+      if (signal?.aborted) onAbort();
+
+      const fail = (status: number, message: string) => ({
+        response: errorResponse(status, message),
+        upstreamHttpSelection: selectHttpResponse(response),
+        url,
+        headers,
+        transformedBody,
+      });
       try {
-        while (true) {
-          if (signal?.aborted) throw new Error("Request aborted during SSE collection");
-          const { done, value } = await Promise.race([
-            reader.read(),
-            new Promise<never>((_, reject) =>
-              timeout.addEventListener(
-                "abort",
-                () => reject(new Error("SSE collection timed out")),
-                { once: true }
-              )
-            ),
-          ]);
+        while (!stopped) {
+          const { done, value } = await reader.read();
+          if (stopped) break;
           if (done) break;
           processAntigravitySSEText(
             decoder.decode(value, { stream: true }),
@@ -1276,21 +1284,18 @@ export class AntigravityExecutor extends BaseExecutor {
           );
         }
       } catch (err) {
-        const msg = err?.message || String(err);
-        timedOut = msg.includes("timed out");
-        log?.warn?.("SSE_COLLECT", `Error collecting SSE stream: ${msg}`);
-        // Cancel the stream to prevent locking the socket in Undici pool
-        try {
-          reader.releaseLock();
-        } catch (_) {}
-        try {
-          response.body?.cancel().catch(() => {});
-        } catch (_) {}
+        if (!stopped) {
+          log?.warn?.("SSE_COLLECT", "Error collecting upstream SSE stream");
+          void reader.cancel(err).catch(() => {});
+          return fail(502, "Antigravity response ended before it could be collected");
+        }
       } finally {
-        try {
-          reader.releaseLock();
-        } catch (_) {}
+        clearTimeout(timer);
+        signal?.removeEventListener("abort", onAbort);
+        reader.releaseLock();
       }
+      if (stopped === 499) return fail(499, "Antigravity request cancelled");
+      if (stopped === 504) return fail(504, "Antigravity response collection timed out");
       processAntigravitySSEText(decoder.decode(), partialLine, collected, logger);
       flushAntigravitySSEText(partialLine, collected, logger);
 
@@ -1310,11 +1315,7 @@ export class AntigravityExecutor extends BaseExecutor {
                     tool_calls: collected.toolCalls,
                   }
                 : { role: "assistant", content: collected.textContent },
-            finish_reason: timedOut
-              ? "length"
-              : collected.toolCalls.length > 0
-                ? "tool_calls"
-                : collected.finishReason,
+            finish_reason: collected.toolCalls.length > 0 ? "tool_calls" : collected.finishReason,
           },
         ],
         ...(collected.usage && { usage: collected.usage }),
@@ -1322,10 +1323,9 @@ export class AntigravityExecutor extends BaseExecutor {
         ...(collected.remainingCredits && { _remainingCredits: collected.remainingCredits }),
       };
 
-      const syntheticStatus = timedOut ? 504 : response.status;
       const syntheticResponse = new Response(JSON.stringify(result), {
-        status: syntheticStatus,
-        statusText: timedOut ? "Gateway Timeout" : response.statusText,
+        status: response.status,
+        statusText: response.statusText,
         headers: [["Content-Type", "application/json"]],
       });
 
@@ -1747,7 +1747,8 @@ export class AntigravityExecutor extends BaseExecutor {
   async handleAntigravityRateLimit(
     ctx: AntigravityRateLimitContext
   ): Promise<AntigravityRateLimitOutcome> {
-    const { response, log, urlIndex, retryAttemptsByUrl, fallbackCount, budget429Spent } = ctx;
+    const { response, log, urlIndex, retryAttemptsByUrl, fallbackCount, budget429Spent, signal } =
+      ctx;
     const { rateLimitBudget } = ctx;
 
     // Try to get retry time from headers first
@@ -1797,7 +1798,9 @@ export class AntigravityExecutor extends BaseExecutor {
         "RETRY",
         `${response.status} retry ${retryAttemptsByUrl[urlIndex]}/${MAX_AUTO_RETRIES} with Retry-After: ${Math.ceil(effectiveRetryMs / 1000)}s, waiting...`
       );
-      await new Promise((resolve) => setTimeout(resolve, effectiveRetryMs));
+      void response.body?.cancel().catch(() => {});
+      await sleep(effectiveRetryMs, signal);
+      signal?.throwIfAborted();
       return { action: "retrySameUrl" };
     }
 
@@ -1818,7 +1821,9 @@ export class AntigravityExecutor extends BaseExecutor {
           "RETRY",
           `${response.status} transient auto retry ${retryAttemptsByUrl[urlIndex]}/${MAX_AUTO_RETRIES} after ${backoffMs / 1000}s`
         );
-        await new Promise((resolve) => setTimeout(resolve, backoffMs));
+        void response.body?.cancel().catch(() => {});
+        await sleep(backoffMs, signal);
+        signal?.throwIfAborted();
         return { action: "retrySameUrl" };
       }
     }

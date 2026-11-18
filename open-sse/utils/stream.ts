@@ -1150,7 +1150,13 @@ export function createSSEStream(options: StreamOptions = {}) {
     // silently empty for one that does. Same mode ternary as
     // clientExpectsResponsesStream/clientExpectsClaudeStream above: passthrough
     // forwards clientResponseFormat as-is, translate re-shapes to sourceFormat.
-    format: mode === STREAM_MODE.PASSTHROUGH ? clientResponseFormat : sourceFormat,
+    // Native Claude completion already uses responseBody, not this reducer's text.
+    format:
+      mode === STREAM_MODE.PASSTHROUGH
+        ? clientResponseFormat === FORMATS.CLAUDE
+          ? undefined
+          : clientResponseFormat
+        : sourceFormat,
     fallbackModel: model,
   });
   // Per-stream instances to avoid shared state with concurrent streams

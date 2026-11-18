@@ -56,6 +56,7 @@ import {
   buildSyntheticResponsesFailedEvent,
 } from "../utils/responsesSequence.ts";
 import { inspectCodexSsePeek } from "./codex/ssePeekFailure.ts";
+import { MAX_PENDING_SSE_LINE_BYTES } from "../utils/streamSummaryHelpers.ts";
 import { normalizeCodexResponsesInput } from "../utils/responsesInputNormalization.ts";
 import * as prl from "../utils/providerRequestLogging.ts";
 import { loadDynamicModule } from "./codex/wreqLoader.ts";
@@ -573,55 +574,64 @@ export function terminateCodexHttpStreamOnTerminal(response: Response): Response
   }
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
-  const encoder = new TextEncoder();
-  let buffer = "";
-  let closed = false;
+  let partialLine = "";
+  let partialBytes = 0;
+  let cancelled = false;
 
-  const stream = new ReadableStream<Uint8Array>({
-    async start(controller) {
+  const source: UnderlyingSource<Uint8Array> = {
+    async pull(controller) {
       try {
-        while (!closed) {
-          const { done, value } = await reader.read();
-          if (done) {
-            buffer += decoder.decode();
-            if (buffer.length > 0 && !closed) {
-              controller.enqueue(encoder.encode(buffer));
-            }
-            if (!closed) {
-              closed = true;
-              controller.close();
-            }
+        const { done, value } = await reader.read();
+        if (cancelled) return;
+        if (done) {
+          partialLine = "";
+          reader.releaseLock();
+          controller.close();
+          return;
+        }
+
+        let start = 0;
+        while (start < value.length) {
+          const newline = value.indexOf(0x0a, start);
+          const end = newline < 0 ? value.length : newline;
+          partialBytes += end - start;
+          if (partialBytes > MAX_PENDING_SSE_LINE_BYTES) {
+            throw new Error("Upstream Codex SSE line exceeded the size limit");
+          }
+          partialLine += decoder.decode(value.subarray(start, end), { stream: newline < 0 });
+          if (newline < 0) break;
+          if (isResponsesTerminalLine(partialLine)) {
+            controller.enqueue(value.subarray(0, newline + 1));
+            controller.enqueue(Uint8Array.of(0x0a));
+            controller.close();
+            partialLine = "";
+            void reader.cancel().catch(() => undefined);
+            reader.releaseLock();
             return;
           }
-
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop() ?? "";
-          for (const line of lines) {
-            controller.enqueue(encoder.encode(line + "\n"));
-            if (isResponsesTerminalLine(line)) {
-              closed = true;
-              void reader.cancel().catch(() => undefined);
-              controller.enqueue(encoder.encode("\n"));
-              controller.close();
-              return;
-            }
-          }
+          partialLine = "";
+          partialBytes = 0;
+          start = newline + 1;
         }
+        controller.enqueue(value);
       } catch (err) {
-        if (!closed) {
-          closed = true;
-          controller.error(err);
-        }
+        if (cancelled) return;
+        partialLine = "";
+        void reader.cancel(err).catch(() => undefined);
+        reader.releaseLock();
+        controller.error(err);
       }
     },
     cancel(reason) {
-      closed = true;
-      reader.cancel(reason).catch(() => undefined);
+      cancelled = true;
+      partialLine = "";
+      const cancellation = reader.cancel(reason);
+      reader.releaseLock();
+      return cancellation.catch(() => undefined);
     },
-  });
+  };
 
-  return new Response(stream, {
+  return new Response(new ReadableStream(source, { highWaterMark: 0 }), {
     status: response.status,
     statusText: response.statusText,
     headers: response.headers,

@@ -1,63 +1,88 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
+import { FETCH_TIMEOUT_MS } from "../../open-sse/config/constants.ts";
 import { AntigravityExecutor } from "../../open-sse/executors/antigravity.ts";
 
-// Regression guard for #4309 (thanks @Ardem2025 / Dmitry Kuznetsov): when the upstream
-// SSE collection aborts or errors, AntigravityExecutor.collectStreamToResponse must
-// release the stream reader AND cancel the response body — otherwise the underlying
-// socket stays checked out of the Undici agent pool (a slow socket/memory leak under
-// abort-heavy load). Previously the catch block just fell through ("return whatever was
-// collected"), leaving the body uncancelled and the reader locked.
-//
-// We drive the error path deterministically with a pre-aborted signal (the first loop
-// iteration throws "Request aborted during SSE collection" before any read), then assert
-// the reader was released and the body cancelled exactly as the fix does.
-test("collectStreamToResponse releases the reader and cancels the body on abort (Undici socket leak #4309)", async () => {
-  const executor = new AntigravityExecutor();
-
-  let releaseLockCalls = 0;
-  let cancelCalls = 0;
-
-  const fakeReader = {
-    // Never resolves — with a pre-aborted signal the loop throws before ever reading,
-    // so read() must not be needed to reach the cleanup path.
-    read: () => new Promise<never>(() => {}),
-    releaseLock: () => {
-      releaseLockCalls += 1;
+test("client abort cancels a pending Antigravity SSE read and releases the lock", async () => {
+  const reading = Promise.withResolvers<void>();
+  let cancellations = 0;
+  const body = new ReadableStream<Uint8Array>(
+    {
+      pull() {
+        reading.resolve();
+      },
+      cancel() {
+        cancellations++;
+      },
     },
-  };
-
-  const fakeBody = {
-    getReader: () => fakeReader,
-    cancel: () => {
-      cancelCalls += 1;
-      return Promise.resolve();
-    },
-  };
-
-  const response = { body: fakeBody } as unknown as Response;
-
-  const controller = new AbortController();
-  controller.abort(); // pre-aborted → the collect loop throws on its first guard check
-
-  await executor.collectStreamToResponse(
-    response,
+    { highWaterMark: 0 }
+  );
+  const caller = new AbortController();
+  const upstream = new Response(body);
+  const result = new AntigravityExecutor().collectStreamToResponse(
+    upstream,
     "antigravity-model",
     "https://example.invalid/sse",
     {},
     {},
     null,
-    controller.signal
+    caller.signal
   );
+  await reading.promise;
+  caller.abort();
+  assert.equal((await result).response.status, 499);
+  assert.equal(cancellations, 1);
+  assert.equal(body.locked, false);
+});
 
-  assert.ok(
-    releaseLockCalls >= 1,
-    "reader.releaseLock() must be called on the abort/error path (was never released before the fix)"
+test("an Antigravity SSE transport error after content does not return partial success", async () => {
+  let first = true;
+  const response = new Response(
+    new ReadableStream({
+      pull(controller) {
+        if (first) {
+          first = false;
+          controller.enqueue(
+            new TextEncoder().encode(
+              'data: {"response":{"candidates":[{"content":{"parts":[{"text":"partial text"}]}}]}}\n\n'
+            )
+          );
+        } else {
+          controller.error(new Error("unexpected EOF"));
+        }
+      },
+    })
   );
-  assert.equal(
-    cancelCalls,
-    1,
-    "response.body.cancel() must be called exactly once to return the socket to the Undici pool"
+  const result = await new AntigravityExecutor().collectStreamToResponse(
+    response,
+    "antigravity-model",
+    "https://example.invalid/sse",
+    {},
+    {}
   );
+  assert.equal(result.response.status, 502);
+  assert.doesNotMatch(await result.response.text(), /partial text/);
+  assert.equal(response.body?.locked, false);
+});
+
+test("Antigravity collection deadline cancels a stalled upstream body", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let cancelled = false;
+  const body = new ReadableStream({
+    cancel() {
+      cancelled = true;
+    },
+  });
+  const result = new AntigravityExecutor().collectStreamToResponse(
+    new Response(body),
+    "antigravity-model",
+    "https://example.invalid/sse",
+    {},
+    {}
+  );
+  t.mock.timers.tick(FETCH_TIMEOUT_MS);
+  assert.equal((await result).response.status, 504);
+  assert.equal(cancelled, true);
+  assert.equal(body.locked, false);
 });

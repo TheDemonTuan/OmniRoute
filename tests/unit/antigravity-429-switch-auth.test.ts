@@ -151,6 +151,29 @@ test("Regression: 429 with 30s hint -> sleeps and retries same URL", async () =>
   }
 });
 
+test("disconnect cancels Antigravity retry wait and discards its upstream body", async () => {
+  const caller = new AbortController();
+  let cancelled = false;
+  const response = new Response(
+    new ReadableStream({
+      cancel() {
+        cancelled = true;
+      },
+    }),
+    {
+      status: 429,
+      headers: { "Retry-After": "30" },
+    }
+  );
+  const retry = new AntigravityExecutor().handleAntigravityRateLimit({
+    ...makeCtx(response),
+    signal: caller.signal,
+  });
+  caller.abort();
+  await assert.rejects(retry, { name: "AbortError" });
+  assert.equal(cancelled, true);
+});
+
 // -- classify429: rate_limited detection -------------------------------------
 
 test("classify429: 'queries per minute limit was reached' -> rate_limited", () => {
