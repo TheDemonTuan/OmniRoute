@@ -6,6 +6,9 @@ vulnerabilities:
   - id: CVE-2026-118773
     expired_at: 2026-12-02
     statement: Bundled npm glob; fixed CLI subcommands do not accept request globs. Revisit when npm fixes its declared major.
+  - id: CVE-2026-112366
+    expired_at: 2026-12-18
+    statement: picomatch extglob DoS with no fixed release yet; globs come from build tooling and static proxy config, never request input. Revisit when picomatch ships a fix.
 
 # These exact upstream examples are not deployed by the registered Docker VPS path.
 # Production Dockerfile, application dependencies and secret scanning stay blocking.
