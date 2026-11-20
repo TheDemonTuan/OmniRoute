@@ -208,6 +208,17 @@ test("runEnvDocSync: shipped allowlist ignores ad-hoc BOT_TOKEN and BOT_URL", ()
   assert.deepEqual(shipped.problems.codeMissingEnv, []);
 });
 
+test("desktop release context is not app configuration, while undocumented app vars still fail", () => {
+  const result = runEnvDocSync({
+    envExampleText: "",
+    envDocText: "",
+    codeVars: new Set(["GITHUB_REPOSITORY", "VERSION", "OMNIROUTE_UNDOCUMENTED_APP_OPTION"]),
+    docOnlyAllowlist: new Set(),
+    envOnlyAllowlist: new Set(),
+  });
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.problems.codeMissingEnv, ["OMNIROUTE_UNDOCUMENTED_APP_OPTION"]);
+});
 // ─── CLI entry guard ────────────────────────────────────────────────────────
 
 test("isMainEntry: absolute argv[1] matches the module URL (normal CLI invocation)", () => {
