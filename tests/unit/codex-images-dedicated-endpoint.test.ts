@@ -197,15 +197,15 @@ test("Codex Images holds batch slots through response reads and drops cancelled 
     };
     return response;
   };
-  const run = (prompt: string, signal: AbortSignal | null = null, requestedCount = 3) =>
+  const run = (prompt: string, signal: AbortSignal | null = null, outputFormat?: string) =>
     handleCodexImagesApi({
       model: "gpt-image-2",
       provider: "codex",
       baseUrl: "https://chatgpt.com/backend-api/codex/responses",
-      body: { prompt },
+      body: { prompt, output_format: outputFormat },
       token: "test-token",
       workspaceId: null,
-      requestedCount,
+      requestedCount: 3,
       referenceImages: [],
       startTime: Date.now(),
       log: null,
@@ -219,6 +219,8 @@ test("Codex Images holds batch slots through response reads and drops cancelled 
   try {
     const full = await run("overflow");
     assert.equal(full.success === false && full.status, 429);
+    const invalidFormat = await run("invalid format", null, "webp");
+    assert.equal(invalidFormat.success === false && invalidFormat.status, 400);
     await firstWaveStarted.promise;
     assert.deepEqual(
       [...seen],
@@ -242,6 +244,7 @@ test("Codex Images holds batch slots through response reads and drops cancelled 
   assert.equal(peak, 4);
   assert.equal(seen.has("cancelled"), false);
   assert.equal(seen.has("overflow"), false);
+  assert.equal(seen.has("invalid format"), false);
 });
 
 test("Codex Images errors keep the free-plan guard, retryable access errors, and sanitization", async () => {

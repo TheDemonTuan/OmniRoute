@@ -23,6 +23,7 @@ import {
   saveImageErrorResult,
   saveImageSuccessResult,
 } from "../../imageGeneration.ts";
+import { checkCodexOutputFormat } from "./codexOutputFormat.ts";
 
 type ImageLog = {
   info: (tag: string, message: string) => void;
@@ -141,6 +142,17 @@ export async function handleCodexImagesApi(options: CodexImagesOptions) {
       path: logPath,
     });
   }
+  const formatCheck = checkCodexOutputFormat(options.body);
+  if (!formatCheck.ok) {
+    return saveImageErrorResult({
+      provider,
+      model,
+      status: 400,
+      startTime,
+      error: formatCheck.error,
+      path: logPath,
+    });
+  }
   let release: () => void;
   try {
     release = await acquireBatchSlot("codex-images:batch", {
@@ -164,7 +176,7 @@ export async function handleCodexImagesApi(options: CodexImagesOptions) {
   }
   try {
     if (signal?.aborted) return cancelledImageRequest(options);
-    return await executeCodexImageBatch(options);
+    return await executeCodexImageBatch(options, formatCheck.forward);
   } finally {
     release();
   }
@@ -181,7 +193,10 @@ function cancelledImageRequest({ provider, model, startTime, logPath }: CodexIma
   });
 }
 
-async function executeCodexImageBatch(options: CodexImagesOptions) {
+async function executeCodexImageBatch(
+  options: CodexImagesOptions,
+  outputFormatOverride: "png" | null
+) {
   const {
     model,
     provider,
@@ -209,6 +224,7 @@ async function executeCodexImageBatch(options: CodexImagesOptions) {
   if (typeof body.background === "string" && body.background.trim()) {
     upstreamBody.background = body.background.trim();
   }
+  if (outputFormatOverride) upstreamBody.output_format = outputFormatOverride;
   if (isEdit) {
     upstreamBody.images = referenceImages.map((image) => ({
       image_url: `data:${image.mime || "image/png"};base64,${image.bytes.toString("base64")}`,
