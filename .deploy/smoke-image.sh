@@ -1,8 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
-[[ $# == 1 && "$1" =~ ^ghcr\.io/thedemontuan/omniroute-vps@sha256:[0-9a-f]{64}$ ]] || { echo 'Expected immutable OmniRoute image digest' >&2; exit 2; }
-docker pull "$1"
-cid=$(docker run -d \
+if [[ $# == 2 && "$1" == --local && "$2" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+  image=$2
+elif [[ $# == 1 && "$1" =~ ^ghcr\.io/thedemontuan/omniroute-vps@sha256:[0-9a-f]{64}$ ]]; then
+  image=$1
+  docker pull "$image"
+else
+  echo 'Expected immutable OmniRoute registry digest or --local IMAGE_ID' >&2
+  exit 2
+fi
+cid=$(docker run -d --pull=never \
   -e DEPLOY_SLOT=blue \
   -e INITIAL_PASSWORD="$(openssl rand -hex 24)" \
   -e JWT_SECRET="$(openssl rand -hex 48)" \
@@ -10,7 +17,7 @@ cid=$(docker run -d \
   -e REQUIRE_API_KEY=true \
   -e NEXT_PUBLIC_BASE_URL=https://admin.smoke.invalid \
   -e OMNIROUTE_PUBLIC_BASE_URL=https://api.smoke.invalid \
-  "$1")
+  "$image")
 trap 'docker rm -f "$cid" >/dev/null 2>&1 || true' EXIT
 healthy=false
 for ((attempt=0; attempt<60; attempt++)); do
