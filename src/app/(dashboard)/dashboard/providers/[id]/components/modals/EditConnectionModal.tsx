@@ -580,7 +580,7 @@ export default function EditConnectionModal({
       let parsedMaxConcurrent: number | null = null;
       if (trimmedMaxConcurrent) {
         const numericMaxConcurrent = Number(trimmedMaxConcurrent);
-        if (!Number.isInteger(numericMaxConcurrent) || numericMaxConcurrent < 0) {
+        if (!Number.isInteger(numericMaxConcurrent) || numericMaxConcurrent < -1) {
           setSaveError(t("maxConcurrentWholeNumberError"));
           return;
         }
@@ -1034,17 +1034,17 @@ export default function EditConnectionModal({
             {t("accountConcurrencyCapLabel")}
           </div>
           <NumberInput
-            min={0}
+            min={-1}
             step={1}
             aria-label={t("accountConcurrencyCapLabel")}
             value={textToNumber(formData.maxConcurrent)}
             onValueChange={(value) => {
               setFormData({ ...formData, maxConcurrent: numberToText(value) });
-              // The field only lets a whole number of 0 or more through.
+              // The field only lets a whole number of -1 or more through.
               if (saveError && value !== null) setSaveError(null);
             }}
             placeholder="0"
-            hint={t("accountConcurrencyCapHint")}
+            hint={t("adaptiveConnectionConcurrencyHint")}
           />
         </div>
         {saveError && <Notice variant="critical">{saveError}</Notice>}
@@ -1147,30 +1147,33 @@ export default function EditConnectionModal({
                   <div className="grid grid-cols-2 gap-2 text-xs text-text-muted">
                     {[
                       ["Browser", doctorStatus.browser?.ready],
-                      ["Storage-State", doctorStatus.storageState?.ready],
-                      ["ChatGPT-Anmeldung", doctorStatus.login?.ready],
+                      [t("doctorStorageStateLabel"), doctorStatus.storageState?.ready],
+                      [t("doctorLoginLabel"), doctorStatus.login?.ready],
                       ["Temporary Chat", doctorStatus.temporaryChats?.ready],
-                      ["Tunnel-Binary", doctorStatus.tunnelBinary?.ready],
+                      [t("doctorTunnelBinaryLabel"), doctorStatus.tunnelBinary?.ready],
                       ["Tunnel", doctorStatus.tunnel?.ready],
                       ["Connector", doctorStatus.connector?.ready],
-                      ["Tool-Roundtrip", doctorStatus.toolRoundtrip?.ready],
-                      ["Aktive Turns", doctorStatus.runtime?.activeTurns],
-                      ["Wartende Turns", doctorStatus.runtime?.waitingTurns],
+                      [t("doctorToolRoundtripLabel"), doctorStatus.toolRoundtrip?.ready],
+                      [t("doctorActiveTurnsLabel"), doctorStatus.runtime?.activeTurns],
+                      [t("doctorWaitingTurnsLabel"), doctorStatus.runtime?.waitingTurns],
                     ].map(([label, ready]) => (
                       <div key={String(label)}>
                         {label}:{" "}
-                        {typeof ready === "number" ? ready : ready ? "bereit" : "nicht bereit"}
+                        {typeof ready === "number"
+                          ? ready
+                          : ready
+                            ? t("doctorReady")
+                            : t("doctorNotReady")}
                       </div>
                     ))}
                     {doctorStatus.recovery?.interactiveLoginRequired && (
                       <div className="col-span-2 text-warning">
-                        Interaktive Anmeldung erforderlich. Nutze den geschützten
-                        Browser-/VNC-Recovery-Pfad.
+                        {t("doctorInteractiveLoginRequired")}
                       </div>
                     )}
                     {doctorStatus.lastError && (
                       <div className="col-span-2 break-words text-error">
-                        Letzter Fehler: {String(doctorStatus.lastError)}
+                        {t("doctorLastError")} {String(doctorStatus.lastError)}
                       </div>
                     )}
                   </div>
