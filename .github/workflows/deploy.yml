@@ -95,11 +95,11 @@ jobs:
     permissions:
       contents: read
       packages: read
-    uses: TheDemonTuan/vps-deploy/.github/workflows/security-trivy.yml@a9ca529fd06fd488ef6188dfb740606efa6ae8a3
+    uses: TheDemonTuan/vps-deploy/.github/workflows/security-trivy.yml@d2c098c1aedec62f840f948446555c96b8cbbd5e
     with:
       app: omniroute
       source-sha: ${{ github.sha }}
-      platform-ref: a9ca529fd06fd488ef6188dfb740606efa6ae8a3
+      platform-ref: d2c098c1aedec62f840f948446555c96b8cbbd5e
       config: .deploy/app.yml
       scan-mode: source
 
@@ -112,11 +112,11 @@ jobs:
     permissions:
       contents: read
       packages: write
-    uses: TheDemonTuan/vps-deploy/.github/workflows/build-docker.yml@a9ca529fd06fd488ef6188dfb740606efa6ae8a3
+    uses: TheDemonTuan/vps-deploy/.github/workflows/build-docker.yml@d2c098c1aedec62f840f948446555c96b8cbbd5e
     with:
       app: omniroute
       source-sha: ${{ github.sha }}
-      platform-ref: a9ca529fd06fd488ef6188dfb740606efa6ae8a3
+      platform-ref: d2c098c1aedec62f840f948446555c96b8cbbd5e
       config: .deploy/app.yml
 
   security-image:
@@ -125,18 +125,18 @@ jobs:
     permissions:
       contents: read
       packages: read
-    uses: TheDemonTuan/vps-deploy/.github/workflows/security-trivy.yml@a9ca529fd06fd488ef6188dfb740606efa6ae8a3
+    uses: TheDemonTuan/vps-deploy/.github/workflows/security-trivy.yml@d2c098c1aedec62f840f948446555c96b8cbbd5e
     with:
       app: omniroute
       source-sha: ${{ github.sha }}
-      platform-ref: a9ca529fd06fd488ef6188dfb740606efa6ae8a3
+      platform-ref: d2c098c1aedec62f840f948446555c96b8cbbd5e
       config: .deploy/app.yml
       scan-mode: image
       image-ref: ${{ needs.build.outputs.image-ref }}
       platform: linux/arm64
   deploy:
     concurrency:
-      group: omniroute-n1-oci-sin1-arm-4c24g-production
+      group: omniroute-production
       queue: max
       cancel-in-progress: false
     name: Deploy immutable digest
@@ -148,14 +148,14 @@ jobs:
     environment: production
     timeout-minutes: 17
     steps:
-      - uses: TheDemonTuan/vps-deploy/.github/actions/deploy@a9ca529fd06fd488ef6188dfb740606efa6ae8a3
+      # No host: the platform deploys to every registered host (n1), each proved before the next.
+      - uses: TheDemonTuan/vps-deploy/.github/actions/deploy@d2c098c1aedec62f840f948446555c96b8cbbd5e
         with:
           app: omniroute
-          host: n1-oci-sin1-arm-4c24g
           operation: deploy
           component: app
           source-sha: ${{ github.sha }}
-          platform-ref: a9ca529fd06fd488ef6188dfb740606efa6ae8a3
+          platform-ref: d2c098c1aedec62f840f948446555c96b8cbbd5e
           config: .deploy/app.yml
           image-ref: ${{ needs.build.outputs.image-ref }}
         env:
