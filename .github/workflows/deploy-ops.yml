@@ -12,7 +12,7 @@ permissions:
 jobs:
   operate:
     concurrency:
-      group: ${{ inputs.operation == 'status' && format('omniroute-status-{0}', github.run_id) || 'omniroute-oracle-main-production' }}
+      group: ${{ inputs.operation == 'status' && format('omniroute-status-{0}', github.run_id) || 'omniroute-n1-oci-sin1-arm-4c24g-production' }}
       queue: max
       cancel-in-progress: false
     if: github.ref_type == 'branch' && github.ref_name == github.event.repository.default_branch
@@ -20,14 +20,14 @@ jobs:
     environment: production
     timeout-minutes: 17
     steps:
-      - uses: TheDemonTuan/vps-deploy/.github/actions/deploy@8cad616c406104b51d3eb6e6f2d9a17b277b5029
+      - uses: TheDemonTuan/vps-deploy/.github/actions/deploy@a9ca529fd06fd488ef6188dfb740606efa6ae8a3
         with:
           app: omniroute
-          host: oracle-main
+          host: n1-oci-sin1-arm-4c24g
           operation: ${{ inputs.operation }}
           component: app
           source-sha: ${{ github.sha }}
-          platform-ref: 8cad616c406104b51d3eb6e6f2d9a17b277b5029
+          platform-ref: a9ca529fd06fd488ef6188dfb740606efa6ae8a3
           config: .deploy/app.yml
         env:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}

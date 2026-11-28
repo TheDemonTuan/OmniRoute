@@ -2305,7 +2305,7 @@ Only `ENV REQUIRE_API_KEY=true` has a line-scoped DS-0031 false-positive annotat
 it is a boolean, not a credential. Separate credential ENV instructions still fail.
 
 Production setup is owned by `TheDemonTuan/vps-deploy`, registration `omniroute` on
-`oracle-main`. It uses a dedicated `omniroute-data` volume, never `9router-data`.
+`n1-oci-sin1-arm-4c24g`. It uses a dedicated `omniroute-data` volume, never `9router-data`.
 The API is `https://omniroute-api.tuannguyenviet.site/v1`; the dashboard is
 `https://omniroute.tuannguyenviet.site`. Root-owned runtime configuration requires
 fresh `INITIAL_PASSWORD`, `JWT_SECRET`, `API_KEY_SECRET`, `PUBLIC_URL`, and `PUBLIC_API_URL` values.
